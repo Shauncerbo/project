@@ -1,0 +1,41 @@
+﻿/* Global Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Logo Animation */
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+.logo-icon {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Responsive Styles */
+@media (max-width: 480px) {
+    .login-card {
+        padding: 30px 20px !important;
+    }
+
+    .logo-text {
+        font-size: 28px !important;
+    }
+}

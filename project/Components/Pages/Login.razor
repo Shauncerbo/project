@@ -1,0 +1,178 @@
+﻿@page "/login"
+@inject NavigationManager NavigationManager
+
+<div class="login-container">
+    <!-- Logo -->
+    <div class="logo-section">
+        <img src="powerhouse_logo.png" alt="Powerhouse Logo" class="logo-image" />
+    </div>
+
+    <!-- Login Form -->
+    <div class="form-section">
+        <div class="input-group">
+            <img src="user_icon.svg" alt="User Icon" class="input-icon" />
+            <input type="text" class="form-input" placeholder="Username" @bind="username" />
+        </div>
+
+        <div class="input-group">
+            <img src="lock_icon.svg" alt="Lock Icon" class="input-icon" />
+            <input type="password" class="form-input" placeholder="Password" @bind="password" />
+        </div>
+
+        <button class="login-button" @onclick="HandleLogin">Login</button>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="error-message">@errorMessage</div>
+        }
+    </div>
+</div>
+
+<style>
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Arial, sans-serif;
+    }
+
+    .login-container {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 40px;
+        padding: 40px 20px;
+        background-image: url('gymbg.png');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-color: #1a365d;
+    }
+
+    .logo-image {
+        width: 350px;
+        height: 350px;
+        margin-bottom: -150px;
+        border-radius: 15px;
+        filter: drop-shadow(0 6px 12px rgba(0,0,0,0.4));
+        pointer-events: none;
+    }
+
+    .form-section {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 500px;
+        gap: 20px;
+        margin-top: 30px;
+    }
+
+    .input-group {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 0 15px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 12px;
+        background-color: rgba(255, 255, 255, 0.9);
+        transition: all 0.3s ease;
+        width: 100%;
+        min-height: 60px;
+        backdrop-filter: blur(10px);
+    }
+
+        .input-group:focus-within {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            background-color: white;
+        }
+
+    .input-icon {
+        width: 28px;
+        height: 28px;
+        opacity: 0.7;
+    }
+
+    .form-input {
+        flex: 1;
+        border: none;
+        outline: none;
+        padding: 18px 10px;
+        font-size: 18px;
+        background: transparent;
+        width: 100%;
+    }
+
+        .form-input::placeholder {
+            color: #6b7280;
+            font-size: 16px;
+        }
+
+    .login-button {
+        padding: 18px;
+        background: linear-gradient(135deg, #234060 0%, #3b82f6 100%);
+        color: white;
+        font-weight: bold;
+        font-size: 18px;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-top: 10px;
+        width: 100%;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+
+        .login-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+            background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+        }
+
+        .login-button:active {
+            transform: translateY(-1px);
+        }
+
+    .error-message {
+        color: #fecaca;
+        text-align: center;
+        font-size: 16px;
+        font-weight: 500;
+        padding: 12px;
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 8px;
+        margin-top: 10px;
+        width: 100%;
+        backdrop-filter: blur(10px);
+    }
+</style>
+
+@code {
+    private string username = "";
+    private string password = "";
+    private string errorMessage = "";
+
+    private void HandleLogin()
+    {
+        errorMessage = "";
+
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            errorMessage = "Please enter both username and password";
+            return;
+        }
+
+        if (username == "admin" && password == "admin")
+        {
+            // Navigate to dashboard
+            NavigationManager.NavigateTo("/dashboard");
+        }
+        else
+        {
+            errorMessage = "Invalid username or password";
+        }
+    }
+}
