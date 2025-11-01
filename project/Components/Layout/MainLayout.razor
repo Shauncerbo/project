@@ -1,47 +1,50 @@
 ﻿@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
 
 <div class="dashboard-container @(isSidebarOpen ? "sidebar-open" : "sidebar-closed")">
     <!-- Top bar only visible on small screens -->
     <div class="topbar">
         <button class="menu-button" @onclick="ToggleSidebar" aria-label="Open navigation">☰</button>
-        <span class="app-title">PowerHouse</span>
     </div>
 
-    <!-- Sidebar (responsive) -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <img src="/powerhouse_logo.png" class="sidebar-logo" alt="PowerHouse Logo" />
-        </div>
-        <nav class="sidebar-nav">
-            <ul>
-                <li><NavLink href="/dashboard" class="nav-link" activeClass="active"><span class="sidebar-icon">🏠</span> Dashboard</NavLink></li>
-                <li><NavLink href="/members" class="nav-link" activeClass="active"><span class="sidebar-icon">👥</span> Members</NavLink></li>
-                <li><NavLink href="/trainers" class="nav-link" activeClass="active"><span class="sidebar-icon">🏋️</span> Trainers</NavLink></li>
-                <li><NavLink href="/attendance" class="nav-link" activeClass="active"><span class="sidebar-icon">🗓️</span> Attendance</NavLink></li>
-                <li><NavLink href="/payment" class="nav-link" activeClass="active"><span class="sidebar-icon">💳</span> Payment</NavLink></li>
-                <li><NavLink href="/promotions" class="nav-link" activeClass="active"><span class="sidebar-icon">🏷️</span> Promotions</NavLink></li>
-                <li><NavLink href="/reports" class="nav-link" activeClass="active"><span class="sidebar-icon">📄</span> Reports</NavLink></li>
-                <li><NavLink href="/settings" class="nav-link" activeClass="active"><span class="sidebar-icon">⚙️</span> Settings</NavLink></li>
-            </ul>
-        </nav>
-        <div class="sidebar-footer">
-            <div class="sidebar-logout" @onclick="Logout">
-                <span class="sidebar-icon">🚪</span> Logout
+    @if (!hideSidebar)
+    {
+        <!-- Sidebar (responsive) -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <img src="/powerhouse_logo.png" class="sidebar-logo" alt="PowerHouse Logo" />
+            </div>
+            <nav class="sidebar-nav">
+                <ul>
+                    <li><NavLink href="/dashboard" class="nav-link" activeClass="active"><span class="sidebar-icon">🏠</span> Dashboard</NavLink></li>
+                    <li><NavLink href="/members" class="nav-link" activeClass="active"><span class="sidebar-icon">👥</span> Members</NavLink></li>
+                    <li><NavLink href="/trainers" class="nav-link" activeClass="active"><span class="sidebar-icon">🏋️</span> Trainers</NavLink></li>
+                    <li><NavLink href="/attendance" class="nav-link" activeClass="active"><span class="sidebar-icon">🗓️</span> Attendance</NavLink></li>
+                    <li><NavLink href="/payment" class="nav-link" activeClass="active"><span class="sidebar-icon">💳</span> Payment</NavLink></li>
+                    <li><NavLink href="/promotions" class="nav-link" activeClass="active"><span class="sidebar-icon">🏷️</span> Promotions</NavLink></li>
+                    <li><NavLink href="/reports" class="nav-link" activeClass="active"><span class="sidebar-icon">📄</span> Reports</NavLink></li>
+                    <li><NavLink href="/settings" class="nav-link" activeClass="active"><span class="sidebar-icon">⚙️</span> Settings</NavLink></li>
+                </ul>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="sidebar-logout" @onclick="Logout">
+                    <span class="sidebar-icon">🚪</span> Logout
+                </div>
             </div>
         </div>
-    </div>
-    <!-- Clickable overlay to close sidebar on mobile -->
-    <div class="backdrop @(isSidebarOpen ? "show" : "")" @onclick="CloseSidebar"></div>
+
+        <!-- Clickable overlay to close sidebar on mobile -->
+        <div class="backdrop @(isSidebarOpen ? "show" : "")" @onclick="CloseSidebar"></div>
+    }
 
     <div class="main-content">
         @Body
     </div>
-
 </div>
 
 @code {
-    [Inject] NavigationManager NavigationManager { get; set; } = default!;
-    private bool isSidebarOpen = true; // open by default on desktop
+    private bool isSidebarOpen = true;
+    private bool hideSidebar = false;
 
     private void Logout()
     {
@@ -49,5 +52,12 @@
     }
 
     private void ToggleSidebar() => isSidebarOpen = !isSidebarOpen;
-    private void CloseSidebar() { isSidebarOpen = false; }
+    private void CloseSidebar() => isSidebarOpen = false;
+
+    protected override void OnParametersSet()
+    {
+        var uri = NavigationManager.Uri.ToLower();
+        // Hide sidebar only on login or register page
+        hideSidebar = uri.Contains("/login") || uri.Contains("/register");
+    }
 }
