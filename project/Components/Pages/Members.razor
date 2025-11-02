@@ -112,19 +112,26 @@
 
                     <div class="form-group">
                         <label>Membership Type</label>
-                        <select class="form-control" @bind="currentMember.MembershipType">
-                            <option value="Basic">Basic</option>
-                            <option value="Premium">Premium</option>
-                            <option value="VIP">VIP</option>
-                        </select>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown" @bind="currentMember.MembershipType">
+                                <option value="">Select membership type</option>
+                                <option value="Basic">Basic</option>
+                                <option value="Premium">Premium</option>
+                                <option value="VIP">VIP</option>
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
                     </div>
 
                     <div class="form-group">
                         <label>Status</label>
-                        <select class="form-control" @bind="currentMember.IsActive">
-                            <option value="true">Active</option>
-                            <option value="false">Inactive</option>
-                        </select>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown" @bind="currentMember.IsActive">
+                                <option value="true">Active</option>
+                                <option value="false">Inactive</option>
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
                     </div>
                 </div>
 
@@ -446,6 +453,57 @@
             border-color: #5cb85c;
             box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
         }
+
+    /* Enhanced Dropdown Styles */
+    .select-wrapper {
+        position: relative;
+        display: inline-block;
+        width: 100%;
+    }
+
+    .select-dropdown {
+        appearance: none; /* Remove default arrow */
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        padding-right: 40px; /* Make space for custom arrow */
+        background: white;
+        cursor: pointer;
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.3s;
+    }
+
+    .dropdown-arrow {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none; /* Don't interfere with select clicks */
+        color: #666;
+        font-size: 12px;
+        transition: all 0.2s;
+    }
+
+    /* Show different arrow when dropdown is focused */
+    .select-dropdown:focus + .dropdown-arrow {
+        color: #5cb85c;
+        transform: translateY(-50%) rotate(180deg);
+    }
+
+    /* Hover effect */
+    .select-dropdown:hover {
+        border-color: #5cb85c;
+    }
+
+    /* Focus effect for dropdown */
+    .select-dropdown:focus {
+        outline: none;
+        border-color: #5cb85c;
+        box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+    }
 
     .modal-footer {
         padding: 16px 24px;
