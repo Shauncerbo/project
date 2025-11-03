@@ -2,57 +2,74 @@
 @layout MainLayout
 @inject NavigationManager NavigationManager
 
-<div class="dashboard-page">
-    <h1>Welcome to the Dashboard!</h1>
-    <p>Here you can see dashboard content.</p>
+<div class="container-fluid px-0">
+    <div class="dashboard-page">
+        <h1>Welcome to the Dashboard!</h1>
+        <p>Here you can see dashboard content.</p>
 
-    <div class="stats-grid">
-        <div class="stat-card">
-            <h3>TOTAL MEMBERS</h3>
-            <p class="stat-number">150</p>
+        <!-- Responsive Statistics Grid using Bootstrap -->
+        <div class="row g-3 mb-4">
+            <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                <div class="stat-card">
+                    <h3>TOTAL MEMBERS</h3>
+                    <p class="stat-number">150</p>
+                </div>
+            </div>
+            <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                <div class="stat-card">
+                    <h3>ACTIVE TRAINERS</h3>
+                    <p class="stat-number">12</p>
+                </div>
+            </div>
+            <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                <div class="stat-card">
+                    <h3>MONTHLY REVENUE</h3>
+                    <p class="stat-number">$5,200</p>
+                </div>
+            </div>
+            <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                <div class="stat-card">
+                    <h3>ATTENDANCE TODAY</h3>
+                    <p class="stat-number">45</p>
+                </div>
+            </div>
         </div>
-        <div class="stat-card">
-            <h3>ACTIVE TRAINERS</h3>
-            <p class="stat-number">12</p>
-        </div>
-        <div class="stat-card">
-            <h3>MONTHLY REVENUE</h3>
-            <p class="stat-number">$5,200</p>
-        </div>
-        <div class="stat-card">
-            <h3>ATTENDANCE TODAY</h3>
-            <p class="stat-number">45</p>
-        </div>
-    </div>
 
-    <div class="recent-activity">
-        <h2>Recent Activity</h2>
-        <div class="activity-list">
-            <div class="activity-item">
-                <span class="activity-badge">[D&GAA]</span>
-                <span class="activity-text">John Doe checked in</span>
-            </div>
-            <div class="activity-item">
-                <span class="activity-badge">[G1GAW]</span>
-                <span class="activity-text">Jane Smith renewed membership</span>
-            </div>
-            <div class="activity-item">
-                <span class="activity-badge">[G4GAW]</span>
-                <span class="activity-text">New member registration: Mike Johnson</span>
+        <div class="recent-activity">
+            <h2>Recent Activity</h2>
+            <div class="activity-list">
+                <div class="activity-item">
+                    <span class="activity-badge">[D&GAA]</span>
+                    <span class="activity-text">John Doe checked in</span>
+                </div>
+                <div class="activity-item">
+                    <span class="activity-badge">[G1GAW]</span>
+                    <span class="activity-text">Jane Smith renewed membership</span>
+                </div>
+                <div class="activity-item">
+                    <span class="activity-badge">[G4GAW]</span>
+                    <span class="activity-text">New member registration: Mike Johnson</span>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <style>
-    .dashboard-page {
-        max-width: 1200px;
+    .container-fluid {
+        width: 100%;
+        margin: 0;
+        padding: 0;
     }
 
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 20px;
+    .dashboard-page {
+        max-width: 100%;
+        padding: 20px;
+        margin: 0 auto;
+    }
+
+    /* Statistics Grid - Fully responsive with Bootstrap */
+    .row.g-3 {
         margin: 30px 0;
     }
 
@@ -63,7 +80,18 @@
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         text-align: center;
         border-left: 4px solid #3868a7;
+        height: 100%;
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
 
         .stat-card h3 {
             margin: 0 0 10px 0;
@@ -71,6 +99,7 @@
             font-size: 0.9rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-weight: 600;
         }
 
     .stat-number {
@@ -93,6 +122,8 @@
             color: #234060;
             border-bottom: 2px solid #f0f4f8;
             padding-bottom: 10px;
+            font-size: 1.5rem;
+            font-weight: 600;
         }
 
     .activity-list {
@@ -104,10 +135,16 @@
     .activity-item {
         display: flex;
         align-items: center;
-        padding: 12px;
+        padding: 12px 15px;
         background: #f8fafc;
         border-radius: 6px;
+        border-left: 3px solid #3868a7;
+        transition: background-color 0.2s ease;
     }
+
+        .activity-item:hover {
+            background: #e3f2fd;
+        }
 
     .activity-badge {
         background: #234060;
@@ -117,9 +154,146 @@
         font-size: 0.8rem;
         margin-right: 15px;
         font-family: monospace;
+        font-weight: 500;
+        min-width: 60px;
+        text-align: center;
     }
 
     .activity-text {
         color: #333;
+        font-weight: 500;
+    }
+
+    /* Responsive Breakpoints */
+    /* Large desktops */
+    @@media (min-width: 1400px) {
+        .dashboard-page {
+            max-width: 1320px;
+        }
+    }
+
+    /* Desktops */
+    @@media (max-width: 1399.98px) {
+        .dashboard-page {
+            max-width: 1140px;
+        }
+    }
+
+    /* Small desktops */
+    @@media (max-width: 1199.98px) {
+        .dashboard-page {
+            max-width: 960px;
+        }
+
+        .stat-number {
+            font-size: 1.8rem;
+        }
+    }
+
+    /* Tablets */
+    @@media (max-width: 991.98px) {
+        .dashboard-page {
+            max-width: 720px;
+            padding: 15px;
+        }
+
+        .stat-number {
+            font-size: 1.7rem;
+        }
+
+        .stat-card {
+            padding: 20px;
+        }
+    }
+
+    /* Small tablets */
+    @@media (max-width: 767.98px) {
+        .dashboard-page {
+            max-width: 540px;
+            padding: 12px;
+        }
+
+        .stat-number {
+            font-size: 1.6rem;
+        }
+
+        .stat-card {
+            padding: 18px 15px;
+            min-height: 110px;
+        }
+
+        .recent-activity {
+            padding: 20px;
+            margin-top: 25px;
+        }
+
+        .activity-item {
+            padding: 10px 12px;
+        }
+    }
+
+    /* Mobile phones */
+    @@media (max-width: 575.98px) {
+        .dashboard-page {
+            padding: 10px;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+        }
+
+        .stat-card {
+            padding: 15px 12px;
+            min-height: 100px;
+        }
+
+            .stat-card h3 {
+                font-size: 0.8rem;
+            }
+
+        .recent-activity {
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+            .recent-activity h2 {
+                font-size: 1.3rem;
+            }
+
+        .activity-badge {
+            margin-right: 10px;
+            min-width: 50px;
+            font-size: 0.75rem;
+        }
+
+        .activity-text {
+            font-size: 0.9rem;
+        }
+    }
+
+    /* Extra small phones */
+    @@media (max-width: 400px) {
+        .activity-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .activity-badge {
+            margin-right: 0;
+            align-self: flex-start;
+        }
+
+        .stat-card {
+            padding: 12px 10px;
+        }
+
+        .stat-number {
+            font-size: 1.4rem;
+        }
     }
 </style>
