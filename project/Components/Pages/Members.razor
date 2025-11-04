@@ -73,7 +73,7 @@
                             <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditMember(member)" title="Edit">
-                                        ✔
+                                        ✓
                                     </button>
                                 </div>
                             </td>
@@ -126,7 +126,7 @@
                     <div class="form-group">
                         <label>Status</label>
                         <div class="select-wrapper">
-                            <select class="form-control select-dropdown" @bind="currentMember.IsActive">
+                            <select class="form-control select-dropdown" @bind="statusString">
                                 <option value="true">Active</option>
                                 <option value="false">Inactive</option>
                             </select>
@@ -462,10 +462,10 @@
     }
 
     .select-dropdown {
-        appearance: none; /* Remove default arrow */
+        appearance: none;
         -webkit-appearance: none;
         -moz-appearance: none;
-        padding-right: 40px; /* Make space for custom arrow */
+        padding-right: 40px;
         background: white;
         cursor: pointer;
         width: 100%;
@@ -481,24 +481,21 @@
         right: 15px;
         top: 50%;
         transform: translateY(-50%);
-        pointer-events: none; /* Don't interfere with select clicks */
+        pointer-events: none;
         color: #666;
         font-size: 12px;
         transition: all 0.2s;
     }
 
-    /* Show different arrow when dropdown is focused */
     .select-dropdown:focus + .dropdown-arrow {
         color: #5cb85c;
         transform: translateY(-50%) rotate(180deg);
     }
 
-    /* Hover effect */
     .select-dropdown:hover {
         border-color: #5cb85c;
     }
 
-    /* Focus effect for dropdown */
     .select-dropdown:focus {
         outline: none;
         border-color: #5cb85c;
@@ -548,6 +545,7 @@
     private string searchQuery = "";
     private bool showModal = false;
     private bool isEditMode = false;
+    private string statusString = "true"; // Fix for status binding
     private Member currentMember = new Member();
     private List<Member> members = new List<Member>();
     private List<Member> filteredMembers = new List<Member>();
@@ -594,6 +592,7 @@
             IsActive = true,
             MembershipType = "Basic"
         };
+        statusString = "true"; // Set default status
         showModal = true;
         StateHasChanged();
     }
@@ -611,12 +610,16 @@
             IsActive = member.IsActive,
             JoinDate = member.JoinDate
         };
+        statusString = member.IsActive.ToString().ToLower(); // Set current status
         showModal = true;
         StateHasChanged();
     }
 
     private void SaveMember()
     {
+        // Convert string status to boolean - FIXED
+        currentMember.IsActive = bool.Parse(statusString);
+
         if (isEditMode)
         {
             var existingMember = members.FirstOrDefault(m => m.MemberId == currentMember.MemberId);
@@ -642,6 +645,7 @@
     {
         showModal = false;
         currentMember = new Member();
+        statusString = "true"; // Reset status
         StateHasChanged();
     }
 
