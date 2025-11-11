@@ -1,78 +1,69 @@
-﻿@page "/promotions"
+﻿@page "/walkins"
 @layout MainLayout
 @using System.Diagnostics
 
 <div class="members-container">
     <!-- Page Header - No gaps with sidebar and top -->
     <div class="page-header">
-        <h1 class="page-title">Promotions Management</h1>
+        <h1 class="page-title">Walk-in Customers</h1>
         <div class="header-actions">
             <input type="text"
                    class="search-bar"
-                   placeholder="Search promotions..."
+                   placeholder="Search walk-ins..."
                    @bind="searchQuery"
                    @bind:event="oninput"
                    @onkeyup="HandleSearch" />
-            <button class="add-member-btn" @onclick="OpenAddPromoModal">+ Create Promotion</button>
+            <button class="add-member-btn" @onclick="OpenAddWalkinModal">+ Add Walk-in</button>
         </div>
     </div>
 
-    <!-- Promotions Data Table -->
+    <!-- Walk-ins Data Table -->
     <div class="table-container">
         <table class="members-table">
             <thead>
                 <tr>
-                    <th>PROMO ID</th>
-                    <th>PROMO NAME</th>
-                    <th>DESCRIPTION</th>
-                    <th>DISCOUNT RATE</th>
-                    <th>START DATE</th>
-                    <th>END DATE</th>
-                    <th>STATUS</th>
+                    <th>WALK-IN ID</th>
+                    <th>FULL NAME</th>
+                    <th>VISIT DATE</th>
+                    <th>PAYMENT AMOUNT</th>
                     <th>ACTIONS</th>
                 </tr>
             </thead>
             <tbody>
-                @if (filteredPromotions == null || !filteredPromotions.Any())
+                @if (filteredWalkins == null || !filteredWalkins.Any())
                 {
                     <tr>
-                        <td colspan="8" class="no-data">
+                        <td colspan="5" class="no-data">
                             <div class="no-data-content">
-                                <span class="no-data-icon">🎯</span>
-                                <p>No promotions found</p>
-                                <p class="no-data-sub">Create your first promotion to get started</p>
+                                <span class="no-data-icon">🚶‍♂️</span>
+                                <p>No walk-in customers found</p>
+                                <p class="no-data-sub">Add your first walk-in customer</p>
                             </div>
                         </td>
                     </tr>
                 }
                 else
                 {
-                    @foreach (var promo in filteredPromotions)
+                    @foreach (var walkin in filteredWalkins)
                     {
                         <tr>
-                            <td>@promo.PromoID</td>
+                            <td>@walkin.WalkinID</td>
                             <td>
-                                <div class="promo-name">@promo.PromoName</div>
+                                <div class="member-info">
+                                    <div class="member-avatar">@walkin.FullName?.Substring(0, 1).ToUpper()</div>
+                                    <span>@walkin.FullName</span>
+                                </div>
                             </td>
-                            <td>
-                                <div class="promo-description">@promo.Description</div>
-                            </td>
-                            <td class="discount-cell">
-                                <span class="discount-rate">@promo.DiscountRate.ToString("P0")</span>
-                            </td>
-                            <td>@promo.StartDate.ToString("MMM dd, yyyy")</td>
-                            <td>@promo.EndDate.ToString("MMM dd, yyyy")</td>
-                            <td>
-                                <span class="status-badge @GetStatusClass(promo)">
-                                    @GetStatusText(promo)
-                                </span>
+                            <td>@walkin.VisitDate.ToString("MMM dd, yyyy hh:mm tt")</td>
+                            <td class="amount-cell">
+                                <span class="payment-amount">₱@walkin.PaymentAmount.ToString("N2")</span>
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <button class="action-btn edit-btn" @onclick="() => EditPromotion(promo)" title="Edit">
+                                    <button class="action-btn edit-btn" @onclick="() => EditWalkin(walkin)" title="Edit">
                                         <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
-                                    <button class="action-btn archive-btn" @onclick="() => ArchivePromotion(promo)" title="Archive">
+                                    <button class="action-btn archive-btn" @onclick="() => ArchiveWalkin(walkin)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </div>
@@ -84,86 +75,58 @@
         </table>
     </div>
 
-    <!-- Add/Edit Promotion Modal -->
-    @if (showPromoModal)
+    <!-- Add/Edit Walk-in Modal -->
+    @if (showWalkinModal)
     {
         <div class="modal-overlay" @onclick="CloseModal">
             <div class="modal-content" @onclick:stopPropagation="true">
                 <div class="modal-header">
-                    <h2>@(isEditMode ? "Edit Promotion" : "Create New Promotion")</h2>
+                    <h2>@(isEditMode ? "Edit Walk-in" : "Add Walk-in Customer")</h2>
                     <button class="close-btn" @onclick="CloseModal">×</button>
                 </div>
 
                 <div class="modal-body">
-                    <!-- Promo Name -->
+                    <!-- Full Name -->
                     <div class="form-group">
-                        <label class="required">Promotion Name</label>
+                        <label class="required">Full Name</label>
                         <input type="text"
-                               class="form-control @(validationErrors.ContainsKey("PromoName") ? "error" : "")"
-                               @bind="currentPromo.PromoName"
-                               placeholder="Enter promotion name" />
-                        @if (validationErrors.ContainsKey("PromoName"))
+                               class="form-control @(validationErrors.ContainsKey("FullName") ? "error" : "")"
+                               @bind="currentWalkin.FullName"
+                               placeholder="Enter customer's full name" />
+                        @if (validationErrors.ContainsKey("FullName"))
                         {
-                            <div class="error-message">@validationErrors["PromoName"]</div>
+                            <div class="error-message">@validationErrors["FullName"]</div>
                         }
                     </div>
 
-                    <!-- Description -->
+                    <!-- Visit Date -->
                     <div class="form-group">
-                        <label class="required">Description</label>
-                        <textarea class="form-control @(validationErrors.ContainsKey("Description") ? "error" : "")"
-                                  @bind="currentPromo.Description"
-                                  placeholder="Enter promotion description"
-                                  rows="3"></textarea>
-                        @if (validationErrors.ContainsKey("Description"))
+                        <label class="required">Visit Date & Time</label>
+                        <input type="datetime-local"
+                               class="form-control @(validationErrors.ContainsKey("VisitDate") ? "error" : "")"
+                               @bind="currentWalkin.VisitDate"
+                               format="yyyy-MM-ddTHH:mm" />
+                        @if (validationErrors.ContainsKey("VisitDate"))
                         {
-                            <div class="error-message">@validationErrors["Description"]</div>
+                            <div class="error-message">@validationErrors["VisitDate"]</div>
                         }
                     </div>
 
-                    <!-- Discount Rate -->
+                    <!-- Payment Amount -->
                     <div class="form-group">
-                        <label class="required">Discount Rate (%)</label>
+                        <label class="required">Payment Amount (₱)</label>
                         <input type="number"
-                               step="1"
-                               min="1"
-                               max="100"
-                               class="form-control @(validationErrors.ContainsKey("DiscountRate") ? "error" : "")"
-                               @bind="currentPromo.DiscountRate"
-                               placeholder="Enter discount percentage" />
-                        @if (validationErrors.ContainsKey("DiscountRate"))
+                               step="0.01"
+                               class="form-control @(validationErrors.ContainsKey("PaymentAmount") ? "error" : "")"
+                               @bind="currentWalkin.PaymentAmount"
+                               placeholder="Enter payment amount" />
+                        @if (validationErrors.ContainsKey("PaymentAmount"))
                         {
-                            <div class="error-message">@validationErrors["DiscountRate"]</div>
+                            <div class="error-message">@validationErrors["PaymentAmount"]</div>
                         }
                     </div>
 
-                    <!-- Date Range -->
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="required">Start Date</label>
-                            <input type="date"
-                                   class="form-control @(validationErrors.ContainsKey("StartDate") ? "error" : "")"
-                                   @bind="currentPromo.StartDate"
-                                   format="yyyy-MM-dd" />
-                            @if (validationErrors.ContainsKey("StartDate"))
-                            {
-                                <div class="error-message">@validationErrors["StartDate"]</div>
-                            }
-                        </div>
-                        <div class="form-group">
-                            <label class="required">End Date</label>
-                            <input type="date"
-                                   class="form-control @(validationErrors.ContainsKey("EndDate") ? "error" : "")"
-                                   @bind="currentPromo.EndDate"
-                                   format="yyyy-MM-dd" />
-                            @if (validationErrors.ContainsKey("EndDate"))
-                            {
-                                <div class="error-message">@validationErrors["EndDate"]</div>
-                            }
-                        </div>
-                    </div>
-
-                 
+                    
 
                     <!-- General error message -->
                     @if (validationErrors.ContainsKey("General"))
@@ -176,8 +139,8 @@
 
                 <div class="modal-footer">
                     <button class="btn btn-cancel" @onclick="CloseModal">Cancel</button>
-                    <button class="btn btn-save" @onclick="SavePromotion">
-                        @(isEditMode ? "Update" : "Create") Promotion
+                    <button class="btn btn-save" @onclick="SaveWalkin">
+                        @(isEditMode ? "Update" : "Add") Walk-in
                     </button>
                 </div>
             </div>
@@ -301,55 +264,33 @@
                 background: #f8f9fa;
             }
 
-    .promo-name {
-        font-weight: 600;
-        color: #333;
+    .member-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .member-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
         font-size: 14px;
     }
 
-    .promo-description {
-        color: #666;
-        font-size: 13px;
-        line-height: 1.4;
-        max-width: 200px;
-    }
-
-    /* Discount Rate Styling */
-    .discount-cell {
+    /* Payment Amount Styling */
+    .amount-cell {
         font-weight: 600;
     }
 
-    .discount-rate {
-        color: #e74c3c;
-        font-size: 14px;
-        background: #ffeaea;
-        padding: 4px 8px;
-        border-radius: 12px;
-        border: 1px solid #ffcdd2;
-    }
-
-    /* Status Badges */
-    .status-badge {
-        padding: 6px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-
-    .status-active {
-        background: #e8f5e8;
-        color: #2e7d32;
-    }
-
-    .status-upcoming {
-        background: #e3f2fd;
-        color: #1976d2;
-    }
-
-    .status-expired {
-        background: #f5f5f5;
-        color: #757575;
+    .payment-amount {
+        color: #27ae60;
+        font-size: 15px;
     }
 
     .action-buttons {
@@ -448,7 +389,7 @@
         background: white;
         border-radius: 12px;
         width: 90%;
-        max-width: 550px;
+        max-width: 500px;
         max-height: 90vh;
         overflow-y: auto;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
@@ -530,8 +471,8 @@
 
     /* Info Box */
     .info-box {
-        background: #e3f2fd;
-        border: 1px solid #bbdefb;
+        background: #fff3e0;
+        border: 1px solid #ffcc80;
         border-radius: 8px;
         padding: 16px;
         display: flex;
@@ -549,7 +490,7 @@
     }
 
         .info-content strong {
-            color: #1976d2;
+            color: #e65100;
             font-size: 14px;
             display: block;
             margin-bottom: 4px;
@@ -623,16 +564,6 @@
             box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
         }
 
-    /* Additional CSS for the modified modal */
-    .form-row {
-        display: flex;
-        gap: 15px;
-    }
-
-        .form-row .form-group {
-            flex: 1;
-        }
-
     .required::after {
         content: " *";
         color: #e74c3c;
@@ -654,61 +585,45 @@
             width: 16px;
             height: 16px;
         }
-
-        .header-actions {
-            flex-direction: column;
-            gap: 10px;
-            align-items: flex-start;
-        }
-
-        .search-bar {
-            width: 100%;
-        }
     }
 </style>
 
 @code {
     private string searchQuery = "";
-    private bool showPromoModal = false;
+    private bool showWalkinModal = false;
     private bool isEditMode = false;
-    private Promotion currentPromo = new Promotion();
-    private List<Promotion> promotions = new List<Promotion>();
-    private List<Promotion> filteredPromotions = new List<Promotion>();
+    private Walkin currentWalkin = new Walkin();
+    private List<Walkin> walkins = new List<Walkin>();
+    private List<Walkin> filteredWalkins = new List<Walkin>();
     private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
 
     protected override void OnInitialized()
     {
         LoadSampleData();
-        filteredPromotions = promotions;
+        filteredWalkins = walkins;
     }
 
     private void LoadSampleData()
     {
-        promotions = new List<Promotion>
+        walkins = new List<Walkin>
         {
-            new Promotion {
-                PromoID = "PROMO001",
-                PromoName = "Summer Fitness Special",
-                Description = "Get fit this summer with our exclusive member-only discount",
-                DiscountRate = 20,
-                StartDate = DateTime.Now.AddDays(-10),
-                EndDate = DateTime.Now.AddDays(20)
+            new Walkin {
+                WalkinID = "WK001",
+                FullName = "Juan Dela Cruz",
+                VisitDate = DateTime.Now.AddDays(-2).AddHours(10),
+                PaymentAmount = 300.00m
             },
-            new Promotion {
-                PromoID = "PROMO002",
-                PromoName = "New Year Resolution",
-                Description = "Start your fitness journey with this special new year offer for members",
-                DiscountRate = 15,
-                StartDate = DateTime.Now.AddDays(5),
-                EndDate = DateTime.Now.AddDays(35)
+            new Walkin {
+                WalkinID = "WK002",
+                FullName = "Maria Santos",
+                VisitDate = DateTime.Now.AddDays(-1).AddHours(15),
+                PaymentAmount = 300.00m
             },
-            new Promotion {
-                PromoID = "PROMO003",
-                PromoName = "Loyalty Reward",
-                Description = "Special discount for our loyal gym members",
-                DiscountRate = 25,
-                StartDate = DateTime.Now.AddDays(-30),
-                EndDate = DateTime.Now.AddDays(-1)
+            new Walkin {
+                WalkinID = "WK003",
+                FullName = "Pedro Reyes",
+                VisitDate = DateTime.Now.AddHours(9),
+                PaymentAmount = 300.00m
             }
         };
     }
@@ -717,84 +632,70 @@
     {
         if (string.IsNullOrWhiteSpace(searchQuery))
         {
-            filteredPromotions = promotions;
+            filteredWalkins = walkins;
         }
         else
         {
-            filteredPromotions = promotions.Where(p =>
-                p.PromoID.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                p.PromoName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                p.Description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+            filteredWalkins = walkins.Where(w =>
+                w.WalkinID.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                w.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
             ).ToList();
         }
     }
 
-    private void OpenAddPromoModal()
+    private void OpenAddWalkinModal()
     {
         isEditMode = false;
-        currentPromo = new Promotion
+        currentWalkin = new Walkin
         {
-            PromoID = $"PROMO{(promotions.Count + 1):D3}",
-            StartDate = DateTime.Now,
-            EndDate = DateTime.Now.AddDays(30)
+            WalkinID = $"WK{(walkins.Count + 1):D3}",
+            VisitDate = DateTime.Now
         };
         validationErrors.Clear();
-        showPromoModal = true;
+        showWalkinModal = true;
         StateHasChanged();
     }
 
-    private void EditPromotion(Promotion promo)
+    private void EditWalkin(Walkin walkin)
     {
         isEditMode = true;
-        currentPromo = new Promotion
+        currentWalkin = new Walkin
         {
-            PromoID = promo.PromoID,
-            PromoName = promo.PromoName,
-            Description = promo.Description,
-            DiscountRate = promo.DiscountRate,
-            StartDate = promo.StartDate,
-            EndDate = promo.EndDate
+            WalkinID = walkin.WalkinID,
+            FullName = walkin.FullName,
+            VisitDate = walkin.VisitDate,
+            PaymentAmount = walkin.PaymentAmount
         };
         validationErrors.Clear();
-        showPromoModal = true;
+        showWalkinModal = true;
         StateHasChanged();
     }
 
-    private void ArchivePromotion(Promotion promo)
+    private void ArchiveWalkin(Walkin walkin)
     {
         // TODO: Add archive confirmation dialog or logic
-        promotions.Remove(promo);
+        walkins.Remove(walkin);
         HandleSearch();
         StateHasChanged();
     }
 
-    private void ValidatePromotion()
+    private void ValidateWalkin()
     {
         validationErrors.Clear();
 
-        if (string.IsNullOrWhiteSpace(currentPromo.PromoName))
+        if (string.IsNullOrWhiteSpace(currentWalkin.FullName))
         {
-            validationErrors["PromoName"] = "Promotion name is required";
+            validationErrors["FullName"] = "Full name is required";
         }
 
-        if (string.IsNullOrWhiteSpace(currentPromo.Description))
+        if (currentWalkin.PaymentAmount <= 0)
         {
-            validationErrors["Description"] = "Description is required";
+            validationErrors["PaymentAmount"] = "Payment amount must be greater than 0";
         }
 
-        if (currentPromo.DiscountRate <= 0 || currentPromo.DiscountRate > 100)
+        if (currentWalkin.VisitDate > DateTime.Now)
         {
-            validationErrors["DiscountRate"] = "Discount rate must be between 1% and 100%";
-        }
-
-        if (currentPromo.StartDate >= currentPromo.EndDate)
-        {
-            validationErrors["EndDate"] = "End date must be after start date";
-        }
-
-        if (currentPromo.StartDate < DateTime.Now.Date && !isEditMode)
-        {
-            validationErrors["StartDate"] = "Start date cannot be in the past";
+            validationErrors["VisitDate"] = "Visit date cannot be in the future";
         }
 
         if (validationErrors.Count > 0)
@@ -803,9 +704,9 @@
         }
     }
 
-    private void SavePromotion()
+    private void SaveWalkin()
     {
-        ValidatePromotion();
+        ValidateWalkin();
 
         if (validationErrors.Count > 0)
         {
@@ -815,19 +716,17 @@
 
         if (isEditMode)
         {
-            var existingPromo = promotions.FirstOrDefault(p => p.PromoID == currentPromo.PromoID);
-            if (existingPromo != null)
+            var existingWalkin = walkins.FirstOrDefault(w => w.WalkinID == currentWalkin.WalkinID);
+            if (existingWalkin != null)
             {
-                existingPromo.PromoName = currentPromo.PromoName;
-                existingPromo.Description = currentPromo.Description;
-                existingPromo.DiscountRate = currentPromo.DiscountRate;
-                existingPromo.StartDate = currentPromo.StartDate;
-                existingPromo.EndDate = currentPromo.EndDate;
+                existingWalkin.FullName = currentWalkin.FullName;
+                existingWalkin.VisitDate = currentWalkin.VisitDate;
+                existingWalkin.PaymentAmount = currentWalkin.PaymentAmount;
             }
         }
         else
         {
-            promotions.Add(currentPromo);
+            walkins.Add(currentWalkin);
         }
 
         HandleSearch();
@@ -836,41 +735,17 @@
 
     private void CloseModal()
     {
-        showPromoModal = false;
-        currentPromo = new Promotion();
+        showWalkinModal = false;
+        currentWalkin = new Walkin();
         validationErrors.Clear();
         StateHasChanged();
     }
 
-    private string GetStatusClass(Promotion promo)
+    public class Walkin
     {
-        var today = DateTime.Today;
-        if (today < promo.StartDate.Date)
-            return "status-upcoming";
-        else if (today > promo.EndDate.Date)
-            return "status-expired";
-        else
-            return "status-active";
-    }
-
-    private string GetStatusText(Promotion promo)
-    {
-        var today = DateTime.Today;
-        if (today < promo.StartDate.Date)
-            return "Upcoming";
-        else if (today > promo.EndDate.Date)
-            return "Expired";
-        else
-            return "Active";
-    }
-
-    public class Promotion
-    {
-        public string PromoID { get; set; } = "";
-        public string PromoName { get; set; } = "";
-        public string Description { get; set; } = "";
-        public decimal DiscountRate { get; set; }
-        public DateTime StartDate { get; set; } = DateTime.Now;
-        public DateTime EndDate { get; set; } = DateTime.Now.AddDays(30);
+        public string WalkinID { get; set; } = "";
+        public string FullName { get; set; } = "";
+        public DateTime VisitDate { get; set; } = DateTime.Now;
+        public decimal PaymentAmount { get; set; }
     }
 }

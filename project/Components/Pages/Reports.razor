@@ -1,15 +1,387 @@
-@page "/reports"
+﻿@page "/reports"
 @layout MainLayout
+@inherits ComponentBase
 
-<div class="main-content">
-    <h1>Reports Section</h1>
-    <p>Reports and analytics will be generated here.</p>
+<div class="reports-page">
+    <div class="reports-header">
+        <h1>Reports Dashboard</h1>
+        <div class="date-filter">
+            <select @bind="selectedPeriod" class="period-select">
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="custom">Custom Range</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Quick Stats Cards -->
+    <div class="stats-grid">
+        <div class="stat-card income">
+            <div class="stat-icon">💰</div>
+            <div class="stat-info">
+                <h3>Total Income</h3>
+                <div class="stat-amount">₱@(totalIncome?.ToString("N2") ?? "0.00")</div>
+                <div class="stat-breakdown">
+                    <span>Members: ₱@(memberIncome?.ToString("N2") ?? "0.00")</span>
+                    <span>Walk-ins: ₱@(walkinIncome?.ToString("N2") ?? "0.00")</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card members">
+            <div class="stat-icon">👥</div>
+            <div class="stat-info">
+                <h3>Members</h3>
+                <div class="stat-number">@(activeMembers ?? 0)</div>
+                <div class="stat-breakdown">
+                    <span>New: @(newMembers ?? 0)</span>
+                    <span>Expiring: @(expiringMembers ?? 0)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card attendance">
+            <div class="stat-icon">✅</div>
+            <div class="stat-info">
+                <h3>Attendance</h3>
+                <div class="stat-number">@(todayAttendance ?? 0)</div>
+                <div class="stat-breakdown">
+                    <span>Members: @(memberAttendance ?? 0)</span>
+                    <span>Walk-ins: @(walkinAttendance ?? 0)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card alerts">
+            <div class="stat-icon">⏰</div>
+            <div class="stat-info">
+                <h3>Payment Alerts</h3>
+                <div class="stat-number">@(overduePayments ?? 0)</div>
+                <div class="stat-breakdown">
+                    <span>Due Soon: @(dueSoonPayments ?? 0)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Reports Section -->
+    <div class="reports-section">
+        <div class="section-header">
+            <h2>Detailed Reports</h2>
+            <button class="export-btn" @onclick="ExportReports">📊 Export to Excel</button>
+        </div>
+
+        <div class="reports-grid">
+            <!-- Income Report -->
+            <div class="report-card">
+                <h3>💰 Income Details</h3>
+                <div class="report-content">
+                    <div class="report-item">
+                        <span>PayMongo Payments:</span>
+                        <span>₱@(paymongoIncome?.ToString("N2") ?? "0.00")</span>
+                    </div>
+                    <div class="report-item">
+                        <span>Cash Payments:</span>
+                        <span>₱@(cashIncome?.ToString("N2") ?? "0.00")</span>
+                    </div>
+                    <div class="report-item">
+                        <span>Pending Payments:</span>
+                        <span>₱@(pendingIncome?.ToString("N2") ?? "0.00")</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Membership Report -->
+            <div class="report-card">
+                <h3>👥 Membership Status</h3>
+                <div class="report-content">
+                    <div class="report-item">
+                        <span>Active Members:</span>
+                        <span>@(activeMembers ?? 0)</span>
+                    </div>
+                    <div class="report-item">
+                        <span>Inactive (30+ days):</span>
+                        <span>@(inactiveMembers ?? 0)</span>
+                    </div>
+                    <div class="report-item">
+                        <span>Expiring This Week:</span>
+                        <span class="warning">@(expiringMembers ?? 0)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attendance Report -->
+            <div class="report-card">
+                <h3>✅ Attendance Today</h3>
+                <div class="report-content">
+                    <div class="report-item">
+                        <span>Total Check-ins:</span>
+                        <span>@(todayAttendance ?? 0)</span>
+                    </div>
+                    <div class="report-item">
+                        <span>QR Scans:</span>
+                        <span>@(memberAttendance ?? 0)</span>
+                    </div>
+                    <div class="report-item">
+                        <span>Walk-in Entries:</span>
+                        <span>@(walkinAttendance ?? 0)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment Alerts -->
+            <div class="report-card">
+                <h3>⏰ Payment Alerts</h3>
+                <div class="report-content">
+                    <div class="report-item">
+                        <span>Overdue Payments:</span>
+                        <span class="danger">@(overduePayments ?? 0)</span>
+                    </div>
+                    <div class="report-item">
+                        <span>Due This Week:</span>
+                        <span class="warning">@(dueSoonPayments ?? 0)</span>
+                    </div>
+                    <div class="report-item">
+                        <span>Reminders Sent:</span>
+                        <span>@(remindersSent ?? 0)/@(dueSoonPayments ?? 0)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <style>
-.main-content {
-    padding: 40px;
-    background-color: #f0f4f8;
-    min-height: 100vh;
-}
+    .reports-page {
+        padding: 20px;
+        background: #f8f9fa;
+        min-height: 100vh;
+    }
+
+    .reports-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+        .reports-header h1 {
+            color: #2c3e50;
+            margin: 0;
+        }
+
+    .period-select {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: white;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+
+    .stat-card {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .stat-icon {
+        font-size: 2.5rem;
+    }
+
+    .stat-info h3 {
+        margin: 0 0 10px 0;
+        color: #2c3e50;
+        font-size: 1rem;
+    }
+
+    .stat-amount, .stat-number {
+        font-size: 1.8rem;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    .income .stat-amount {
+        color: #27ae60;
+    }
+
+    .members .stat-number {
+        color: #3498db;
+    }
+
+    .attendance .stat-number {
+        color: #9b59b6;
+    }
+
+    .alerts .stat-number {
+        color: #e74c3c;
+    }
+
+    .stat-breakdown {
+        font-size: 0.8rem;
+        color: #7f8c8d;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    /* Reports Section */
+    .reports-section {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+        .section-header h2 {
+            margin: 0;
+            color: #2c3e50;
+        }
+
+    .export-btn {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+
+        .export-btn:hover {
+            background: #2980b9;
+        }
+
+    /* Reports Grid */
+    .reports-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+    }
+
+    .report-card {
+        border: 1px solid #e1e8ed;
+        border-radius: 8px;
+        padding: 20px;
+        background: #fafbfc;
+    }
+
+        .report-card h3 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+            font-size: 1.1rem;
+        }
+
+    .report-content {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .report-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #ecf0f1;
+    }
+
+        .report-item:last-child {
+            border-bottom: none;
+        }
+
+    .warning {
+        color: #f39c12;
+        font-weight: bold;
+    }
+
+    .danger {
+        color: #e74c3c;
+        font-weight: bold;
+    }
+
+    /* Responsive */
+    @@media (max-width: 768px) {
+        .reports-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .reports-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
+
+@code {
+    private string selectedPeriod = "today";
+
+    // Sample data - replace with actual database calls
+    private decimal? totalIncome = 5250.00m;
+    private decimal? memberIncome = 4200.00m;
+    private decimal? walkinIncome = 1050.00m;
+    private decimal? paymongoIncome = 3412.50m;
+    private decimal? cashIncome = 1837.50m;
+    private decimal? pendingIncome = 1250.00m;
+
+    private int? activeMembers = 142;
+    private int? newMembers = 15;
+    private int? expiringMembers = 8;
+    private int? inactiveMembers = 12;
+
+    private int? todayAttendance = 47;
+    private int? memberAttendance = 42;
+    private int? walkinAttendance = 5;
+
+    private int? overduePayments = 3;
+    private int? dueSoonPayments = 12;
+    private int? remindersSent = 8;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load your actual data here
+        await LoadReportData();
+    }
+
+    private async Task LoadReportData()
+    {
+        // TODO: Replace with actual database calls
+        // Example:
+        // totalIncome = await ReportService.GetTotalIncome(selectedPeriod);
+        // activeMembers = await ReportService.GetActiveMembersCount();
+        // etc...
+    }
+
+    private void ExportReports()
+    {
+        // TODO: Implement export to Excel functionality
+        // You can use libraries like ClosedXML for Excel export
+    }
+
+    private async Task OnPeriodChanged()
+    {
+        await LoadReportData();
+    }
+}

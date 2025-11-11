@@ -24,11 +24,11 @@
                 <tr>
                     <th>MEMBER ID</th>
                     <th>NAME</th>
+                    <th>CONTACT NUMBER</th>
                     <th>EMAIL</th>
-                    <th>PHONE</th>
-                    <th>MEMBERSHIP TYPE</th>
-                    <th>STATUS</th>
+                    <th>ADDRESS</th>
                     <th>JOIN DATE</th>
+                    <th>STATUS</th>
                     <th>ACTIONS</th>
                 </tr>
             </thead>
@@ -53,27 +53,26 @@
                             <td>@member.MemberId</td>
                             <td>
                                 <div class="member-info">
-                                    <div class="member-avatar">@member.Name.Substring(0, 1).ToUpper()</div>
-                                    <span>@member.Name</span>
+                                    <div class="member-avatar">@member.FullName.Substring(0, 1).ToUpper()</div>
+                                    <span>@member.FullName</span>
                                 </div>
                             </td>
+                            <td>@member.ContactNumber</td>
                             <td>@member.Email</td>
-                            <td>@member.Phone</td>
-                            <td>
-                                <span class="membership-badge @GetMembershipClass(member.MembershipType)">
-                                    @member.MembershipType
-                                </span>
-                            </td>
+                            <td class="address-cell">@member.Address</td>
+                            <td>@member.JoinDate.ToString("MM/dd/yyyy")</td>
                             <td>
                                 <span class="status-badge @(member.IsActive ? "status-active" : "status-inactive")">
                                     @(member.IsActive ? "Active" : "Inactive")
                                 </span>
                             </td>
-                            <td>@member.JoinDate.ToString("MM/dd/yyyy")</td>
                             <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditMember(member)" title="Edit">
-                                        ✓
+                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
+                                    </button>
+                                    <button class="action-btn archive-btn" @onclick="() => ArchiveMember(member)" title="Archive">
+                                        <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </div>
                             </td>
@@ -95,42 +94,91 @@
                 </div>
 
                 <div class="modal-body">
-                    <div class="form-group">
-                        <label>Full Name</label>
-                        <input type="text" class="form-control" @bind="currentMember.Name" placeholder="Enter full name" />
-                    </div>
+                    <!-- Validation Error Message -->
+                    @if (showValidationError)
+                    {
+                        <div class="validation-error">
+                            ⚠️ Please fill in all required fields marked with *
+                        </div>
+                    }
 
-                    <div class="form-group">
-                        <label>Email</label>
-                        <input type="email" class="form-control" @bind="currentMember.Email" placeholder="Enter email" />
-                    </div>
-
-                    <div class="form-group">
-                        <label>Phone</label>
-                        <input type="tel" class="form-control" @bind="currentMember.Phone" placeholder="Enter phone number" />
-                    </div>
-
-                    <div class="form-group">
-                        <label>Membership Type</label>
-                        <div class="select-wrapper">
-                            <select class="form-control select-dropdown" @bind="currentMember.MembershipType">
-                                <option value="">Select membership type</option>
-                                <option value="Basic">Basic</option>
-                                <option value="Premium">Premium</option>
-                                <option value="VIP">VIP</option>
-                            </select>
-                            <span class="dropdown-arrow">▼</span>
+                    <!-- Name Fields -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">First Name</label>
+                            <input type="text" class="form-control @(HasError("FirstName") ? "error" : "")" @bind="currentMember.FirstName" placeholder="Enter first name" />
+                            @if (HasError("FirstName"))
+                            {
+                                <div class="field-error">First name is required</div>
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label>Middle Name</label>
+                            <input type="text" class="form-control" @bind="currentMember.MiddleName" placeholder="Enter middle name" />
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label>Status</label>
-                        <div class="select-wrapper">
-                            <select class="form-control select-dropdown" @bind="statusString">
-                                <option value="true">Active</option>
-                                <option value="false">Inactive</option>
-                            </select>
-                            <span class="dropdown-arrow">▼</span>
+                        <label class="required">Last Name</label>
+                        <input type="text" class="form-control @(HasError("LastName") ? "error" : "")" @bind="currentMember.LastName" placeholder="Enter last name" />
+                        @if (HasError("LastName"))
+                        {
+                            <div class="field-error">Last name is required</div>
+                        }
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <!-- Contact Information -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">Contact Number</label>
+                            <input type="tel" class="form-control @(HasError("ContactNumber") ? "error" : "")" @bind="currentMember.ContactNumber" placeholder="Enter contact number" />
+                            @if (HasError("ContactNumber"))
+                            {
+                                <div class="field-error">Contact number is required</div>
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label class="required">Email</label>
+                            <input type="email" class="form-control @(HasError("Email") ? "error" : "")" @bind="currentMember.Email" placeholder="Enter email address" />
+                            @if (HasError("Email"))
+                            {
+                                <div class="field-error">Email is required</div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="required">Address</label>
+                        <textarea class="form-control address-textarea @(HasError("Address") ? "error" : "")" @bind="currentMember.Address" placeholder="Enter full address" rows="3"></textarea>
+                        @if (HasError("Address"))
+                        {
+                            <div class="field-error">Address is required</div>
+                        }
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <!-- Membership Details -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">Join Date</label>
+                            <input type="date" class="form-control @(HasError("JoinDate") ? "error" : "")" @bind="currentMember.JoinDate" format="yyyy-MM-dd" />
+                            @if (HasError("JoinDate"))
+                            {
+                                <div class="field-error">Join date is required</div>
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label class="required">Status</label>
+                            <div class="select-wrapper">
+                                <select class="form-control select-dropdown" @bind="statusString">
+                                    <option value="true">Active</option>
+                                    <option value="false">Inactive</option>
+                                </select>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -281,27 +329,9 @@
         font-size: 14px;
     }
 
-    .membership-badge {
-        padding: 6px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-
-    .membership-basic {
-        background: #e3f2fd;
-        color: #1976d2;
-    }
-
-    .membership-premium {
-        background: #f3e5f5;
-        color: #7b1fa2;
-    }
-
-    .membership-vip {
-        background: #fff3e0;
-        color: #e65100;
+    .address-cell {
+        max-width: 200px;
+        word-wrap: break-word;
     }
 
     .status-badge {
@@ -329,19 +359,50 @@
     .action-btn {
         background: transparent;
         border: none;
-        font-size: 18px;
         cursor: pointer;
-        padding: 6px;
+        padding: 8px;
         border-radius: 6px;
         transition: all 0.2s;
-        color: #5cb85c;
-        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
     }
 
-    .edit-btn:hover {
-        background: #e3f2fd;
-        transform: scale(1.1);
+    .action-icon {
+        width: 18px;
+        height: 18px;
+        transition: all 0.2s;
     }
+
+    .edit-btn {
+        background: #e3f2fd;
+        color: #3498db;
+    }
+
+        .edit-btn:hover {
+            background: #3498db;
+            transform: scale(1.1);
+        }
+
+            .edit-btn:hover .action-icon {
+                filter: brightness(0) invert(1);
+            }
+
+    .archive-btn {
+        background: #fff3e0;
+        color: #f39c12;
+    }
+
+        .archive-btn:hover {
+            background: #f39c12;
+            transform: scale(1.1);
+        }
+
+            .archive-btn:hover .action-icon {
+                filter: brightness(0) invert(1);
+            }
 
     .no-data {
         text-align: center;
@@ -368,7 +429,7 @@
         color: #bbb;
     }
 
-    /* Modal Styles */
+    /* Modal Styles - FIXED FOR SCROLLING */
     .modal-overlay {
         position: fixed;
         top: 0;
@@ -380,16 +441,20 @@
         justify-content: center;
         align-items: center;
         z-index: 1000;
+        padding: 20px;
+        box-sizing: border-box;
     }
 
     .modal-content {
         background: white;
         border-radius: 12px;
         width: 90%;
-        max-width: 500px;
-        max-height: 90vh;
-        overflow-y: auto;
+        max-width: 600px;
+        max-height: 90vh; /* Prevent modal from exceeding viewport height */
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* Prevent content from overflowing */
     }
 
     .modal-header {
@@ -398,6 +463,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+        flex-shrink: 0; /* Prevent header from shrinking */
     }
 
         .modal-header h2 {
@@ -425,6 +491,25 @@
 
     .modal-body {
         padding: 24px;
+        overflow-y: auto; /* Enable scrolling for modal body */
+        flex: 1; /* Take remaining space */
+        max-height: calc(90vh - 140px); /* Account for header and footer */
+    }
+
+    /* Validation Styles */
+    .validation-error {
+        background: #ffeaa7;
+        border: 1px solid #fdcb6e;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 20px;
+        color: #e17055;
+        font-weight: 600;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0; /* Prevent error message from affecting layout */
     }
 
     .form-group {
@@ -446,6 +531,7 @@
         border-radius: 8px;
         font-size: 15px;
         transition: all 0.3s;
+        box-sizing: border-box; /* Include padding in width calculation */
     }
 
         .form-control:focus {
@@ -453,6 +539,38 @@
             border-color: #5cb85c;
             box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
         }
+
+        /* Error state for form controls */
+        .form-control.error {
+            border-color: #e74c3c;
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+        }
+
+            .form-control.error:focus {
+                border-color: #e74c3c;
+                box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.2);
+            }
+
+    .field-error {
+        color: #e74c3c;
+        font-size: 12px;
+        margin-top: 5px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+        .field-error::before {
+            content: "⚠";
+            font-size: 10px;
+        }
+
+    .address-textarea {
+        resize: vertical;
+        min-height: 80px;
+        font-family: inherit;
+    }
 
     /* Enhanced Dropdown Styles */
     .select-wrapper {
@@ -474,6 +592,7 @@
         border-radius: 8px;
         font-size: 15px;
         transition: all 0.3s;
+        box-sizing: border-box;
     }
 
     .dropdown-arrow {
@@ -508,6 +627,7 @@
         display: flex;
         justify-content: flex-end;
         gap: 12px;
+        flex-shrink: 0; /* Prevent footer from shrinking */
     }
 
     .btn {
@@ -539,16 +659,82 @@
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
         }
+
+    /* Additional CSS for the form layout */
+    .form-row {
+        display: flex;
+        gap: 15px;
+    }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+    .required::after {
+        content: " *";
+        color: #e74c3c;
+    }
+
+    .divider {
+        height: 1px;
+        background-color: #eee;
+        margin: 20px 0;
+        border: none;
+    }
+
+    /* Responsive design for smaller screens */
+    @@media (max-height: 700px) {
+        .modal-content {
+            max-height: 95vh;
+        }
+
+        .modal-body {
+            max-height: calc(95vh - 140px);
+        }
+    }
+
+    @@media (max-width: 768px) {
+        .modal-overlay {
+            padding: 10px;
+        }
+
+        .modal-content {
+            width: 95%;
+            max-height: 95vh;
+        }
+
+        .form-row {
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .action-buttons {
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .action-btn {
+            width: 32px;
+            height: 32px;
+        }
+
+        .action-icon {
+            width: 16px;
+            height: 16px;
+        }
+    }
 </style>
 
 @code {
     private string searchQuery = "";
     private bool showModal = false;
     private bool isEditMode = false;
-    private string statusString = "true"; // Fix for status binding
+    private bool showValidationError = false;
+    private string statusString = "true";
     private Member currentMember = new Member();
     private List<Member> members = new List<Member>();
     private List<Member> filteredMembers = new List<Member>();
+    private List<string> validationErrors = new List<string>();
 
     protected override void OnInitialized()
     {
@@ -560,9 +746,42 @@
     {
         members = new List<Member>
         {
-            new Member { MemberId = "M001", Name = "John Doe", Email = "john@example.com", Phone = "+1234567890", MembershipType = "Premium", IsActive = true, JoinDate = new DateTime(2025, 4, 30) },
-            new Member { MemberId = "M002", Name = "Jane Smith", Email = "jane@example.com", Phone = "+1234567891", MembershipType = "VIP", IsActive = true, JoinDate = new DateTime(2024, 10, 31) },
-            new Member { MemberId = "M003", Name = "Mike Johnson", Email = "mike@example.com", Phone = "+1234567892", MembershipType = "Basic", IsActive = false, JoinDate = new DateTime(2025, 7, 31) }
+            new Member {
+                MemberId = "M001",
+                FirstName = "John",
+                MiddleName = "",
+                LastName = "Doe",
+                FullName = "John Doe",
+                ContactNumber = "+1234567890",
+                Email = "john@example.com",
+                Address = "123 Main St, City, State 12345",
+                JoinDate = new DateTime(2025, 4, 30),
+                IsActive = true
+            },
+            new Member {
+                MemberId = "M002",
+                FirstName = "Jane",
+                MiddleName = "Marie",
+                LastName = "Smith",
+                FullName = "Jane Marie Smith",
+                ContactNumber = "+1234567891",
+                Email = "jane@example.com",
+                Address = "456 Oak Ave, Another City, State 67890",
+                JoinDate = new DateTime(2024, 10, 31),
+                IsActive = true
+            },
+            new Member {
+                MemberId = "M003",
+                FirstName = "Mike",
+                MiddleName = "Robert",
+                LastName = "Johnson",
+                FullName = "Mike Robert Johnson",
+                ContactNumber = "+1234567892",
+                Email = "mike@example.com",
+                Address = "789 Pine Rd, Different City, State 11223",
+                JoinDate = new DateTime(2025, 7, 31),
+                IsActive = false
+            }
         };
     }
 
@@ -575,9 +794,11 @@
         else
         {
             filteredMembers = members.Where(m =>
-                m.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                m.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
                 m.Email.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                m.MemberId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                m.ContactNumber.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                m.MemberId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                m.Address.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
             ).ToList();
         }
     }
@@ -589,10 +810,11 @@
         {
             MemberId = $"M{(members.Count + 1):D3}",
             JoinDate = DateTime.Now,
-            IsActive = true,
-            MembershipType = "Basic"
+            IsActive = true
         };
-        statusString = "true"; // Set default status
+        statusString = "true";
+        showValidationError = false;
+        validationErrors.Clear();
         showModal = true;
         StateHasChanged();
     }
@@ -603,32 +825,89 @@
         currentMember = new Member
         {
             MemberId = member.MemberId,
-            Name = member.Name,
+            FirstName = member.FirstName,
+            MiddleName = member.MiddleName,
+            LastName = member.LastName,
+            FullName = member.FullName,
+            ContactNumber = member.ContactNumber,
             Email = member.Email,
-            Phone = member.Phone,
-            MembershipType = member.MembershipType,
-            IsActive = member.IsActive,
-            JoinDate = member.JoinDate
+            Address = member.Address,
+            JoinDate = member.JoinDate,
+            IsActive = member.IsActive
         };
-        statusString = member.IsActive.ToString().ToLower(); // Set current status
+        statusString = member.IsActive.ToString().ToLower();
+        showValidationError = false;
+        validationErrors.Clear();
         showModal = true;
         StateHasChanged();
     }
 
+    private void ArchiveMember(Member member)
+    {
+        // TODO: Add archive confirmation dialog
+        members.Remove(member);
+        HandleSearch();
+        StateHasChanged();
+    }
+
+    private bool ValidateForm()
+    {
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(currentMember.FirstName))
+            validationErrors.Add("FirstName");
+
+        if (string.IsNullOrWhiteSpace(currentMember.LastName))
+            validationErrors.Add("LastName");
+
+        if (string.IsNullOrWhiteSpace(currentMember.ContactNumber))
+            validationErrors.Add("ContactNumber");
+
+        if (string.IsNullOrWhiteSpace(currentMember.Email))
+            validationErrors.Add("Email");
+
+        if (string.IsNullOrWhiteSpace(currentMember.Address))
+            validationErrors.Add("Address");
+
+        if (currentMember.JoinDate == DateTime.MinValue)
+            validationErrors.Add("JoinDate");
+
+        showValidationError = validationErrors.Any();
+        return !showValidationError;
+    }
+
+    private bool HasError(string fieldName)
+    {
+        return validationErrors.Contains(fieldName);
+    }
+
     private void SaveMember()
     {
-        // Convert string status to boolean - FIXED
+        if (!ValidateForm())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        // Convert string status to boolean
         currentMember.IsActive = bool.Parse(statusString);
+
+        // Build FullName from individual name parts
+        currentMember.FullName = $"{currentMember.FirstName} {currentMember.MiddleName} {currentMember.LastName}".Trim();
 
         if (isEditMode)
         {
             var existingMember = members.FirstOrDefault(m => m.MemberId == currentMember.MemberId);
             if (existingMember != null)
             {
-                existingMember.Name = currentMember.Name;
+                existingMember.FirstName = currentMember.FirstName;
+                existingMember.MiddleName = currentMember.MiddleName;
+                existingMember.LastName = currentMember.LastName;
+                existingMember.FullName = currentMember.FullName;
+                existingMember.ContactNumber = currentMember.ContactNumber;
                 existingMember.Email = currentMember.Email;
-                existingMember.Phone = currentMember.Phone;
-                existingMember.MembershipType = currentMember.MembershipType;
+                existingMember.Address = currentMember.Address;
+                existingMember.JoinDate = currentMember.JoinDate;
                 existingMember.IsActive = currentMember.IsActive;
             }
         }
@@ -645,23 +924,23 @@
     {
         showModal = false;
         currentMember = new Member();
-        statusString = "true"; // Reset status
+        statusString = "true";
+        showValidationError = false;
+        validationErrors.Clear();
         StateHasChanged();
-    }
-
-    private string GetMembershipClass(string membershipType)
-    {
-        return $"membership-{membershipType.ToLower()}";
     }
 
     public class Member
     {
         public string MemberId { get; set; } = "";
-        public string Name { get; set; } = "";
+        public string FirstName { get; set; } = "";
+        public string MiddleName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string FullName { get; set; } = "";
+        public string ContactNumber { get; set; } = "";
         public string Email { get; set; } = "";
-        public string Phone { get; set; } = "";
-        public string MembershipType { get; set; } = "Basic";
-        public bool IsActive { get; set; } = true;
+        public string Address { get; set; } = "";
         public DateTime JoinDate { get; set; } = DateTime.Now;
+        public bool IsActive { get; set; } = true;
     }
 }

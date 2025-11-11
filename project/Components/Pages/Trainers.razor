@@ -24,8 +24,8 @@
                 <tr>
                     <th>TRAINER ID</th>
                     <th>FULL NAME</th>
-                    <th>CONTACT NUMBER</th>
                     <th>SPECIALTY</th>
+                    <th>CONTACT NUMBER</th>
                     <th>ACTIONS</th>
                 </tr>
             </thead>
@@ -54,19 +54,19 @@
                                     <span>@trainer.FullName</span>
                                 </div>
                             </td>
-                            <td>@trainer.ContactNumber</td>
                             <td>
                                 <span class="membership-badge @GetSpecialtyClass(trainer.Specialty)">
                                     @trainer.Specialty
                                 </span>
                             </td>
+                            <td>@trainer.ContactNumber</td>
                             <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditTrainer(trainer)" title="Edit">
-                                        ✓
+                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
-                                    <button class="action-btn delete-btn" @onclick="() => DeleteTrainer(trainer)" title="Delete">
-                                        🗑️
+                                    <button class="action-btn archive-btn" @onclick="() => ArchiveTrainer(trainer)" title="Archive">
+                                        <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </div>
                             </td>
@@ -88,34 +88,49 @@
                 </div>
 
                 <div class="modal-body">
-                    <!-- Name Fields - Modified as requested -->
+                    <!-- Name Fields -->
                     <div class="form-row">
                         <div class="form-group">
                             <label class="required">First Name</label>
-                            <input type="text" class="form-control" @bind="currentTrainer.FirstName" placeholder="Enter first name" />
+                            <input type="text"
+                                   class="form-control @(validationErrors.ContainsKey("FirstName") ? "error" : "")"
+                                   @bind="currentTrainer.FirstName"
+                                   placeholder="Enter first name" />
+                            @if (validationErrors.ContainsKey("FirstName"))
+                            {
+                                <div class="error-message">@validationErrors["FirstName"]</div>
+                            }
                         </div>
                         <div class="form-group">
-                            <label>Middle Name</label>
-                            <input type="text" class="form-control" @bind="currentTrainer.MiddleName" placeholder="Enter middle name" />
+                            <label class="required">Last Name</label>
+                            <input type="text"
+                                   class="form-control @(validationErrors.ContainsKey("LastName") ? "error" : "")"
+                                   @bind="currentTrainer.LastName"
+                                   placeholder="Enter last name" />
+                            @if (validationErrors.ContainsKey("LastName"))
+                            {
+                                <div class="error-message">@validationErrors["LastName"]</div>
+                            }
                         </div>
                     </div>
-
-                    <div class="form-group">
-                        <label class="required">Last Name</label>
-                        <input type="text" class="form-control" @bind="currentTrainer.LastName" placeholder="Enter last name" />
-                    </div>
-
-                    <div class="divider"></div>
 
                     <div class="form-group">
                         <label class="required">Contact Number</label>
-                        <input type="tel" class="form-control" @bind="currentTrainer.ContactNumber" placeholder="Enter contact number" />
+                        <input type="tel"
+                               class="form-control @(validationErrors.ContainsKey("ContactNumber") ? "error" : "")"
+                               @bind="currentTrainer.ContactNumber"
+                               placeholder="Enter contact number" />
+                        @if (validationErrors.ContainsKey("ContactNumber"))
+                        {
+                            <div class="error-message">@validationErrors["ContactNumber"]</div>
+                        }
                     </div>
 
                     <div class="form-group">
                         <label class="required">Specialty</label>
                         <div class="select-wrapper">
-                            <select class="form-control select-dropdown" @bind="currentTrainer.Specialty">
+                            <select class="form-control select-dropdown @(validationErrors.ContainsKey("Specialty") ? "error" : "")"
+                                    @bind="currentTrainer.Specialty">
                                 <option value="">Select specialty</option>
                                 <option value="Strength Training">Strength Training</option>
                                 <option value="Cardio">Cardio</option>
@@ -126,7 +141,19 @@
                             </select>
                             <span class="dropdown-arrow">▼</span>
                         </div>
+                        @if (validationErrors.ContainsKey("Specialty"))
+                        {
+                            <div class="error-message">@validationErrors["Specialty"]</div>
+                        }
                     </div>
+
+                    <!-- General error message -->
+                    @if (validationErrors.ContainsKey("General"))
+                    {
+                        <div class="general-error-message">
+                            @validationErrors["General"]
+                        </div>
+                    }
                 </div>
 
                 <div class="modal-footer">
@@ -322,31 +349,50 @@
     .action-btn {
         background: transparent;
         border: none;
-        font-size: 18px;
         cursor: pointer;
-        padding: 6px;
+        padding: 8px;
         border-radius: 6px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+    }
+
+    .action-icon {
+        width: 18px;
+        height: 18px;
         transition: all 0.2s;
     }
 
     .edit-btn {
-        color: #5cb85c;
-        font-weight: bold;
+        background: #e3f2fd;
+        color: #3498db;
     }
 
         .edit-btn:hover {
-            background: #e3f2fd;
+            background: #3498db;
             transform: scale(1.1);
         }
 
-    .delete-btn {
-        color: #e74c3c;
+            .edit-btn:hover .action-icon {
+                filter: brightness(0) invert(1);
+            }
+
+    .archive-btn {
+        background: #fff3e0;
+        color: #f39c12;
     }
 
-        .delete-btn:hover {
-            background: #ffebee;
+        .archive-btn:hover {
+            background: #f39c12;
             transform: scale(1.1);
         }
+
+            .archive-btn:hover .action-icon {
+                filter: brightness(0) invert(1);
+            }
 
     .no-data {
         text-align: center;
@@ -434,6 +480,7 @@
 
     .form-group {
         margin-bottom: 20px;
+        position: relative;
     }
 
         .form-group label {
@@ -458,6 +505,40 @@
             border-color: #5cb85c;
             box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
         }
+
+        /* Error state for form controls */
+        .form-control.error {
+            border-color: #e74c3c;
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+        }
+
+            .form-control.error:focus {
+                border-color: #e74c3c;
+                box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+            }
+
+    /* Error message styles */
+    .error-message {
+        color: #e74c3c;
+        font-size: 12px;
+        margin-top: 4px;
+        font-weight: 500;
+        display: block;
+        height: 16px;
+        overflow: hidden;
+    }
+
+    .general-error-message {
+        background: #ffeaea;
+        color: #e74c3c;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        border: 1px solid #ffcdd2;
+        margin-top: 10px;
+        text-align: center;
+    }
 
     /* Enhanced Dropdown Styles */
     .select-wrapper {
@@ -505,6 +586,11 @@
         outline: none;
         border-color: #5cb85c;
         box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+    }
+
+    .select-dropdown.error {
+        border-color: #e74c3c;
+        box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
     }
 
     .modal-footer {
@@ -566,6 +652,34 @@
         margin: 20px 0;
         border: none;
     }
+
+    /* Responsive design for smaller screens */
+    @@media (max-width: 768px) {
+        .action-buttons {
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .action-btn {
+            width: 32px;
+            height: 32px;
+        }
+
+        .action-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .header-actions {
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+        }
+
+        .search-bar {
+            width: 100%;
+        }
+    }
 </style>
 
 @code {
@@ -575,6 +689,7 @@
     private Trainer currentTrainer = new Trainer();
     private List<Trainer> trainers = new List<Trainer>();
     private List<Trainer> filteredTrainers = new List<Trainer>();
+    private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
 
     protected override void OnInitialized()
     {
@@ -589,27 +704,24 @@
             new Trainer {
                 TrainerId = "TR001",
                 FirstName = "John",
-                MiddleName = "Michael",
                 LastName = "Doe",
-                FullName = "John Michael Doe",
+                FullName = "John Doe",
                 ContactNumber = "09123456789",
                 Specialty = "Strength Training"
             },
             new Trainer {
                 TrainerId = "TR002",
                 FirstName = "Jane",
-                MiddleName = "Elizabeth",
                 LastName = "Smith",
-                FullName = "Jane Elizabeth Smith",
+                FullName = "Jane Smith",
                 ContactNumber = "09123456790",
                 Specialty = "Yoga"
             },
             new Trainer {
                 TrainerId = "TR003",
                 FirstName = "Mike",
-                MiddleName = "Robert",
                 LastName = "Johnson",
-                FullName = "Mike Robert Johnson",
+                FullName = "Mike Johnson",
                 ContactNumber = "09123456791",
                 Specialty = "Cardio"
             }
@@ -627,7 +739,8 @@
             filteredTrainers = trainers.Where(t =>
                 t.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
                 t.TrainerId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                t.Specialty.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                t.Specialty.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                t.ContactNumber.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
             ).ToList();
         }
     }
@@ -639,6 +752,7 @@
         {
             TrainerId = $"TR{(trainers.Count + 1):D3}"
         };
+        validationErrors.Clear();
         showModal = true;
         StateHasChanged();
     }
@@ -650,31 +764,61 @@
         {
             TrainerId = trainer.TrainerId,
             FirstName = trainer.FirstName,
-            MiddleName = trainer.MiddleName,
             LastName = trainer.LastName,
             ContactNumber = trainer.ContactNumber,
             Specialty = trainer.Specialty
         };
+        validationErrors.Clear();
         showModal = true;
         StateHasChanged();
     }
 
-    private void DeleteTrainer(Trainer trainer)
+    private void ArchiveTrainer(Trainer trainer)
     {
+        // TODO: Add archive confirmation dialog or logic
+        // For now, just remove the trainer (same as delete)
         trainers.Remove(trainer);
         HandleSearch();
         StateHasChanged();
     }
 
+    private void ValidateForm()
+    {
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.FirstName))
+        {
+            validationErrors["FirstName"] = "First name is required";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.LastName))
+        {
+            validationErrors["LastName"] = "Last name is required";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.ContactNumber))
+        {
+            validationErrors["ContactNumber"] = "Contact number is required";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.Specialty))
+        {
+            validationErrors["Specialty"] = "Specialty is required";
+        }
+
+        if (validationErrors.Count > 0)
+        {
+            validationErrors["General"] = "Please fill in all required fields";
+        }
+    }
+
     private void SaveTrainer()
     {
-        // Validation for required fields
-        if (string.IsNullOrWhiteSpace(currentTrainer.FirstName) ||
-            string.IsNullOrWhiteSpace(currentTrainer.LastName) ||
-            string.IsNullOrWhiteSpace(currentTrainer.ContactNumber) ||
-            string.IsNullOrWhiteSpace(currentTrainer.Specialty))
+        ValidateForm();
+
+        if (validationErrors.Count > 0)
         {
-            // Show error message or validation feedback
+            StateHasChanged();
             return;
         }
 
@@ -684,18 +828,17 @@
             if (existingTrainer != null)
             {
                 existingTrainer.FirstName = currentTrainer.FirstName;
-                existingTrainer.MiddleName = currentTrainer.MiddleName;
                 existingTrainer.LastName = currentTrainer.LastName;
                 existingTrainer.ContactNumber = currentTrainer.ContactNumber;
                 existingTrainer.Specialty = currentTrainer.Specialty;
                 // Update FullName for display
-                existingTrainer.FullName = $"{currentTrainer.FirstName} {currentTrainer.MiddleName} {currentTrainer.LastName}".Trim();
+                existingTrainer.FullName = $"{currentTrainer.FirstName} {currentTrainer.LastName}".Trim();
             }
         }
         else
         {
             // Set FullName for display
-            currentTrainer.FullName = $"{currentTrainer.FirstName} {currentTrainer.MiddleName} {currentTrainer.LastName}".Trim();
+            currentTrainer.FullName = $"{currentTrainer.FirstName} {currentTrainer.LastName}".Trim();
             trainers.Add(currentTrainer);
         }
 
@@ -707,6 +850,7 @@
     {
         showModal = false;
         currentTrainer = new Trainer();
+        validationErrors.Clear();
         StateHasChanged();
     }
 
@@ -719,7 +863,6 @@
     {
         public string TrainerId { get; set; } = "";
         public string FirstName { get; set; } = "";
-        public string MiddleName { get; set; } = "";
         public string LastName { get; set; } = "";
         public string FullName { get; set; } = "";
         public string ContactNumber { get; set; } = "";

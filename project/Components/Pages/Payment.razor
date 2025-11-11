@@ -1,15 +1,937 @@
-@page "/payment"
+﻿@page "/payment"
 @layout MainLayout
+@using System.Diagnostics
 
-<div class="main-content">
-    <h1>Payment Section</h1>
-    <p>Payment processing and history will be shown here.</p>
+<div class="members-container">
+    <!-- Page Header - No gaps with sidebar and top -->
+    <div class="page-header">
+        <h1 class="page-title">Payment Management</h1>
+        <div class="header-actions">
+            <input type="text"
+                   class="search-bar"
+                   placeholder="Search payments..."
+                   @bind="searchQuery"
+                   @bind:event="oninput"
+                   @onkeyup="HandleSearch" />
+            <button class="add-member-btn" @onclick="OpenAddPaymentModal">+ Process Payment</button>
+        </div>
+    </div>
+
+    <!-- Payments Data Table -->
+    <div class="table-container">
+        <table class="members-table">
+            <thead>
+                <tr>
+                    <th>PAYMENT ID</th>
+                    <th>MEMBER</th>
+                    <th>AMOUNT</th>
+                    <th>PAYMENT DATE</th>
+                    <th>PAYMENT TYPE</th>
+                    <th>WALK-IN ID</th>
+                    <th>ACTIONS</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (filteredPayments == null || !filteredPayments.Any())
+                {
+                    <tr>
+                        <td colspan="7" class="no-data">
+                            <div class="no-data-content">
+                                <span class="no-data-icon">💳</span>
+                                <p>No payments found</p>
+                                <p class="no-data-sub">Process your first payment to get started</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var payment in filteredPayments)
+                    {
+                        <tr>
+                            <td>@payment.PaymentID</td>
+                            <td>
+                                <div class="member-info">
+                                    <div class="member-avatar">@payment.MemberName?.Substring(0, 1).ToUpper()</div>
+                                    <div>
+                                        <div class="member-name">@payment.MemberName</div>
+                                        <div class="member-id">@payment.MemberID</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="amount-cell">
+                                <span class="payment-amount">₱@payment.Amount.ToString("N2")</span>
+                            </td>
+                            <td>@payment.PaymentDate.ToString("MMM dd, yyyy")</td>
+                            <td>
+                                <span class="payment-badge @GetPaymentTypeClass(payment.PaymentType)">
+                                    @payment.PaymentType
+                                </span>
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(payment.WalkinID))
+                                {
+                                    <span class="walkin-id">@payment.WalkinID</span>
+                                }
+                                else
+                                {
+                                    <span class="no-walkin">-</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="action-btn edit-btn" @onclick="() => EditPayment(payment)" title="Edit">
+                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
+                                    </button>
+                                    <button class="action-btn archive-btn" @onclick="() => ArchivePayment(payment)" title="Archive">
+                                        <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Process Payment Modal -->
+    @if (showPaymentModal)
+    {
+        <div class="modal-overlay" @onclick="CloseModal">
+            <div class="modal-content" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>@(isEditMode ? "Edit Payment" : "Process New Payment")</h2>
+                    <button class="close-btn" @onclick="CloseModal">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Member Selection -->
+                    <div class="form-group">
+                        <label class="required">Select Member</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown @(validationErrors.ContainsKey("MemberID") ? "error" : "")"
+                                    @bind="currentPayment.MemberID">
+                                <option value="">Select a member</option>
+                                @foreach (var member in availableMembers)
+                                {
+                                    <option value="@member.MemberID">@member.FullName (@member.MemberID)</option>
+                                }
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        @if (validationErrors.ContainsKey("MemberID"))
+                        {
+                            <div class="error-message">@validationErrors["MemberID"]</div>
+                        }
+                    </div>
+
+                    <!-- Amount Field -->
+                    <div class="form-group">
+                        <label class="required">Amount (₱)</label>
+                        <input type="number"
+                               step="0.01"
+                               class="form-control @(validationErrors.ContainsKey("Amount") ? "error" : "")"
+                               @bind="currentPayment.Amount"
+                               placeholder="Enter amount" />
+                        @if (validationErrors.ContainsKey("Amount"))
+                        {
+                            <div class="error-message">@validationErrors["Amount"]</div>
+                        }
+                    </div>
+
+                    <!-- Payment Type -->
+                    <div class="form-group">
+                        <label class="required">Payment Type</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown @(validationErrors.ContainsKey("PaymentType") ? "error" : "")"
+                                    @bind="currentPayment.PaymentType">
+                                <option value="">Select payment type</option>
+                                <option value="Cash">Cash</option>
+                                <option value="GCash">GCash</option>
+                                <option value="Credit Card">Credit Card</option>
+                                <option value="Debit Card">Debit Card</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        @if (validationErrors.ContainsKey("PaymentType"))
+                        {
+                            <div class="error-message">@validationErrors["PaymentType"]</div>
+                        }
+                    </div>
+
+                    <!-- Walk-in ID (Optional) -->
+                    <div class="form-group">
+                        <label>Walk-in ID (Optional)</label>
+                        <input type="text"
+                               class="form-control"
+                               @bind="currentPayment.WalkinID"
+                               placeholder="Enter walk-in ID if applicable" />
+                    </div>
+
+                    <!-- Payment Date -->
+                    <div class="form-group">
+                        <label class="required">Payment Date</label>
+                        <input type="date"
+                               class="form-control @(validationErrors.ContainsKey("PaymentDate") ? "error" : "")"
+                               @bind="currentPayment.PaymentDate"
+                               format="yyyy-MM-dd" />
+                        @if (validationErrors.ContainsKey("PaymentDate"))
+                        {
+                            <div class="error-message">@validationErrors["PaymentDate"]</div>
+                        }
+                    </div>
+
+                    <!-- General error message -->
+                    @if (validationErrors.ContainsKey("General"))
+                    {
+                        <div class="general-error-message">
+                            @validationErrors["General"]
+                        </div>
+                    }
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-save" @onclick="ProcessPayment">
+                        @(isEditMode ? "Update" : "Process") Payment
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 <style>
-.main-content {
-    padding: 40px;
-    background-color: #f0f4f8;
-    min-height: 100vh;
-}
+    /* ... (use the complete CSS from my previous response, but remove the receipt-btn styles) ... */
+    .members-container {
+        padding: 0;
+        background: #f0f2f5;
+        min-height: 100vh;
+    }
+
+    .page-header {
+        background: white;
+        padding: 20px 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 0;
+        border-bottom: 1px solid #e0e0e0;
+        margin-left: -30px;
+        margin-right: -30px;
+        margin-top: -30px;
+        width: calc(100% + 60px);
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin: 0;
+        color: #333;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+
+    .search-bar {
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        width: 250px;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+
+        .search-bar:focus {
+            outline: none;
+            border-color: #5cb85c;
+            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+        }
+
+    .add-member-btn {
+        background: #5cb85c;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+        .add-member-btn:hover {
+            background: #4cae4c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+        }
+
+    .table-container {
+        margin: 0;
+        background: white;
+        border-radius: 0;
+        box-shadow: none;
+        overflow: hidden;
+        margin-left: -30px;
+        margin-right: -30px;
+        width: calc(100% + 60px);
+    }
+
+    .members-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+        .members-table thead {
+            background: #6b8299;
+            color: white;
+        }
+
+        .members-table th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #5a7088;
+        }
+
+        .members-table td {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #333;
+        }
+
+        .members-table tbody tr {
+            transition: background 0.2s;
+        }
+
+            .members-table tbody tr:hover {
+                background: #f8f9fa;
+            }
+
+    .member-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .member-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+    .member-name {
+        font-weight: 600;
+        color: #333;
+    }
+
+    .member-id {
+        font-size: 12px;
+        color: #666;
+        margin-top: 2px;
+    }
+
+    .amount-cell {
+        font-weight: 600;
+    }
+
+    .payment-amount {
+        color: #27ae60;
+        font-size: 15px;
+    }
+
+    .payment-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .payment-cash {
+        background: #e8f5e8;
+        color: #2e7d32;
+    }
+
+    .payment-gcash {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
+
+    .payment-credit {
+        background: #fff3e0;
+        color: #e65100;
+    }
+
+    .payment-debit {
+        background: #f3e5f5;
+        color: #7b1fa2;
+    }
+
+    .payment-bank {
+        background: #e1f5fe;
+        color: #0277bd;
+    }
+
+    .walkin-id {
+        background: #f8f9fa;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #666;
+        border: 1px solid #e0e0e0;
+    }
+
+    .no-walkin {
+        color: #999;
+        font-style: italic;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 8px;
+    }
+
+    .action-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 6px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+    }
+
+    .action-icon {
+        width: 18px;
+        height: 18px;
+        transition: all 0.2s;
+    }
+
+    .edit-btn {
+        background: #e3f2fd;
+        color: #3498db;
+    }
+
+        .edit-btn:hover {
+            background: #3498db;
+            transform: scale(1.1);
+        }
+
+            .edit-btn:hover .action-icon {
+                filter: brightness(0) invert(1);
+            }
+
+    .archive-btn {
+        background: #fff3e0;
+        color: #f39c12;
+    }
+
+        .archive-btn:hover {
+            background: #f39c12;
+            transform: scale(1.1);
+        }
+
+            .archive-btn:hover .action-icon {
+                filter: brightness(0) invert(1);
+            }
+
+    .no-data {
+        text-align: center;
+        padding: 60px 20px;
+    }
+
+    .no-data-content {
+        color: #999;
+    }
+
+    .no-data-icon {
+        font-size: 64px;
+        display: block;
+        margin-bottom: 16px;
+    }
+
+    .no-data-content p {
+        margin: 8px 0;
+        font-size: 16px;
+    }
+
+    .no-data-sub {
+        font-size: 14px;
+        color: #bbb;
+    }
+
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 500px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 22px;
+            color: #333;
+        }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 32px;
+        color: #999;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        transition: color 0.2s;
+    }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+    .modal-body {
+        padding: 24px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+        position: relative;
+    }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+    .form-control {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.3s;
+    }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #5cb85c;
+            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+        }
+
+        .form-control.error {
+            border-color: #e74c3c;
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+        }
+
+            .form-control.error:focus {
+                border-color: #e74c3c;
+                box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+            }
+
+    .error-message {
+        color: #e74c3c;
+        font-size: 12px;
+        margin-top: 4px;
+        font-weight: 500;
+        display: block;
+        height: 16px;
+        overflow: hidden;
+    }
+
+    .general-error-message {
+        background: #ffeaea;
+        color: #e74c3c;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        border: 1px solid #ffcdd2;
+        margin-top: 10px;
+        text-align: center;
+    }
+
+    .select-wrapper {
+        position: relative;
+        display: inline-block;
+        width: 100%;
+    }
+
+    .select-dropdown {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        padding-right: 40px;
+        background: white;
+        cursor: pointer;
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.3s;
+    }
+
+    .dropdown-arrow {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        color: #666;
+        font-size: 12px;
+        transition: all 0.2s;
+    }
+
+    .select-dropdown:focus + .dropdown-arrow {
+        color: #5cb85c;
+        transform: translateY(-50%) rotate(180deg);
+    }
+
+    .select-dropdown:hover {
+        border-color: #5cb85c;
+    }
+
+    .select-dropdown:focus {
+        outline: none;
+        border-color: #5cb85c;
+        box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+    }
+
+    .select-dropdown.error {
+        border-color: #e74c3c;
+        box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+    }
+
+    .modal-footer {
+        padding: 16px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-cancel {
+        background: #f5f5f5;
+        color: #666;
+    }
+
+        .btn-cancel:hover {
+            background: #e0e0e0;
+        }
+
+    .btn-save {
+        background: #5cb85c;
+        color: white;
+    }
+
+        .btn-save:hover {
+            background: #4cae4c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+        }
+
+    .required::after {
+        content: " *";
+        color: #e74c3c;
+    }
+
+    /* Responsive design for smaller screens */
+    @@media (max-width: 768px) {
+        .action-buttons {
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .action-btn {
+            width: 32px;
+            height: 32px;
+        }
+
+        .action-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .header-actions {
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+        }
+
+        .search-bar {
+            width: 100%;
+        }
+    }
 </style>
+
+@code {
+    private string searchQuery = "";
+    private bool showPaymentModal = false;
+    private bool isEditMode = false;
+    private PaymentRecord currentPayment = new PaymentRecord();
+    private List<PaymentRecord> payments = new List<PaymentRecord>();
+    private List<PaymentRecord> filteredPayments = new List<PaymentRecord>();
+    private List<MemberRecord> availableMembers = new List<MemberRecord>();
+    private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
+
+    protected override void OnInitialized()
+    {
+        LoadSampleData();
+        filteredPayments = payments;
+    }
+
+    private void LoadSampleData()
+    {
+        // Sample members
+        availableMembers = new List<MemberRecord>
+        {
+            new MemberRecord { MemberID = "MEM001", FullName = "John Smith" },
+            new MemberRecord { MemberID = "MEM002", FullName = "Maria Garcia" },
+            new MemberRecord { MemberID = "MEM003", FullName = "David Johnson" },
+            new MemberRecord { MemberID = "MEM004", FullName = "Sarah Wilson" },
+            new MemberRecord { MemberID = "MEM005", FullName = "Michael Brown" }
+        };
+
+        // Sample payments
+        payments = new List<PaymentRecord>
+        {
+            new PaymentRecord {
+                PaymentID = "PAY001",
+                MemberID = "MEM001",
+                MemberName = "John Smith",
+                Amount = 1500.00m,
+                PaymentDate = DateTime.Now.AddDays(-5),
+                PaymentType = "GCash",
+                WalkinID = ""
+            },
+            new PaymentRecord {
+                PaymentID = "PAY002",
+                MemberID = "MEM002",
+                MemberName = "Maria Garcia",
+                Amount = 2000.00m,
+                PaymentDate = DateTime.Now.AddDays(-3),
+                PaymentType = "Cash",
+                WalkinID = "WK001"
+            },
+            new PaymentRecord {
+                PaymentID = "PAY003",
+                MemberID = "MEM003",
+                MemberName = "David Johnson",
+                Amount = 1800.00m,
+                PaymentDate = DateTime.Now.AddDays(-1),
+                PaymentType = "Credit Card",
+                WalkinID = ""
+            }
+        };
+    }
+
+    private void HandleSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredPayments = payments;
+        }
+        else
+        {
+            filteredPayments = payments.Where(p =>
+                p.PaymentID.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                p.MemberName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                p.MemberID.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                p.PaymentType.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (p.WalkinID != null && p.WalkinID.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+            ).ToList();
+        }
+    }
+
+    private void OpenAddPaymentModal()
+    {
+        isEditMode = false;
+        currentPayment = new PaymentRecord
+        {
+            PaymentID = $"PAY{(payments.Count + 1):D3}",
+            PaymentDate = DateTime.Now
+        };
+        validationErrors.Clear();
+        showPaymentModal = true;
+        StateHasChanged();
+    }
+
+    private void EditPayment(PaymentRecord payment)
+    {
+        isEditMode = true;
+        currentPayment = new PaymentRecord
+        {
+            PaymentID = payment.PaymentID,
+            MemberID = payment.MemberID,
+            Amount = payment.Amount,
+            PaymentDate = payment.PaymentDate,
+            PaymentType = payment.PaymentType,
+            WalkinID = payment.WalkinID
+        };
+        validationErrors.Clear();
+        showPaymentModal = true;
+        StateHasChanged();
+    }
+
+    private void ArchivePayment(PaymentRecord payment)
+    {
+        // TODO: Add archive confirmation dialog or logic
+        payments.Remove(payment);
+        HandleSearch();
+        StateHasChanged();
+    }
+
+    private void ValidatePayment()
+    {
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(currentPayment.MemberID))
+        {
+            validationErrors["MemberID"] = "Please select a member";
+        }
+
+        if (currentPayment.Amount <= 0)
+        {
+            validationErrors["Amount"] = "Amount must be greater than 0";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentPayment.PaymentType))
+        {
+            validationErrors["PaymentType"] = "Please select payment type";
+        }
+
+        if (currentPayment.PaymentDate > DateTime.Now)
+        {
+            validationErrors["PaymentDate"] = "Payment date cannot be in the future";
+        }
+
+        if (validationErrors.Count > 0)
+        {
+            validationErrors["General"] = "Please fill in all required fields correctly";
+        }
+    }
+
+    private void ProcessPayment()
+    {
+        ValidatePayment();
+
+        if (validationErrors.Count > 0)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        // Get member name for display
+        var member = availableMembers.FirstOrDefault(m => m.MemberID == currentPayment.MemberID);
+        currentPayment.MemberName = member?.FullName ?? "Unknown Member";
+
+        if (isEditMode)
+        {
+            var existingPayment = payments.FirstOrDefault(p => p.PaymentID == currentPayment.PaymentID);
+            if (existingPayment != null)
+            {
+                existingPayment.MemberID = currentPayment.MemberID;
+                existingPayment.MemberName = currentPayment.MemberName;
+                existingPayment.Amount = currentPayment.Amount;
+                existingPayment.PaymentDate = currentPayment.PaymentDate;
+                existingPayment.PaymentType = currentPayment.PaymentType;
+                existingPayment.WalkinID = currentPayment.WalkinID;
+            }
+        }
+        else
+        {
+            payments.Add(currentPayment);
+        }
+
+        HandleSearch();
+        CloseModal();
+    }
+
+    private void CloseModal()
+    {
+        showPaymentModal = false;
+        currentPayment = new PaymentRecord();
+        validationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private string GetPaymentTypeClass(string paymentType)
+    {
+        return $"payment-{paymentType.ToLower().Replace(" ", "-")}";
+    }
+
+    public class PaymentRecord
+    {
+        public string PaymentID { get; set; } = "";
+        public string MemberID { get; set; } = "";
+        public string MemberName { get; set; } = "";
+        public decimal Amount { get; set; }
+        public DateTime PaymentDate { get; set; } = DateTime.Now;
+        public string PaymentType { get; set; } = "";
+        public string WalkinID { get; set; } = "";
+    }
+
+    public class MemberRecord
+    {
+        public string MemberID { get; set; } = "";
+        public string FullName { get; set; } = "";
+    }
+}
