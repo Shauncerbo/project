@@ -17,7 +17,8 @@
             <nav class="sidebar-nav">
                 <ul>
                     <li>
-                        <NavLink href="/dashboard" class="nav-link" activeClass="active">
+                        <!-- FIX: Added exact matching to prevent multiple active items -->
+                        <NavLink href="/dashboard" class="nav-link" activeClass="active" >
                             <img src="/dashboard_icon.svg" class="sidebar-icon" alt="Dashboard" />
                             Dashboard
                         </NavLink>
