@@ -187,25 +187,21 @@
 
 <style>
     .members-container {
-        padding: 0;
-        background: #f0f2f5;
+        padding: 30px;
+        background: #ffffff;
         min-height: 100vh;
     }
 
-    /* Page Header - NO GAPS with sidebar and top */
+    /* Page Header */
     .page-header {
         background: white;
-        padding: 20px 30px;
+        padding: 25px 30px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin: 0;
-        border-bottom: 1px solid #e0e0e0;
-        /* Remove all gaps */
-        margin-left: -30px;
-        margin-right: -30px;
-        margin-top: -30px;
-        width: calc(100% + 60px);
+        margin: 0 0 30px 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
 
     .page-title {
@@ -254,17 +250,13 @@
             box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
         }
 
-    /* Table Container - NO GAPS with header and sidebar */
+    /* Table Container */
     .table-container {
         margin: 0;
         background: white;
-        border-radius: 0;
-        box-shadow: none;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         overflow: hidden;
-        /* Remove all gaps - extend to full width */
-        margin-left: -30px;
-        margin-right: -30px;
-        width: calc(100% + 60px);
     }
 
     .members-table {
@@ -273,7 +265,7 @@
     }
 
         .members-table thead {
-            background: #6b8299;
+            background: #234060;
             color: white;
         }
 
@@ -284,7 +276,7 @@
             font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 2px solid #5a7088;
+            border-bottom: 2px solid #1a3450;
         }
 
         .members-table td {

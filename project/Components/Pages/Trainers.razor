@@ -1,8 +1,21 @@
 ﻿@page "/trainers"
 @layout MainLayout
 @using System.Diagnostics
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@using project.Models
+@using project.Data
+@using Microsoft.EntityFrameworkCore
 
 <div class="members-container">
+    <!-- Loading Indicator -->
+    @if (isLoading)
+    {
+        <div class="loading-overlay">
+            <div class="loading-spinner">Loading trainers...</div>
+        </div>
+    }
+
     <!-- Page Header - No gaps with sidebar and top -->
     <div class="page-header">
         <h1 class="page-title">Trainer Management</h1>
@@ -22,8 +35,7 @@
         <table class="members-table">
             <thead>
                 <tr>
-                    <th>TRAINER ID</th>
-                    <th>FULL NAME</th>
+                    <th>NAME</th>
                     <th>SPECIALTY</th>
                     <th>CONTACT NUMBER</th>
                     <th>ACTIONS</th>
@@ -33,7 +45,7 @@
                 @if (filteredTrainers == null || !filteredTrainers.Any())
                 {
                     <tr>
-                        <td colspan="5" class="no-data">
+                        <td colspan="4" class="no-data">
                             <div class="no-data-content">
                                 <span class="no-data-icon">🏋️</span>
                                 <p>No trainers found</p>
@@ -47,7 +59,6 @@
                     @foreach (var trainer in filteredTrainers)
                     {
                         <tr>
-                            <td>@trainer.TrainerId</td>
                             <td>
                                 <div class="member-info">
                                     <div class="member-avatar">@trainer.FullName.Substring(0, 1).ToUpper()</div>
@@ -65,7 +76,7 @@
                                     <button class="action-btn edit-btn" @onclick="() => EditTrainer(trainer)" title="Edit">
                                         <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
-                                    <button class="action-btn archive-btn" @onclick="() => ArchiveTrainer(trainer)" title="Archive">
+                                    <button class="action-btn archive-btn" @onclick="() => ShowArchiveConfirmation(trainer)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </div>
@@ -100,6 +111,13 @@
                             {
                                 <div class="error-message">@validationErrors["FirstName"]</div>
                             }
+                        </div>
+                        <div class="form-group">
+                            <label>Middle Name</label>
+                            <input type="text"
+                                   class="form-control"
+                                   @bind="currentTrainer.MiddleName"
+                                   placeholder="Enter middle name (optional)" />
                         </div>
                         <div class="form-group">
                             <label class="required">Last Name</label>
@@ -165,29 +183,275 @@
             </div>
         </div>
     }
+
+    <!-- Archive Confirmation Modal -->
+    @if (showArchiveConfirmation)
+    {
+        <div class="modal-overlay" @onclick="CloseArchiveConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Archive Trainer</h2>
+                    <button class="close-btn" @onclick="CloseArchiveConfirmation">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Archive Trainer</h3>
+                        <p>You are about to archive <strong>@selectedTrainer?.FullName</strong>.</p>
+                        <p class="confirmation-warning">This will remove the trainer from the active list. Continue?</p>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseArchiveConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmArchive">Yes, Archive Trainer</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
+@code {
+    private string searchQuery = "";
+    private bool showModal = false;
+    private bool isEditMode = false;
+    private Trainer currentTrainer = new Trainer();
+    private List<Trainer> trainers = new List<Trainer>();
+    private List<Trainer> filteredTrainers = new List<Trainer>();
+    private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
+    private bool showArchiveConfirmation = false;
+    private Trainer? selectedTrainer;
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTrainersFromDatabase();
+    }
+
+    private async Task LoadTrainersFromDatabase()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // FIXED: Use injected Context instead of creating new AppDbContext
+            trainers = await Context.Trainers.ToListAsync();
+            filteredTrainers = trainers;
+
+            await JSRuntime.InvokeVoidAsync("console.log", $"Loaded {trainers.Count} trainers from database");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading trainers: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"Database error: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void HandleSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredTrainers = trainers;
+        }
+        else
+        {
+            filteredTrainers = trainers.Where(t =>
+                t.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                t.Specialty.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                t.ContactNumber.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+        }
+    }
+
+    private void OpenAddTrainerModal()
+    {
+        isEditMode = false;
+        currentTrainer = new Trainer();
+        validationErrors.Clear();
+        showModal = true;
+        StateHasChanged();
+    }
+
+    private void EditTrainer(Trainer trainer)
+    {
+        isEditMode = true;
+        currentTrainer = new Trainer
+        {
+            TrainerID = trainer.TrainerID,
+            FirstName = trainer.FirstName,
+            MiddleName = trainer.MiddleName,
+            LastName = trainer.LastName,
+            ContactNumber = trainer.ContactNumber,
+            Specialty = trainer.Specialty
+        };
+        validationErrors.Clear();
+        showModal = true;
+        StateHasChanged();
+    }
+
+    private void ShowArchiveConfirmation(Trainer trainer)
+    {
+        selectedTrainer = trainer;
+        showArchiveConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseArchiveConfirmation()
+    {
+        showArchiveConfirmation = false;
+        selectedTrainer = null;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmArchive()
+    {
+        if (selectedTrainer != null)
+        {
+            try
+            {
+                // FIXED: Use injected Context instead of creating new AppDbContext
+                var trainer = await Context.Trainers.FindAsync(selectedTrainer.TrainerID);
+                if (trainer != null)
+                {
+                    Context.Trainers.Remove(trainer);
+                    await Context.SaveChangesAsync();
+                    await LoadTrainersFromDatabase();
+                    CloseArchiveConfirmation();
+                    await JSRuntime.InvokeVoidAsync("alert", "Trainer archived successfully!");
+                }
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error archiving trainer: {ex.Message}");
+            }
+        }
+    }
+
+    private void ValidateForm()
+    {
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.FirstName))
+        {
+            validationErrors["FirstName"] = "First name is required";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.LastName))
+        {
+            validationErrors["LastName"] = "Last name is required";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.ContactNumber))
+        {
+            validationErrors["ContactNumber"] = "Contact number is required";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentTrainer.Specialty))
+        {
+            validationErrors["Specialty"] = "Specialty is required";
+        }
+
+        if (validationErrors.Count > 0)
+        {
+            validationErrors["General"] = "Please fill in all required fields";
+        }
+    }
+
+    private async Task SaveTrainer()
+    {
+        ValidateForm();
+
+        if (validationErrors.Count > 0)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            // FIXED: Use injected Context instead of creating new AppDbContext
+            if (isEditMode)
+            {
+                Context.Trainers.Update(currentTrainer);
+                await Context.SaveChangesAsync();
+                await JSRuntime.InvokeVoidAsync("alert", "Trainer updated successfully!");
+            }
+            else
+            {
+                Context.Trainers.Add(currentTrainer);
+                await Context.SaveChangesAsync();
+                await JSRuntime.InvokeVoidAsync("alert", "Trainer added successfully!");
+            }
+
+            await LoadTrainersFromDatabase();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            validationErrors["General"] = $"Error saving trainer: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        currentTrainer = new Trainer();
+        validationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private string GetSpecialtyClass(string specialty)
+    {
+        return $"specialty-{specialty.ToLower().Replace(" ", "-")}";
+    }
+}
+
 <style>
+    /* Your existing CSS styles remain exactly the same */
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
+
+    .loading-spinner {
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        font-weight: 600;
+    }
+
     .members-container {
-        padding: 0;
-        background: #f0f2f5;
+        padding: 30px;
+        background: #ffffff;
         min-height: 100vh;
     }
 
-    /* Page Header - NO GAPS with sidebar and top */
+    /* Page Header */
     .page-header {
         background: white;
-        padding: 20px 30px;
+        padding: 25px 30px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin: 0;
-        border-bottom: 1px solid #e0e0e0;
-        /* Remove all gaps */
-        margin-left: -30px;
-        margin-right: -30px;
-        margin-top: -30px;
-        width: calc(100% + 60px);
+        margin: 0 0 30px 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
 
     .page-title {
@@ -236,17 +500,13 @@
             box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
         }
 
-    /* Table Container - NO GAPS with header and sidebar */
+    /* Table Container */
     .table-container {
         margin: 0;
         background: white;
-        border-radius: 0;
-        box-shadow: none;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         overflow: hidden;
-        /* Remove all gaps - extend to full width */
-        margin-left: -30px;
-        margin-right: -30px;
-        width: calc(100% + 60px);
     }
 
     .members-table {
@@ -255,7 +515,7 @@
     }
 
         .members-table thead {
-            background: #6b8299;
+            background: #234060;
             color: white;
         }
 
@@ -266,7 +526,7 @@
             font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 2px solid #5a7088;
+            border-bottom: 2px solid #1a3450;
         }
 
         .members-table td {
@@ -431,6 +691,8 @@
         justify-content: center;
         align-items: center;
         z-index: 1000;
+        padding: 20px;
+        box-sizing: border-box;
     }
 
     .modal-content {
@@ -441,6 +703,8 @@
         max-height: 90vh;
         overflow-y: auto;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        display: flex;
+        flex-direction: column;
     }
 
     .modal-header {
@@ -449,6 +713,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+        flex-shrink: 0;
     }
 
         .modal-header h2 {
@@ -476,6 +741,9 @@
 
     .modal-body {
         padding: 24px;
+        overflow-y: auto;
+        flex: 1;
+        max-height: calc(90vh - 140px);
     }
 
     .form-group {
@@ -599,6 +867,7 @@
         display: flex;
         justify-content: flex-end;
         gap: 12px;
+        flex-shrink: 0;
     }
 
     .btn {
@@ -653,6 +922,53 @@
         border: none;
     }
 
+    /* NEW STYLES FOR CONFIRMATION MODAL */
+    .confirmation-modal {
+        max-width: 500px;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 24px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .confirmation-warning {
+        color: #e74c3c !important;
+        font-weight: 600;
+        background: #ffeaa7;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 15px !important;
+    }
+
+    .btn-danger {
+        background: #e74c3c;
+        color: white;
+    }
+
+        .btn-danger:hover {
+            background: #c0392b;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+        }
+
     /* Responsive design for smaller screens */
     @@media (max-width: 768px) {
         .action-buttons {
@@ -679,193 +995,17 @@
         .search-bar {
             width: 100%;
         }
+
+        .confirmation-modal {
+            max-width: 95%;
+        }
+
+        .confirmation-icon {
+            font-size: 48px;
+        }
+
+        .confirmation-content h3 {
+            font-size: 20px;
+        }
     }
 </style>
-
-@code {
-    private string searchQuery = "";
-    private bool showModal = false;
-    private bool isEditMode = false;
-    private Trainer currentTrainer = new Trainer();
-    private List<Trainer> trainers = new List<Trainer>();
-    private List<Trainer> filteredTrainers = new List<Trainer>();
-    private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
-
-    protected override void OnInitialized()
-    {
-        LoadSampleData();
-        filteredTrainers = trainers;
-    }
-
-    private void LoadSampleData()
-    {
-        trainers = new List<Trainer>
-        {
-            new Trainer {
-                TrainerId = "TR001",
-                FirstName = "John",
-                LastName = "Doe",
-                FullName = "John Doe",
-                ContactNumber = "09123456789",
-                Specialty = "Strength Training"
-            },
-            new Trainer {
-                TrainerId = "TR002",
-                FirstName = "Jane",
-                LastName = "Smith",
-                FullName = "Jane Smith",
-                ContactNumber = "09123456790",
-                Specialty = "Yoga"
-            },
-            new Trainer {
-                TrainerId = "TR003",
-                FirstName = "Mike",
-                LastName = "Johnson",
-                FullName = "Mike Johnson",
-                ContactNumber = "09123456791",
-                Specialty = "Cardio"
-            }
-        };
-    }
-
-    private void HandleSearch()
-    {
-        if (string.IsNullOrWhiteSpace(searchQuery))
-        {
-            filteredTrainers = trainers;
-        }
-        else
-        {
-            filteredTrainers = trainers.Where(t =>
-                t.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                t.TrainerId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                t.Specialty.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                t.ContactNumber.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
-            ).ToList();
-        }
-    }
-
-    private void OpenAddTrainerModal()
-    {
-        isEditMode = false;
-        currentTrainer = new Trainer
-        {
-            TrainerId = $"TR{(trainers.Count + 1):D3}"
-        };
-        validationErrors.Clear();
-        showModal = true;
-        StateHasChanged();
-    }
-
-    private void EditTrainer(Trainer trainer)
-    {
-        isEditMode = true;
-        currentTrainer = new Trainer
-        {
-            TrainerId = trainer.TrainerId,
-            FirstName = trainer.FirstName,
-            LastName = trainer.LastName,
-            ContactNumber = trainer.ContactNumber,
-            Specialty = trainer.Specialty
-        };
-        validationErrors.Clear();
-        showModal = true;
-        StateHasChanged();
-    }
-
-    private void ArchiveTrainer(Trainer trainer)
-    {
-        // TODO: Add archive confirmation dialog or logic
-        // For now, just remove the trainer (same as delete)
-        trainers.Remove(trainer);
-        HandleSearch();
-        StateHasChanged();
-    }
-
-    private void ValidateForm()
-    {
-        validationErrors.Clear();
-
-        if (string.IsNullOrWhiteSpace(currentTrainer.FirstName))
-        {
-            validationErrors["FirstName"] = "First name is required";
-        }
-
-        if (string.IsNullOrWhiteSpace(currentTrainer.LastName))
-        {
-            validationErrors["LastName"] = "Last name is required";
-        }
-
-        if (string.IsNullOrWhiteSpace(currentTrainer.ContactNumber))
-        {
-            validationErrors["ContactNumber"] = "Contact number is required";
-        }
-
-        if (string.IsNullOrWhiteSpace(currentTrainer.Specialty))
-        {
-            validationErrors["Specialty"] = "Specialty is required";
-        }
-
-        if (validationErrors.Count > 0)
-        {
-            validationErrors["General"] = "Please fill in all required fields";
-        }
-    }
-
-    private void SaveTrainer()
-    {
-        ValidateForm();
-
-        if (validationErrors.Count > 0)
-        {
-            StateHasChanged();
-            return;
-        }
-
-        if (isEditMode)
-        {
-            var existingTrainer = trainers.FirstOrDefault(t => t.TrainerId == currentTrainer.TrainerId);
-            if (existingTrainer != null)
-            {
-                existingTrainer.FirstName = currentTrainer.FirstName;
-                existingTrainer.LastName = currentTrainer.LastName;
-                existingTrainer.ContactNumber = currentTrainer.ContactNumber;
-                existingTrainer.Specialty = currentTrainer.Specialty;
-                // Update FullName for display
-                existingTrainer.FullName = $"{currentTrainer.FirstName} {currentTrainer.LastName}".Trim();
-            }
-        }
-        else
-        {
-            // Set FullName for display
-            currentTrainer.FullName = $"{currentTrainer.FirstName} {currentTrainer.LastName}".Trim();
-            trainers.Add(currentTrainer);
-        }
-
-        HandleSearch();
-        CloseModal();
-    }
-
-    private void CloseModal()
-    {
-        showModal = false;
-        currentTrainer = new Trainer();
-        validationErrors.Clear();
-        StateHasChanged();
-    }
-
-    private string GetSpecialtyClass(string specialty)
-    {
-        return $"specialty-{specialty.ToLower().Replace(" ", "-")}";
-    }
-
-    public class Trainer
-    {
-        public string TrainerId { get; set; } = "";
-        public string FirstName { get; set; } = "";
-        public string LastName { get; set; } = "";
-        public string FullName { get; set; } = "";
-        public string ContactNumber { get; set; } = "";
-        public string Specialty { get; set; } = "";
-    }
-}

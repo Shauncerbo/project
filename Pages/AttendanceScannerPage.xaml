@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.Maui.Controls"
+             x:Class="project.Pages.AttendanceScannerPage"
+             Title="Native QR Scanner">
+    <Grid RowDefinitions="Auto,*,Auto" Padding="20" RowSpacing="16">
+        <StackLayout>
+            <Label Text="Native QR Scanner"
+                   FontSize="24"
+                   FontAttributes="Bold" />
+            <Label Text="This scanner uses ZXing.Net.Maui and the native camera for maximum compatibility."
+                   FontSize="13"
+                   TextColor="#6c757d" />
+        </StackLayout>
+
+        <Frame Grid.Row="1"
+               CornerRadius="16"
+               HasShadow="True"
+               Padding="0">
+            <zxing:CameraBarcodeReaderView x:Name="cameraView"
+                                           CameraLocation="Rear"
+                                           BarcodesDetected="CameraView_BarcodesDetected"
+                                           Formats="QrCode"
+                                           IsDetecting="False"
+                                           HorizontalOptions="Fill"
+                                           VerticalOptions="Fill" />
+        </Frame>
+
+        <StackLayout Grid.Row="2"
+                     Spacing="10">
+            <Label x:Name="statusLabel"
+                   Text="Tap Start to begin scanning."
+                   FontSize="14"
+                   TextColor="#212529" />
+            <Label x:Name="lastResultLabel"
+                   FontAttributes="Bold"
+                   FontSize="13"
+                   TextColor="#0d6efd" />
+            <StackLayout Orientation="Horizontal"
+                         HorizontalOptions="Center"
+                         Spacing="12">
+                <Button Text="Start"
+                        Clicked="StartButton_Clicked" />
+                <Button Text="Stop"
+                        Clicked="StopButton_Clicked" />
+                <Button Text="Torch"
+                        Clicked="TorchButton_Clicked" />
+                <Button Text="Close"
+                        Clicked="CloseButton_Clicked" />
+            </StackLayout>
+        </StackLayout>
+    </Grid>
+</ContentPage>
+
+

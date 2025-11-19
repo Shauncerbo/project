@@ -1,15 +1,14 @@
-﻿namespace project
-{
-    public partial class App : Application
-    {
-        public App()
-        {
-            InitializeComponent();
-        }
+namespace project;
 
-        protected override Window CreateWindow(IActivationState? activationState)
-        {
-            return new Window(new MainPage()) { Title = "project" };
-        }
+public partial class App : Application
+{
+    public App()
+    {
+        InitializeComponent();
+    }
+
+    protected override Window CreateWindow(IActivationState? activationState)
+    {
+        return new Window(new NavigationPage(new MainPage())) { Title = "project" };
     }
 }

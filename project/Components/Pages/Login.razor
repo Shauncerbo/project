@@ -1,29 +1,46 @@
 ﻿@page "/login"
+@layout BlankLayout
+@using project.Services
+@inject IAuthService AuthService
 @inject NavigationManager NavigationManager
 
 <div class="login-container">
     <!-- Logo -->
     <div class="logo-section">
-        <img src="powerhouse_logo.png" alt="Powerhouse Logo" class="logo-image" />
+        <img src="/powerhouse_logo.png" alt="Powerhouse Logo" class="logo-image" />
     </div>
 
     <!-- Login Form -->
     <div class="form-section">
         <div class="input-group">
-            <img src="user_icon.svg" alt="User Icon" class="input-icon" />
-            <input type="text" class="form-input" placeholder="Username" @bind="username" />
+            <img src="/user_icon.svg" alt="User Icon" class="input-icon" />
+            <input type="text" class="form-input" placeholder="Username" @bind="username" @oninput="ClearError" />
         </div>
 
         <div class="input-group">
-            <img src="lock_icon.svg" alt="Lock Icon" class="input-icon" />
-            <input type="password" class="form-input" placeholder="Password" @bind="password" />
+            <img src="/lock_icon.svg" alt="Lock Icon" class="input-icon" />
+            <input type="password" class="form-input" placeholder="Password" @bind="password"
+                   @oninput="ClearError" @onkeypress="HandleKeyPress" />
         </div>
 
-        <button class="login-button" @onclick="HandleLogin">Login</button>
+        <button class="login-button" @onclick="HandleLogin" disabled="@isLoading">
+            @if (isLoading)
+            {
+                <span>Logging in...</span>
+            }
+            else
+            {
+                <span>Login</span>
+            }
+        </button>
 
         @if (!string.IsNullOrEmpty(errorMessage))
         {
-            <div class="error-message">@errorMessage</div>
+            <div class="error-message">
+                <strong>⚠️ Login Failed</strong><br />
+                @errorMessage<br />
+                <small style="opacity: 0.8; margin-top: 8px; display: block;">Check Debug output (View → Output → Debug) for details</small>
+            </div>
         }
     </div>
 </div>
@@ -38,17 +55,20 @@
 
     .login-container {
         min-height: 100vh;
+        width: 100%;
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
         gap: 40px;
         padding: 40px 20px;
-        background-image: url('gymbg.png');
+        background-image: url('/gymbg.png');
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
         background-color: #1a365d;
+        position: relative;
+        z-index: 2;
     }
 
     .logo-image {
@@ -58,6 +78,7 @@
         border-radius: 15px;
         filter: drop-shadow(0 6px 12px rgba(0,0,0,0.4));
         pointer-events: none;
+        transition: none; /* Prevent image movement during state changes */
     }
 
     .form-section {
@@ -125,7 +146,7 @@
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     }
 
-        .login-button:hover {
+        .login-button:hover:not(:disabled) {
             transform: translateY(-3px);
             box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
             background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
@@ -133,6 +154,12 @@
 
         .login-button:active {
             transform: translateY(-1px);
+        }
+
+        .login-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
         }
 
     .error-message {
@@ -154,25 +181,114 @@
     private string username = "";
     private string password = "";
     private string errorMessage = "";
+    private bool isLoading = false;
 
-    private void HandleLogin()
+    protected override async Task OnInitializedAsync()
+    {
+        // Check if user is already logged in
+        if (await AuthService.IsUserAuthenticated())
+        {
+            NavigationManager.NavigateTo("/dashboard");
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        await PerformLogin();
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await PerformLogin();
+        }
+    }
+
+    private void ClearError()
+    {
+        if (!string.IsNullOrEmpty(errorMessage))
+        {
+            errorMessage = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task PerformLogin()
     {
         errorMessage = "";
+        isLoading = true;
+        StateHasChanged();
 
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
             errorMessage = "Please enter both username and password";
+            isLoading = false;
+            StateHasChanged();
             return;
         }
 
-        if (username == "admin" && password == "adminadmin1234")
+        try
         {
-            // Navigate to dashboard
-            NavigationManager.NavigateTo("/dashboard");
+            System.Diagnostics.Debug.WriteLine($"=== LOGIN ATTEMPT START ===");
+            System.Diagnostics.Debug.WriteLine($"Username: '{username}'");
+            System.Diagnostics.Debug.WriteLine($"Password length: {password.Length}");
+            
+            var result = await AuthService.LoginAsync(username, password);
+
+            System.Diagnostics.Debug.WriteLine($"Login result: {result}");
+
+            if (result)
+            {
+                System.Diagnostics.Debug.WriteLine("Login successful! Verifying authentication state...");
+                
+                // Verify authentication was saved
+                var verifyAuth = await AuthService.IsUserAuthenticated();
+                System.Diagnostics.Debug.WriteLine($"Authentication verification: {verifyAuth}");
+                
+                if (!verifyAuth)
+                {
+                    System.Diagnostics.Debug.WriteLine("WARNING: Authentication state not saved, retrying...");
+                    await Task.Delay(200);
+                    verifyAuth = await AuthService.IsUserAuthenticated();
+                    System.Diagnostics.Debug.WriteLine($"Retry verification: {verifyAuth}");
+                }
+                
+                // Add a small delay to ensure authentication state is saved
+                await Task.Delay(200);
+
+                System.Diagnostics.Debug.WriteLine("Navigating to dashboard...");
+                // Navigate to dashboard on successful login (without forceLoad to avoid Blazor restart)
+                NavigationManager.NavigateTo("/dashboard");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Login failed: Invalid credentials");
+                errorMessage = "Invalid username or password. Please check your credentials and try again.";
+            }
         }
-        else
+        catch (Exception ex)
         {
-            errorMessage = "Invalid username or password";
+            System.Diagnostics.Debug.WriteLine($"=== LOGIN EXCEPTION ===");
+            System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Stack: {ex.StackTrace}");
+            
+            // Show user-friendly error message
+            if (ex.Message.Contains("database") || ex.Message.Contains("connection"))
+            {
+                errorMessage = "Database connection error. Please check if SQL Server is running.";
+            }
+            else
+            {
+                errorMessage = $"Login failed: {ex.Message}";
+            }
+            
+            Console.WriteLine($"Login error: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
         }
     }
 }

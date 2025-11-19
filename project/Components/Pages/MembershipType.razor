@@ -1,0 +1,761 @@
+@page "/membershiptype"
+@layout MainLayout
+@using System.Diagnostics
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
+
+<div class="members-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Membership Type Management</h1>
+        <div class="header-actions">
+            <input type="text"
+                   class="search-bar"
+                   placeholder="Search membership types..."
+                   @bind="searchQuery"
+                   @bind:event="oninput"
+                   @onkeyup="HandleSearch" />
+            <button class="add-member-btn" @onclick="OpenAddModal">+ Create Membership Type</button>
+        </div>
+    </div>
+
+    <!-- Membership Types Data Table -->
+    <div class="table-container">
+        <table class="members-table">
+            <thead>
+                <tr>
+                    <th>TYPE NAME</th>
+                    <th>PRICE</th>
+                    <th>DURATION (DAYS)</th>
+                    <th>ACTIONS</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (isLoading)
+                {
+                    <tr>
+                        <td colspan="4" class="no-data">
+                            <div class="no-data-content">
+                                <p>Loading...</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else if (filteredMembershipTypes == null || !filteredMembershipTypes.Any())
+                {
+                    <tr>
+                        <td colspan="4" class="no-data">
+                            <div class="no-data-content">
+                                <span class="no-data-icon">💳</span>
+                                <p>No membership types found</p>
+                                <p class="no-data-sub">Create your first membership type to get started</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var membershipType in filteredMembershipTypes)
+                    {
+                        <tr>
+                            <td>
+                                <div class="type-name">@membershipType.TypeName</div>
+                            </td>
+                            <td class="price-cell">
+                                <span class="price">₱@membershipType.Price.ToString("N2")</span>
+                            </td>
+                            <td>@membershipType.DurationInDays days</td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="action-btn edit-btn" @onclick="() => EditMembershipType(membershipType)" title="Edit">
+                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
+                                    </button>
+                                    <button class="action-btn archive-btn" @onclick="() => ConfirmArchiveMembershipType(membershipType)" title="Archive">
+                                        <img src="/archived_icon.svg" class="action-icon" alt="Delete" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Add/Edit Membership Type Modal -->
+    @if (showModal)
+    {
+        <div class="modal-overlay" @onclick="CloseModal">
+            <div class="modal-content" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>@(isEditMode ? "Edit Membership Type" : "Create New Membership Type")</h2>
+                    <button class="close-btn" @onclick="CloseModal">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Type Name -->
+                    <div class="form-group">
+                        <label class="required">Type Name</label>
+                        <input type="text"
+                               class="form-control @(validationErrors.ContainsKey("TypeName") ? "error" : "")"
+                               @bind="currentMembershipType.TypeName"
+                               placeholder="Enter membership type name (e.g., Basic, Premium)" />
+                        @if (validationErrors.ContainsKey("TypeName"))
+                        {
+                            <div class="error-message">@validationErrors["TypeName"]</div>
+                        }
+                    </div>
+
+                    <!-- Price -->
+                    <div class="form-group">
+                        <label class="required">Price</label>
+                        <input type="number"
+                               step="0.01"
+                               min="0"
+                               class="form-control @(validationErrors.ContainsKey("Price") ? "error" : "")"
+                               @bind="currentMembershipType.Price"
+                               placeholder="Enter price" />
+                        @if (validationErrors.ContainsKey("Price"))
+                        {
+                            <div class="error-message">@validationErrors["Price"]</div>
+                        }
+                    </div>
+
+                    <!-- Duration In Days -->
+                    <div class="form-group">
+                        <label class="required">Duration (Days)</label>
+                        <input type="number"
+                               min="1"
+                               class="form-control @(validationErrors.ContainsKey("DurationInDays") ? "error" : "")"
+                               @bind="currentMembershipType.DurationInDays"
+                               placeholder="Enter duration in days" />
+                        @if (validationErrors.ContainsKey("DurationInDays"))
+                        {
+                            <div class="error-message">@validationErrors["DurationInDays"]</div>
+                        }
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-save" @onclick="SaveMembershipType">
+                        @(isEditMode ? "Update" : "Create") Membership Type
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (showArchiveConfirmation)
+{
+    <div class="modal-overlay" @onclick="CloseArchiveConfirmation">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h2>Archive Membership Type</h2>
+                <button class="close-btn" @onclick="CloseArchiveConfirmation">×</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="confirmation-content text-only">
+                    <h3>Archive Membership Type</h3>
+                    <p>You are about to archive <strong>@selectedMembershipType?.TypeName</strong>.</p>
+                    <div class="confirmation-warning-box">
+                        This will remove the membership type from the active list. Continue?
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-cancel" @onclick="CloseArchiveConfirmation">Cancel</button>
+                <button class="btn btn-danger" @onclick="DeleteMembershipType">Yes, Archive</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .members-container {
+        padding: 30px;
+        background: #ffffff;
+        min-height: 100vh;
+    }
+
+    /* Page Header */
+    .page-header {
+        background: white;
+        padding: 25px 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 0 0 30px 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin: 0;
+        color: #333;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+
+    .search-bar {
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        width: 250px;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+
+        .search-bar:focus {
+            outline: none;
+            border-color: #5cb85c;
+            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+        }
+
+    .add-member-btn {
+        background: #5cb85c;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+        .add-member-btn:hover {
+            background: #4cae4c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+        }
+
+    /* Table Container */
+    .table-container {
+        margin: 0;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    .members-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+        .members-table thead {
+            background: #f8f9fa;
+        }
+
+        .members-table th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .members-table td {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .members-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+    .type-name {
+        font-weight: 600;
+        color: #333;
+    }
+
+    .price-cell {
+        font-weight: 600;
+    }
+
+    .price {
+        color: #5cb85c;
+        font-size: 15px;
+    }
+
+    .no-data {
+        text-align: center;
+        padding: 60px 20px !important;
+    }
+
+    .no-data-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .no-data-icon {
+        font-size: 48px;
+        margin-bottom: 10px;
+    }
+
+    .no-data-content p {
+        margin: 0;
+        color: #999;
+        font-size: 16px;
+    }
+
+    .no-data-sub {
+        font-size: 14px !important;
+        color: #bbb !important;
+    }
+
+    /* Action Buttons */
+    .action-buttons {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-start;
+    }
+
+    .action-btn {
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        padding: 0;
+    }
+
+    .edit-btn {
+        background: #e3f2fd;
+    }
+
+        .edit-btn:hover {
+            background: #bbdefb;
+            transform: scale(1.05);
+        }
+
+    .archive-btn {
+        background: #ffebee;
+    }
+
+        .archive-btn:hover {
+            background: #ffcdd2;
+            transform: scale(1.05);
+        }
+
+    .action-icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-header {
+        padding: 20px 30px;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 28px;
+        color: #999;
+        cursor: pointer;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s;
+    }
+
+        .close-btn:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+    .modal-body {
+        padding: 30px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .form-group label.required::after {
+            content: " *";
+            color: #dc3545;
+        }
+
+    .form-control {
+        width: 100%;
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: all 0.3s;
+        box-sizing: border-box;
+    }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #5cb85c;
+            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+        }
+
+        .form-control.error {
+            border-color: #dc3545;
+        }
+
+    .error-message {
+        color: #dc3545;
+        font-size: 12px;
+        margin-top: 5px;
+    }
+
+    .modal-footer {
+        padding: 20px 30px;
+        border-top: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-cancel {
+        background: #f0f0f0;
+        color: #333;
+    }
+
+        .btn-cancel:hover {
+            background: #e0e0e0;
+        }
+
+    .btn-save {
+        background: #5cb85c;
+        color: white;
+    }
+
+        .btn-save:hover {
+            background: #4cae4c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+        }
+
+    .confirmation-modal {
+        max-width: 420px;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 22px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-warning {
+        color: #e74c3c;
+        font-weight: 600;
+    }
+
+    .confirmation-warning-box {
+        background: #fff4ce;
+        border: 1px solid #ffe28a;
+        color: #c0392b;
+        font-weight: 600;
+        padding: 12px 16px;
+        border-radius: 8px;
+        text-align: center;
+        margin-top: 12px;
+    }
+
+    /* Responsive design for smaller screens */
+    @@media (max-width: 768px) {
+        .action-buttons {
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .action-btn {
+            width: 32px;
+            height: 32px;
+        }
+
+        .action-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .header-actions {
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+        }
+
+        .search-bar {
+            width: 100%;
+        }
+    }
+</style>
+
+@code {
+    private string searchQuery = "";
+    private bool showModal = false;
+    private bool isEditMode = false;
+    private bool isLoading = false;
+    private bool showArchiveConfirmation = false;
+    private project.Models.MembershipType currentMembershipType = new project.Models.MembershipType();
+    private project.Models.MembershipType? selectedMembershipType;
+    private List<project.Models.MembershipType> membershipTypes = new List<project.Models.MembershipType>();
+    private List<project.Models.MembershipType> filteredMembershipTypes = new List<project.Models.MembershipType>();
+    private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMembershipTypesFromDatabase();
+    }
+
+    private async Task LoadMembershipTypesFromDatabase()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            membershipTypes = await Context.MembershipTypes
+                .Where(mt => mt.IsArchived == false)
+                .ToListAsync();
+            filteredMembershipTypes = membershipTypes;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading membership types: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void HandleSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredMembershipTypes = membershipTypes;
+        }
+        else
+        {
+            var query = searchQuery.ToLower();
+            filteredMembershipTypes = membershipTypes
+                .Where(mt => mt.TypeName.ToLower().Contains(query) ||
+                            mt.Price.ToString().Contains(query) ||
+                            mt.DurationInDays.ToString().Contains(query))
+                .ToList();
+        }
+        StateHasChanged();
+    }
+
+    private void OpenAddModal()
+    {
+        isEditMode = false;
+        currentMembershipType = new project.Models.MembershipType();
+        validationErrors.Clear();
+        showModal = true;
+        StateHasChanged();
+    }
+
+    private void EditMembershipType(project.Models.MembershipType membershipType)
+    {
+        isEditMode = true;
+        currentMembershipType = new project.Models.MembershipType
+        {
+            MembershipTypeID = membershipType.MembershipTypeID,
+            TypeName = membershipType.TypeName,
+            Price = membershipType.Price,
+            DurationInDays = membershipType.DurationInDays
+        };
+        validationErrors.Clear();
+        showModal = true;
+        StateHasChanged();
+    }
+
+    private bool ValidateMembershipType()
+    {
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(currentMembershipType.TypeName))
+        {
+            validationErrors["TypeName"] = "Type name is required";
+        }
+
+        if (currentMembershipType.Price <= 0)
+        {
+            validationErrors["Price"] = "Price must be greater than 0";
+        }
+
+        if (currentMembershipType.DurationInDays <= 0)
+        {
+            validationErrors["DurationInDays"] = "Duration must be greater than 0";
+        }
+
+        return validationErrors.Count == 0;
+    }
+
+    private async Task SaveMembershipType()
+    {
+        if (!ValidateMembershipType())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            if (isEditMode)
+            {
+                Context.MembershipTypes.Update(currentMembershipType);
+            }
+            else
+            {
+                Context.MembershipTypes.Add(currentMembershipType);
+            }
+
+            await Context.SaveChangesAsync();
+            await LoadMembershipTypesFromDatabase();
+            CloseModal();
+            await JSRuntime.InvokeVoidAsync("alert", $"Membership type {(isEditMode ? "updated" : "created")} successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving membership type: {ex.Message}");
+        }
+    }
+
+    private void ConfirmArchiveMembershipType(project.Models.MembershipType membershipType)
+    {
+        selectedMembershipType = membershipType;
+        showArchiveConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseArchiveConfirmation()
+    {
+        showArchiveConfirmation = false;
+        selectedMembershipType = null;
+        StateHasChanged();
+    }
+
+    private async Task DeleteMembershipType()
+    {
+        if (selectedMembershipType == null)
+            return;
+
+        try
+        {
+            selectedMembershipType.IsArchived = true;
+            Context.MembershipTypes.Update(selectedMembershipType);
+            await Context.SaveChangesAsync();
+            await LoadMembershipTypesFromDatabase();
+            CloseArchiveConfirmation();
+            await JSRuntime.InvokeVoidAsync("alert", "Membership type archived successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error archiving membership type: {ex.Message}");
+        }
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        currentMembershipType = new project.Models.MembershipType();
+        validationErrors.Clear();
+        StateHasChanged();
+    }
+}
+

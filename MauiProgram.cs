@@ -18,10 +18,11 @@ namespace project
             var builder = MauiApp.CreateBuilder();
             builder
                 .UseMauiApp<App>()
-                .UseBarcodeReader()
                 .ConfigureMauiHandlers(handlers =>
                 {
                     handlers.AddHandler(typeof(CameraBarcodeReaderView), typeof(CameraBarcodeReaderViewHandler));
+                    handlers.AddHandler(typeof(CameraBarcodeGeneratorView), typeof(CameraBarcodeGeneratorViewHandler));
+                    handlers.AddHandler(typeof(CameraView), typeof(CameraViewHandler));
                 })
                 .ConfigureFonts(fonts =>
                 {
@@ -32,24 +33,20 @@ namespace project
             builder.Services.AddMauiBlazorWebView();
 
 #if WINDOWS
-            // Enhanced WebView2 Camera Permission Handler for newer WebView2 versions
             Microsoft.Maui.Handlers.ViewHandler.ViewMapper.AppendToMapping("CameraPermission", (handler, view) =>
             {
                 if (handler.PlatformView is Microsoft.UI.Xaml.Controls.WebView2 webView2)
                 {
-                    // For newer WebView2 versions, use CoreWebView2Initialized event
                     webView2.CoreWebView2Initialized += (sender, args) =>
                     {
                         try
                         {
                             if (webView2.CoreWebView2 != null)
                             {
-                                // Enable all necessary WebView2 features
                                 webView2.CoreWebView2.Settings.IsWebMessageEnabled = true;
                                 webView2.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
                                 webView2.CoreWebView2.Settings.IsStatusBarEnabled = false;
-                                
-                                // Auto-grant camera and microphone permissions
+
                                 webView2.CoreWebView2.PermissionRequested += (s, e) =>
                                 {
                                     if (e.PermissionKind == Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind.Camera ||
@@ -69,11 +66,9 @@ namespace project
                         }
                     };
 
-                    // Handle WebView2 creation (for older versions compatibility)
                     try
                     {
-                        // Ensure CoreWebView2 is initialized
-                        var _ = webView2.CoreWebView2; // This might trigger initialization
+                        var _ = webView2.CoreWebView2;
                     }
                     catch (Exception ex)
                     {
@@ -88,14 +83,12 @@ namespace project
             builder.Logging.AddDebug();
 #endif
 
-            // Register services
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IAttendanceService, AttendanceService>();
             builder.Services.AddScoped<IMemberService, MemberService>();
             builder.Services.AddSingleton<INativeNavigationService, NativeNavigationService>();
             builder.Services.AddTransient<AttendanceScannerPage>();
 
-            // Database configuration
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseSqlServer("Data Source=LAPTOP-3VCGD3TV\\SQLEXPRESS;Initial Catalog=GymCRM_DB;Integrated Security=True;Trust Server Certificate=True"));
 
@@ -103,3 +96,5 @@ namespace project
         }
     }
 }
+
+

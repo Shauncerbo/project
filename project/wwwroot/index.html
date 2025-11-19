@@ -4,15 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
-    <link rel="stylesheet" href="app.css" />  <!-- ADD THIS LINE -->
-    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
-    <link rel="stylesheet" href="css/app.css" />
-    
+    <title>PowerHouse Gym</title>
 
+    <!-- CSS FILES -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/app.css" />
+
+    <!-- Add jsQR library for QR code scanning -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
 <body>
-
     <div class="status-bar-safe-area"></div>
 
     <div id="app">Loading...</div>
@@ -23,8 +28,288 @@
         <a class="dismiss">🗙</a>
     </div>
 
-    <script src="_framework/blazor.webview.js" autostart="false"></script>
+    <script src="_framework/blazor.webview.js"></script>
 
+    <script>
+        // MAUI WebView2 Camera Implementation
+        let stream = null;
+        let scannerInterval = null;
+        let isCameraActive = false;
+
+        // Enhanced camera function with MAUI WebView2 compatibility
+        function startCameraSimple(videoElementId, dotNetHelper) {
+            return new Promise((resolve, reject) => {
+                console.log('🚀 MAUI Camera Starting for element:', videoElementId);
+
+                const video = document.getElementById(videoElementId);
+                if (!video) {
+                    reject(new Error('Video element not found. Make sure camera UI is visible.'));
+                    return;
+                }
+
+                // MAUI WebView2 optimized constraints
+                const constraints = {
+                    video: {
+                        width: { min: 640, ideal: 1280, max: 1920 },
+                        height: { min: 480, ideal: 720, max: 1080 },
+                        frameRate: { ideal: 24, max: 30 },
+                        facingMode: 'environment' // Prefer rear camera
+                    },
+                    audio: false
+                };
+
+                console.log('📷 Requesting camera access with constraints:', constraints);
+
+                // Enhanced error handling for MAUI WebView2
+                navigator.mediaDevices.getUserMedia(constraints)
+                    .then(mediaStream => {
+                        console.log('✅ MAUI Camera Access Granted! Stream active:', mediaStream.active);
+                        stream = mediaStream;
+                        video.srcObject = stream;
+                        isCameraActive = true;
+
+                        // Handle video playback
+                        const handleVideoPlayback = () => {
+                            video.play()
+                                .then(() => {
+                                    console.log('🎥 Camera streaming successfully! Starting QR scanner...');
+                                    startQRScanning(video, dotNetHelper);
+                                    resolve();
+                                })
+                                .catch(playError => {
+                                    console.warn('⚠️ Video play warning:', playError);
+                                    // Continue even if play has issues
+                                    startQRScanning(video, dotNetHelper);
+                                    resolve();
+                                });
+                        };
+
+                        // Wait for video to be ready
+                        if (video.readyState >= 4) { // HAVE_ENOUGH_DATA
+                            handleVideoPlayback();
+                        } else {
+                            video.onloadedmetadata = function () {
+                                console.log('📐 Video metadata loaded');
+                                handleVideoPlayback();
+                            };
+
+                            // Fallback timeout
+                            setTimeout(() => {
+                                if (isCameraActive) {
+                                    console.log('⏰ Video ready fallback triggered');
+                                    handleVideoPlayback();
+                                }
+                            }, 2000);
+                        }
+
+                        video.onerror = function (event) {
+                            console.warn('⚠️ Video element warning:', event);
+                        };
+                    })
+                    .catch(error => {
+                        console.error('❌ MAUI Camera Error:', error.name, error.message);
+                        isCameraActive = false;
+
+                        let userMessage = 'Camera access failed: ';
+
+                        switch (error.name) {
+                            case 'NotAllowedError':
+                                userMessage = `🔒 Camera Permission Required
+
+MAUI WebView2 cannot access camera automatically.
+
+PLEASE DO THIS:
+1. Make sure Windows Camera permissions are enabled
+2. Close and reopen the app
+3. Check no other app is using the camera
+
+Settings Path:
+Windows Settings → Privacy & Security → Camera → Allow apps to access your camera`;
+                                break;
+                            case 'NotFoundError':
+                                userMessage = 'No camera found on this device.';
+                                break;
+                            case 'NotSupportedError':
+                                userMessage = 'Camera not supported in MAUI WebView.';
+                                break;
+                            case 'NotReadableError':
+                                userMessage = 'Camera is busy or being used by another application.';
+                                break;
+                            default:
+                                userMessage = `Camera error: ${error.message}`;
+                                break;
+                        }
+
+                        reject(new Error(userMessage));
+                    });
+            });
+        }
+
+        function startQRScanning(video, dotNetHelper) {
+            console.log('🔍 Starting QR scanning...');
+
+            // Clear any existing interval
+            if (scannerInterval) {
+                clearInterval(scannerInterval);
+            }
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            scannerInterval = setInterval(() => {
+                try {
+                    if (!video || video.readyState !== 4 || !isCameraActive) {
+                        return;
+                    }
+
+                    // Set canvas dimensions to match video
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+
+                    // Draw video frame to canvas
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    // Get image data for QR scanning
+                    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+
+                    // Scan for QR codes
+                    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                        inversionAttempts: "dontInvert",
+                    });
+
+                    if (code) {
+                        console.log('✅ QR Code detected:', code.data);
+                        if (dotNetHelper && dotNetHelper.invokeMethodAsync) {
+                            dotNetHelper.invokeMethodAsync('OnQRCodeScanned', code.data)
+                                .catch(err => console.log('QR code processed'));
+                        }
+                    }
+                } catch (error) {
+                    console.log('QR scan error:', error);
+                }
+            }, 500); // Scan every 500ms
+        }
+
+        function stopCamera() {
+            console.log('🛑 Stopping camera...');
+            isCameraActive = false;
+
+            if (scannerInterval) {
+                clearInterval(scannerInterval);
+                scannerInterval = null;
+            }
+
+            if (stream) {
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                });
+                stream = null;
+            }
+
+            const video = document.getElementById('qrScanner');
+            if (video) {
+                video.srcObject = null;
+            }
+
+            console.log('✅ Camera stopped completely');
+        }
+
+        // Camera availability check
+        function testCameraAvailability() {
+            return new Promise((resolve) => {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    resolve('Camera API not available in MAUI WebView2');
+                    return;
+                }
+
+                navigator.mediaDevices.enumerateDevices()
+                    .then(devices => {
+                        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                        resolve(`Found ${videoDevices.length} camera device(s) available`);
+                    })
+                    .catch(error => {
+                        resolve('Cannot access camera devices: ' + error.message);
+                    });
+            });
+        }
+
+        // Utility functions
+        function downloadFile(base64Data, fileName, mimeType) {
+            try {
+                const link = document.createElement('a');
+                link.href = 'data:' + mimeType + ';base64,' + base64Data;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                return true;
+            } catch (error) {
+                console.error('Download error:', error);
+                return false;
+            }
+        }
+
+        function printQRCode(base64Image) {
+            try {
+                var printWindow = window.open('', '_blank');
+                printWindow.document.write(`
+                        <html>
+                            <head><title>Print QR Code</title></head>
+                            <body style="text-align: center; margin: 50px;">
+                                <div style="margin: 20px auto; padding: 20px; border: 1px solid #ddd; display: inline-block;">
+                                    <h2>Member QR Code</h2>
+                                    <img src="data:image/png;base64,${base64Image}" style="width: 300px; height: 300px;" />
+                                    <p>Scan this code for gym access</p>
+                                </div>
+                                <script>window.print();setTimeout(()=>window.close(),1000);<\/script>
+                            </body>
+                        </html>
+                    `);
+                printWindow.document.close();
+                return true;
+            } catch (error) {
+                console.error('Print error:', error);
+                return false;
+            }
+        }
+
+        // Ultra-simple camera preview helper
+        window.simpleCamera = {
+            stream: null,
+            async start(videoId) {
+                const video = document.getElementById(videoId);
+                if (!video) throw new Error('Preview element not found.');
+                this.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                video.srcObject = this.stream;
+            },
+            stop(videoId) {
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                    this.stream = null;
+                }
+                const video = document.getElementById(videoId);
+                if (video) video.srcObject = null;
+            }
+        };
+
+        // Logout button handler
+        window.setupLogoutButton = function(dotNetRef) {
+            const btn = document.getElementById('logout-btn');
+            if (btn) {
+                console.log('Setting up logout button with JavaScript...');
+                btn.addEventListener('click', function(e) {
+                    console.log('JavaScript detected logout button click!');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (dotNetRef && dotNetRef.invokeMethodAsync) {
+                        dotNetRef.invokeMethodAsync('HandleLogoutFromJS')
+                            .catch(err => console.error('Logout error:', err));
+                    }
+                });
+            } else {
+                console.warn('Logout button not found!');
+            }
+        };
+    </script>
 </body>
-
 </html>

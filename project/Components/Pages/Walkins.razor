@@ -1,8 +1,21 @@
 ﻿@page "/walkins"
 @layout MainLayout
 @using System.Diagnostics
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@using project.Models
+@using project.Data
+@using Microsoft.EntityFrameworkCore
 
 <div class="members-container">
+    <!-- Loading Indicator -->
+    @if (isLoading)
+    {
+        <div class="loading-overlay">
+            <div class="loading-spinner">Loading walk-ins...</div>
+        </div>
+    }
+
     <!-- Page Header - No gaps with sidebar and top -->
     <div class="page-header">
         <h1 class="page-title">Walk-in Customers</h1>
@@ -22,10 +35,10 @@
         <table class="members-table">
             <thead>
                 <tr>
-                    <th>WALK-IN ID</th>
-                    <th>FULL NAME</th>
+                    <th>NAME</th>
                     <th>VISIT DATE</th>
                     <th>PAYMENT AMOUNT</th>
+                    <th>TRAINER</th>
                     <th>ACTIONS</th>
                 </tr>
             </thead>
@@ -47,11 +60,14 @@
                     @foreach (var walkin in filteredWalkins)
                     {
                         <tr>
-                            <td>@walkin.WalkinID</td>
                             <td>
                                 <div class="member-info">
-                                    <div class="member-avatar">@walkin.FullName?.Substring(0, 1).ToUpper()</div>
-                                    <span>@walkin.FullName</span>
+                                    @{
+                                        var fullName = GetFullName(walkin);
+                                        var initial = !string.IsNullOrEmpty(fullName) ? fullName.Substring(0, 1).ToUpper() : "?";
+                                    }
+                                    <div class="member-avatar">@initial</div>
+                                    <span>@fullName</span>
                                 </div>
                             </td>
                             <td>@walkin.VisitDate.ToString("MMM dd, yyyy hh:mm tt")</td>
@@ -59,11 +75,24 @@
                                 <span class="payment-amount">₱@walkin.PaymentAmount.ToString("N2")</span>
                             </td>
                             <td>
+                                <div class="trainer-info">
+                                    @if (walkin.TrainerID.HasValue && walkin.Trainer != null)
+                                    {
+                                        <div class="trainer-name">@walkin.Trainer.FullName</div>
+                                        <div class="trainer-specialty">@walkin.Trainer.Specialty</div>
+                                    }
+                                    else
+                                    {
+                                        <span class="no-trainer">No trainer assigned</span>
+                                    }
+                                </div>
+                            </td>
+                            <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditWalkin(walkin)" title="Edit">
                                         <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
-                                    <button class="action-btn archive-btn" @onclick="() => ArchiveWalkin(walkin)" title="Archive">
+                                    <button class="action-btn archive-btn" @onclick="() => ConfirmWalkinArchive(walkin)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </div>
@@ -86,16 +115,42 @@
                 </div>
 
                 <div class="modal-body">
-                    <!-- Full Name -->
+                    <!-- First Name -->
                     <div class="form-group">
-                        <label class="required">Full Name</label>
+                        <label class="required">First Name</label>
                         <input type="text"
-                               class="form-control @(validationErrors.ContainsKey("FullName") ? "error" : "")"
-                               @bind="currentWalkin.FullName"
-                               placeholder="Enter customer's full name" />
-                        @if (validationErrors.ContainsKey("FullName"))
+                               class="form-control @(validationErrors.ContainsKey("FirstName") ? "error" : "")"
+                               @bind="currentWalkin.FirstName"
+                               placeholder="Enter first name" />
+                        @if (validationErrors.ContainsKey("FirstName"))
                         {
-                            <div class="error-message">@validationErrors["FullName"]</div>
+                            <div class="error-message">@validationErrors["FirstName"]</div>
+                        }
+                    </div>
+
+                    <!-- Middle Name -->
+                    <div class="form-group">
+                        <label>Middle Name</label>
+                        <input type="text"
+                               class="form-control @(validationErrors.ContainsKey("MiddleName") ? "error" : "")"
+                               @bind="currentWalkin.MiddleName"
+                               placeholder="Enter middle name (optional)" />
+                        @if (validationErrors.ContainsKey("MiddleName"))
+                        {
+                            <div class="error-message">@validationErrors["MiddleName"]</div>
+                        }
+                    </div>
+
+                    <!-- Last Name -->
+                    <div class="form-group">
+                        <label class="required">Last Name</label>
+                        <input type="text"
+                               class="form-control @(validationErrors.ContainsKey("LastName") ? "error" : "")"
+                               @bind="currentWalkin.LastName"
+                               placeholder="Enter last name" />
+                        @if (validationErrors.ContainsKey("LastName"))
+                        {
+                            <div class="error-message">@validationErrors["LastName"]</div>
                         }
                     </div>
 
@@ -127,6 +182,20 @@
                     </div>
 
                     
+                    <!-- Trainer Assignment -->
+                    <div class="form-group">
+                        <label>Assign Trainer (Optional)</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown" @bind="currentWalkin.TrainerID">
+                                <option value="">Select a trainer (optional)</option>
+                                @foreach (var trainer in availableTrainers)
+                                {
+                                    <option value="@trainer.TrainerID">@trainer.FullName - @trainer.Specialty</option>
+                                }
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                    </div>
 
                     <!-- General error message -->
                     @if (validationErrors.ContainsKey("General"))
@@ -139,7 +208,7 @@
 
                 <div class="modal-footer">
                     <button class="btn btn-cancel" @onclick="CloseModal">Cancel</button>
-                    <button class="btn btn-save" @onclick="SaveWalkin">
+                    <button class="btn btn-save" @onclick="SaveWalkin" @onclick:preventDefault="true">
                         @(isEditMode ? "Update" : "Add") Walk-in
                     </button>
                 </div>
@@ -150,25 +219,21 @@
 
 <style>
     .members-container {
-        padding: 0;
-        background: #f0f2f5;
+        padding: 30px;
+        background: #ffffff;
         min-height: 100vh;
     }
 
-    /* Page Header - NO GAPS with sidebar and top */
+    /* Page Header */
     .page-header {
         background: white;
-        padding: 20px 30px;
+        padding: 25px 30px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin: 0;
-        border-bottom: 1px solid #e0e0e0;
-        /* Remove all gaps */
-        margin-left: -30px;
-        margin-right: -30px;
-        margin-top: -30px;
-        width: calc(100% + 60px);
+        margin: 0 0 30px 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
 
     .page-title {
@@ -217,17 +282,44 @@
             box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
         }
 
-    /* Table Container - NO GAPS with header and sidebar */
+    .select-wrapper {
+        position: relative;
+        display: inline-block;
+        width: 100%;
+    }
+
+    .select-dropdown {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        padding-right: 40px;
+        background: white;
+        cursor: pointer;
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.3s;
+    }
+
+    .dropdown-arrow {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        font-size: 14px;
+        color: #999;
+    }
+
+    /* Table Container */
     .table-container {
         margin: 0;
         background: white;
-        border-radius: 0;
-        box-shadow: none;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         overflow: hidden;
-        /* Remove all gaps - extend to full width */
-        margin-left: -30px;
-        margin-right: -30px;
-        width: calc(100% + 60px);
     }
 
     .members-table {
@@ -236,7 +328,7 @@
     }
 
         .members-table thead {
-            background: #6b8299;
+            background: #234060;
             color: white;
         }
 
@@ -247,7 +339,7 @@
             font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 2px solid #5a7088;
+            border-bottom: 2px solid #1a3450;
         }
 
         .members-table td {
@@ -286,6 +378,33 @@
     /* Payment Amount Styling */
     .amount-cell {
         font-weight: 600;
+    }
+
+    .trainer-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .trainer-name {
+        font-weight: 600;
+        color: #333;
+        font-size: 13px;
+    }
+
+    .trainer-specialty {
+        font-size: 11px;
+        color: #666;
+        background: #f8f9fa;
+        padding: 2px 6px;
+        border-radius: 10px;
+        display: inline-block;
+    }
+
+    .no-trainer {
+        color: #999;
+        font-style: italic;
+        font-size: 13px;
     }
 
     .payment-amount {
@@ -569,6 +688,71 @@
         color: #e74c3c;
     }
 
+    /* Loading Overlay */
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
+
+    .loading-spinner {
+        background: white;
+        padding: 20px 40px;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .confirmation-modal {
+        max-width: 420px;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 22px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-warning {
+        color: #e74c3c;
+        font-weight: 600;
+    }
+
+    .confirmation-warning-box {
+        background: #fff4ce;
+        border: 1px solid #ffe28a;
+        color: #c0392b;
+        font-weight: 600;
+        padding: 12px 16px;
+        border-radius: 8px;
+        text-align: center;
+        margin-top: 12px;
+    }
+
     /* Responsive design for smaller screens */
     @@media (max-width: 768px) {
         .action-buttons {
@@ -592,40 +776,90 @@
     private string searchQuery = "";
     private bool showWalkinModal = false;
     private bool isEditMode = false;
-    private Walkin currentWalkin = new Walkin();
-    private List<Walkin> walkins = new List<Walkin>();
-    private List<Walkin> filteredWalkins = new List<Walkin>();
+    private WalkIn currentWalkin = new WalkIn();
+    private List<WalkIn> walkins = new List<WalkIn>();
+    private List<WalkIn> filteredWalkins = new List<WalkIn>();
+    private List<Trainer> availableTrainers = new List<Trainer>();
     private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
+    private bool isLoading = false;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        LoadSampleData();
-        filteredWalkins = walkins;
+        await LoadTrainersFromDatabase();
+        await LoadWalkinsFromDatabase();
     }
 
-    private void LoadSampleData()
+    private async Task LoadWalkinsFromDatabase()
     {
-        walkins = new List<Walkin>
+        isLoading = true;
+        StateHasChanged();
+
+        try
         {
-            new Walkin {
-                WalkinID = "WK001",
-                FullName = "Juan Dela Cruz",
-                VisitDate = DateTime.Now.AddDays(-2).AddHours(10),
-                PaymentAmount = 300.00m
-            },
-            new Walkin {
-                WalkinID = "WK002",
-                FullName = "Maria Santos",
-                VisitDate = DateTime.Now.AddDays(-1).AddHours(15),
-                PaymentAmount = 300.00m
-            },
-            new Walkin {
-                WalkinID = "WK003",
-                FullName = "Pedro Reyes",
-                VisitDate = DateTime.Now.AddHours(9),
-                PaymentAmount = 300.00m
+            walkins = await Context.WalkIns
+                .Where(w => w.IsArchived == false)
+                .Include(w => w.Trainer)
+                .ToListAsync();
+            filteredWalkins = walkins;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading walk-ins: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadTrainersFromDatabase(int? includeTrainerId = null)
+    {
+        try
+        {
+            var assignedTrainerIds = await Context.Members
+                .Where(m => m.TrainerID.HasValue && !m.IsArchived)
+                .Select(m => m.TrainerID!.Value)
+                .ToListAsync();
+
+            var assignedTrainerIdsFromWalkins = await Context.WalkIns
+                .Where(w => w.TrainerID.HasValue && !w.IsArchived)
+                .Select(w => w.TrainerID!.Value)
+                .ToListAsync();
+
+            assignedTrainerIds.AddRange(assignedTrainerIdsFromWalkins);
+
+            if (includeTrainerId.HasValue)
+            {
+                assignedTrainerIds = assignedTrainerIds
+                    .Where(id => id != includeTrainerId.Value)
+                    .ToList();
             }
-        };
+
+            availableTrainers = await Context.Trainers
+                .Where(t => !assignedTrainerIds.Contains(t.TrainerID))
+                .ToListAsync();
+
+            availableTrainers = availableTrainers
+                .OrderBy(t => t.FullName)
+                .ToList();
+
+            if (includeTrainerId.HasValue && !availableTrainers.Any(t => t.TrainerID == includeTrainerId.Value))
+            {
+                var currentTrainer = await Context.Trainers.FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
+                if (currentTrainer != null)
+                {
+                    availableTrainers.Add(currentTrainer);
+                    availableTrainers = availableTrainers
+                        .OrderBy(t => t.FullName)
+                        .ToList();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading trainers: {ex.Message}");
+        }
     }
 
     private void HandleSearch()
@@ -637,55 +871,114 @@
         else
         {
             filteredWalkins = walkins.Where(w =>
-                w.WalkinID.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                w.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                (w.FirstName?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (w.MiddleName?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (w.LastName?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                GetFullName(w).Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (w.Trainer != null && w.Trainer.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
             ).ToList();
         }
     }
 
-    private void OpenAddWalkinModal()
+    private string GetFullName(WalkIn walkin)
+    {
+        if (walkin == null) return "";
+        
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(walkin.FirstName)) parts.Add(walkin.FirstName);
+        if (!string.IsNullOrWhiteSpace(walkin.MiddleName)) parts.Add(walkin.MiddleName);
+        if (!string.IsNullOrWhiteSpace(walkin.LastName)) parts.Add(walkin.LastName);
+        
+        return string.Join(" ", parts);
+    }
+
+    private async Task OpenAddWalkinModal()
     {
         isEditMode = false;
-        currentWalkin = new Walkin
+        currentWalkin = new WalkIn
         {
-            WalkinID = $"WK{(walkins.Count + 1):D3}",
-            VisitDate = DateTime.Now
+            VisitDate = DateTime.Now,
+            TrainerID = null
         };
         validationErrors.Clear();
         showWalkinModal = true;
+        await LoadTrainersFromDatabase(null);
         StateHasChanged();
     }
 
-    private void EditWalkin(Walkin walkin)
+    private async Task EditWalkin(WalkIn walkin)
     {
         isEditMode = true;
-        currentWalkin = new Walkin
+        currentWalkin = new WalkIn
         {
-            WalkinID = walkin.WalkinID,
-            FullName = walkin.FullName,
+            WalkInID = walkin.WalkInID,
+            FirstName = walkin.FirstName,
+            MiddleName = walkin.MiddleName,
+            LastName = walkin.LastName,
             VisitDate = walkin.VisitDate,
-            PaymentAmount = walkin.PaymentAmount
+            PaymentAmount = walkin.PaymentAmount,
+            TrainerID = walkin.TrainerID
         };
         validationErrors.Clear();
         showWalkinModal = true;
+        await LoadTrainersFromDatabase(currentWalkin.TrainerID);
         StateHasChanged();
     }
 
-    private void ArchiveWalkin(Walkin walkin)
+    private WalkIn? selectedWalkin;
+    private bool showWalkinArchiveConfirmation = false;
+
+    private void ConfirmWalkinArchive(WalkIn walkin)
     {
-        // TODO: Add archive confirmation dialog or logic
-        walkins.Remove(walkin);
-        HandleSearch();
+        selectedWalkin = walkin;
+        showWalkinArchiveConfirmation = true;
         StateHasChanged();
+    }
+
+    private void CloseWalkinArchiveConfirmation()
+    {
+        showWalkinArchiveConfirmation = false;
+        selectedWalkin = null;
+        StateHasChanged();
+    }
+
+    private async Task ArchiveWalkin()
+    {
+        if (selectedWalkin == null)
+            return;
+
+        try
+        {
+            var walkinToArchive = await Context.WalkIns.FindAsync(selectedWalkin.WalkInID);
+            if (walkinToArchive != null)
+            {
+                walkinToArchive.IsArchived = true;
+                Context.WalkIns.Update(walkinToArchive);
+                await Context.SaveChangesAsync();
+                await LoadWalkinsFromDatabase();
+                await LoadTrainersFromDatabase();
+                CloseWalkinArchiveConfirmation();
+                await JSRuntime.InvokeVoidAsync("alert", "Walk-in archived successfully!");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error archiving walk-in: {ex.Message}");
+        }
     }
 
     private void ValidateWalkin()
     {
         validationErrors.Clear();
 
-        if (string.IsNullOrWhiteSpace(currentWalkin.FullName))
+        if (string.IsNullOrWhiteSpace(currentWalkin.FirstName))
         {
-            validationErrors["FullName"] = "Full name is required";
+            validationErrors["FirstName"] = "First name is required";
+        }
+
+        if (string.IsNullOrWhiteSpace(currentWalkin.LastName))
+        {
+            validationErrors["LastName"] = "Last name is required";
         }
 
         if (currentWalkin.PaymentAmount <= 0)
@@ -704,7 +997,7 @@
         }
     }
 
-    private void SaveWalkin()
+    private async Task SaveWalkin()
     {
         ValidateWalkin();
 
@@ -714,38 +1007,72 @@
             return;
         }
 
+        try
+        {
         if (isEditMode)
         {
-            var existingWalkin = walkins.FirstOrDefault(w => w.WalkinID == currentWalkin.WalkinID);
+                var existingWalkin = await Context.WalkIns.FindAsync(currentWalkin.WalkInID);
             if (existingWalkin != null)
             {
-                existingWalkin.FullName = currentWalkin.FullName;
+                    existingWalkin.FirstName = currentWalkin.FirstName;
+                    existingWalkin.MiddleName = currentWalkin.MiddleName;
+                    existingWalkin.LastName = currentWalkin.LastName;
                 existingWalkin.VisitDate = currentWalkin.VisitDate;
                 existingWalkin.PaymentAmount = currentWalkin.PaymentAmount;
+                existingWalkin.TrainerID = currentWalkin.TrainerID;
+                    Context.WalkIns.Update(existingWalkin);
             }
         }
         else
         {
-            walkins.Add(currentWalkin);
+                Context.WalkIns.Add(currentWalkin);
         }
 
-        HandleSearch();
+            await Context.SaveChangesAsync();
+            await LoadWalkinsFromDatabase();
+            await LoadTrainersFromDatabase();
         CloseModal();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error saving walk-in: {ex.Message}");
+            validationErrors["General"] = $"Error saving walk-in: {ex.Message}";
+            StateHasChanged();
+        }
     }
 
     private void CloseModal()
     {
         showWalkinModal = false;
-        currentWalkin = new Walkin();
+        currentWalkin = new WalkIn();
         validationErrors.Clear();
         StateHasChanged();
     }
+}
 
-    public class Walkin
-    {
-        public string WalkinID { get; set; } = "";
-        public string FullName { get; set; } = "";
-        public DateTime VisitDate { get; set; } = DateTime.Now;
-        public decimal PaymentAmount { get; set; }
-    }
+@if (showWalkinArchiveConfirmation)
+{
+    <div class="modal-overlay" @onclick="CloseWalkinArchiveConfirmation">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h2>Archive Walk-in</h2>
+                <button class="close-btn" @onclick="CloseWalkinArchiveConfirmation">×</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="confirmation-content text-only">
+                    <h3>Archive Walk-in</h3>
+                    <p>You are about to archive <strong>@GetFullName(selectedWalkin)</strong>.</p>
+                    <div class="confirmation-warning-box">
+                        This will remove the walk-in from the active list. Continue?
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-cancel" @onclick="CloseWalkinArchiveConfirmation">Cancel</button>
+                <button class="btn btn-danger" @onclick="ArchiveWalkin">Yes, Archive Walk-in</button>
+            </div>
+        </div>
+    </div>
 }

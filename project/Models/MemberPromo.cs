@@ -1,20 +1,24 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace project.Models
 {
     public class MemberPromo
     {
-        public int MemberPromoID { get; set; }
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
         public int MemberID { get; set; }
 
-        [ForeignKey("Promotion")]  // ✅ this tells EF to use PromoID as FK for Promotion
-        public int PromoID { get; set; }
+        [Required]
+        public int PromotionID { get; set; }  // ← ADD THIS
 
-        public DateTime DateJoined { get; set; }
+        public DateTime? DateUsed { get; set; }
 
         // Navigation properties
-        public Member? Member { get; set; }
-        public Promotion? Promotion { get; set; }
+        public virtual Member? Member { get; set; }
+        public virtual Promotion? Promotion { get; set; }
     }
 }

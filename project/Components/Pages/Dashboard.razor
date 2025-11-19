@@ -1,0 +1,542 @@
+﻿@page "/dashboard"
+@layout MainLayout
+@using project.Services
+@using project.Data
+@using Microsoft.EntityFrameworkCore
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
+@inject AppDbContext Context
+
+<div class="container-fluid px-0">
+    <div class="dashboard-page">
+        <!-- Header -->
+        <div class="dashboard-header">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1>@GetDashboardTitle() Dashboard</h1>
+                    <p>Welcome @currentUsername! | @GetDashboardDescription()</p>
+                </div>
+                <div class="header-actions">
+                    <div class="user-badge">
+                        <div class="user-circle">
+                            @currentUsername?.FirstOrDefault().ToString().ToUpper()
+                        </div>
+                        <span class="user-role-text">@currentUserRole</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Overview -->
+        @if (currentUserRole?.ToLower() == "admin")
+        {
+            <div class="row g-3 mb-4">
+                <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                    <div class="stat-card role-card" data-role="admin" @onclick="NavigateToMembers">
+                        <h3>MANAGE MEMBERS</h3>
+                        <p class="stat-number">@totalActiveMembers</p>
+                        <span class="stat-note">Active members in the system</span>
+                    </div>
+                </div>
+                <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                    <div class="stat-card role-card" data-role="admin" @onclick="NavigateToAttendance">
+                        <h3>CHECK-INS TODAY</h3>
+                        <p class="stat-number">@todaysCheckIns</p>
+                        <span class="stat-note">Verified scans for @DateTime.Today.ToString("MMM dd")</span>
+                    </div>
+                </div>
+                <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                    <div class="stat-card role-card" data-role="admin">
+                        <h3>FINANCIAL REPORT </h3>
+                        <p class="stat-number">₱0.00</p>
+                        <span class="stat-note">Payments module not configured yet</span>
+                    </div>
+                </div>
+                <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                    <div class="stat-card role-card" data-role="admin">
+                        <h3>PENDING PAYMENTS</h3>
+                        <p class="stat-number">0</p>
+                        <span class="stat-note">Will update once payments are live</span>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Role-Based Features -->
+        @if (currentUserRole?.ToLower() != "admin")
+        {
+            <div class="row g-3 mb-4">
+                @if (currentUserRole?.ToLower() == "staff")
+                {
+                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                        <div class="stat-card role-card" data-role="staff" @onclick="NavigateToMembers">
+                            <h3>MANAGE MEMBERS</h3>
+                            <p class="stat-number">150</p>
+                            <span class="stat-alert info">Add/Edit Access</span>
+                        </div>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "staff" || currentUserRole?.ToLower() == "trainer")
+                {
+                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                        <div class="stat-card role-card" data-role="trainer" @onclick="NavigateToAttendance">
+                            <h3>@(currentUserRole?.ToLower() == "trainer" ? "MY CHECK-INS" : "CHECK-INS TODAY")</h3>
+                            <p class="stat-number">@(currentUserRole?.ToLower() == "trainer" ? "8" : "45")</p>
+                            <span class="stat-alert positive">@(currentUserRole?.ToLower() == "trainer" ? "Active" : "On track")</span>
+                        </div>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "staff")
+                {
+                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                        <div class="stat-card role-card" data-role="staff" @onclick="NavigateToPayments">
+                            <h3>PENDING PAYMENTS</h3>
+                            <p class="stat-number">3</p>
+                            <span class="stat-alert warning">Action needed</span>
+                        </div>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "trainer")
+                {
+                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                        <div class="stat-card role-card" data-role="trainer" @onclick="NavigateToWorkoutPlans">
+                            <h3>WORKOUT PLANS</h3>
+                            <p class="stat-number">18</p>
+                            <span class="stat-alert warning">3 pending</span>
+                        </div>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "staff")
+                {
+                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                        <div class="stat-card role-card" data-role="staff" @onclick="NavigateToCheckout">
+                            <h3>CHECK-OUTS</h3>
+                            <p class="stat-number">Today</p>
+                            <span class="stat-alert info">Manage</span>
+                        </div>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "trainer")
+                {
+                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
+                        <div class="stat-card role-card" data-role="trainer" @onclick="NavigateToSchedule">
+                            <h3>MY SCHEDULE</h3>
+                            <p class="stat-number">Today</p>
+                            <span class="stat-alert info">5 sessions</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Role-Based Quick Actions -->
+        <div class="recent-activity">
+            <h2>@GetDashboardTitle() Quick Actions</h2>
+            <div class="activity-list">
+                @if (currentUserRole?.ToLower() == "admin" || currentUserRole?.ToLower() == "staff")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToMembers">
+                        <span class="activity-badge">[MANAGE]</span>
+                        <span class="activity-text">Manage Members @(currentUserRole?.ToLower() == "admin" ? "(Add/Edit/Delete)" : "(Add/Edit Only)")</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "admin" || currentUserRole?.ToLower() == "staff" || currentUserRole?.ToLower() == "trainer")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToAttendance">
+                        <span class="activity-badge">[@(currentUserRole?.ToLower() == "trainer" ? "VIEW" : "CHECK-IN")]</span>
+                        <span class="activity-text">@(currentUserRole?.ToLower() == "trainer" ? "View Member Attendance" : "Check Member Attendance")</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "admin" || currentUserRole?.ToLower() == "staff")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToPayments">
+                        <span class="activity-badge">[PAYMENTS]</span>
+                        <span class="activity-text">@(currentUserRole?.ToLower() == "admin" ? "Manage Financial Reports" : "Process Payments")</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "admin")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToWalkIns">
+                        <span class="activity-badge">[WALK-IN]</span>
+                        <span class="activity-text">Review Walk-in Visitors</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "trainer")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToAssignedMembers">
+                        <span class="activity-badge">[VIEW]</span>
+                        <span class="activity-text">View My Assigned Members</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "staff")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToCheckout">
+                        <span class="activity-badge">[CHECK-OUT]</span>
+                        <span class="activity-text">Check Out Members</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "trainer")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToWorkoutPlans">
+                        <span class="activity-badge">[PLANS]</span>
+                        <span class="activity-text">Manage Workout Plans</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .container-fluid {
+        width: 100%;
+        margin: 0;
+        padding: 0;
+    }
+
+    .dashboard-page {
+        max-width: 100%;
+        padding: 30px;
+        margin: 0 auto;
+        position: relative;
+        background: #ffffff;
+        min-height: 100vh;
+    }
+
+    /* Header */
+    .dashboard-header {
+        background: white;
+        padding: 25px 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin-bottom: 30px;
+    }
+
+    .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+    }
+
+    .header-text {
+        flex: 1;
+    }
+
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .user-badge {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #f8f9fa;
+        padding: 16px;
+        border-radius: 16px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        min-width: 100px;
+    }
+
+    .user-circle {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: #234060;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .user-role-text {
+        font-size: 0.85rem;
+        color: #234060;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+
+    /* Statistics Grid */
+    .row.g-3 {
+        margin: 30px 0;
+    }
+
+    .stat-card {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        text-align: center;
+        height: 100%;
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        position: relative;
+    }
+
+    .role-card {
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+        .role-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        /* Role-specific border colors */
+        .role-card[data-role="admin"] {
+            border-left: 4px solid #234060;
+        }
+
+        .role-card[data-role="trainer"] {
+            border-left: 4px solid #27ae60;
+        }
+
+        .role-card[data-role="staff"] {
+            border-left: 4px solid #3498db;
+        }
+
+        .stat-card h3 {
+            margin: 0 0 10px 0;
+            color: #666;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+    .stat-number {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: bold;
+        color: #234060;
+    }
+
+    .stat-note {
+        margin-top: 8px;
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
+
+    .stat-alert {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+
+        .stat-alert.positive {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .stat-alert.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .stat-alert.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+    /* Recent Activity */
+    .recent-activity {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin-top: 30px;
+    }
+
+        .recent-activity h2 {
+            margin: 0 0 20px 0;
+            color: #234060;
+            border-bottom: 2px solid #f0f4f8;
+            padding-bottom: 10px;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+    .activity-list {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .activity-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        background: #f8fafc;
+        border-radius: 6px;
+        transition: background-color 0.2s ease;
+    }
+
+    .role-action {
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+        .role-action:hover {
+            background: #e3f2fd;
+            transform: translateX(5px);
+        }
+
+        /* Role-specific action colors */
+        .role-action[data-role="admin"] {
+            border-left: 3px solid #234060;
+        }
+
+        .role-action[data-role="trainer"] {
+            border-left: 3px solid #27ae60;
+        }
+
+        .role-action[data-role="staff"] {
+            border-left: 3px solid #3498db;
+        }
+
+    .activity-badge {
+        background: #234060;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        margin-right: 15px;
+        font-family: monospace;
+        font-weight: 500;
+        min-width: 60px;
+        text-align: center;
+    }
+
+    .activity-text {
+        color: #333;
+        font-weight: 500;
+    }
+
+    /* Responsive Design */
+    @@media (max-width: 768px) {
+        .header-content {
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .header-actions {
+            width: 100%;
+            justify-content: space-between;
+        }
+    }
+</style>
+
+@code {
+    private string currentUsername = "";
+    private string currentUserRole = "";
+    private int totalActiveMembers = 0;
+    private int todaysCheckIns = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Check if user is authenticated
+        if (!await AuthService.IsUserAuthenticated())
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        // Get current user info
+        currentUserRole = await AuthService.GetCurrentUserRole();
+        currentUsername = await AuthService.GetCurrentUsername();
+
+        Console.WriteLine($"User {currentUsername} with role {currentUserRole} logged in");
+
+        await LoadDashboardMetrics();
+    }
+
+    private string GetDashboardTitle()
+    {
+        return currentUserRole?.ToLower() switch
+        {
+            "admin" => "Admin",
+            "trainer" => "Trainer",
+            "staff" => "Staff",
+            _ => "Dashboard"
+        };
+    }
+
+    private string GetDashboardDescription()
+    {
+        return currentUserRole?.ToLower() switch
+        {
+            "admin" => "Full system access and management",
+            "trainer" => "Manage your assigned members",
+            "staff" => "Front desk operations",
+            _ => "General dashboard access"
+        };
+    }
+
+    private string GetRoleColor()
+    {
+        return currentUserRole?.ToLower() switch
+        {
+            "admin" => "#e74c3c",
+            "trainer" => "#27ae60",
+            "staff" => "#3498db",
+            _ => "#234060"
+        };
+    }
+
+    // Navigation methods
+    private void NavigateToMembers() => NavigationManager.NavigateTo("/members");
+    private void NavigateToAttendance() => NavigationManager.NavigateTo("/attendance");
+    private void NavigateToPayments() => NavigationManager.NavigateTo("/payments");
+    private void NavigateToCheckout() => NavigationManager.NavigateTo("/checkout");
+    private void NavigateToReports() => NavigationManager.NavigateTo("/reports");
+    private void NavigateToTrainerAssignment() => NavigationManager.NavigateTo("/trainer-assignment");
+    private void NavigateToAssignedMembers() => NavigationManager.NavigateTo("/my-members");
+    private void NavigateToWorkoutPlans() => NavigationManager.NavigateTo("/workout-plans");
+    private void NavigateToSchedule() => NavigationManager.NavigateTo("/trainer-schedule");
+    private void NavigateToWalkIns() => NavigationManager.NavigateTo("/walkins");
+
+    private async Task LoadDashboardMetrics()
+    {
+        try
+        {
+            totalActiveMembers = await Context.Members.CountAsync(m => !m.IsArchived);
+
+            var today = DateTime.Today;
+            var tomorrow = today.AddDays(1);
+
+            todaysCheckIns = await Context.Attendances
+                .CountAsync(a => a.CheckinTime >= today && a.CheckinTime < tomorrow);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Dashboard metrics error: {ex.Message}");
+        }
+    }
+}

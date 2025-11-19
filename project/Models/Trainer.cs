@@ -1,10 +1,11 @@
 ﻿using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace project.Models
 {
     public class Trainer
     {
-        public int TrainerID { get; set; }     // Database Primary Key
+        public int TrainerID { get; set; }
 
         public string FirstName { get; set; } = string.Empty;
         public string? MiddleName { get; set; }
@@ -13,11 +14,11 @@ namespace project.Models
         public string ContactNumber { get; set; } = string.Empty;
         public string Specialty { get; set; } = string.Empty;
 
-        // Computed Property (not stored in DB)
+        // ADD [NotMapped] attribute here
+        [NotMapped]
         public string FullName =>
             $"{FirstName} {(string.IsNullOrWhiteSpace(MiddleName) ? "" : MiddleName + " ")}{LastName}".Trim();
 
-        // Relationship (optional, keep it)
         public ICollection<MemberTrainer>? MemberTrainers { get; set; }
     }
 }

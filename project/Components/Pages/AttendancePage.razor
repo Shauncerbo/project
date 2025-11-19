@@ -1,0 +1,554 @@
+@page "/attendance"
+@layout MainLayout
+@using project.Models
+@using project.Services
+@inject IAttendanceService attendanceService
+@inject IMemberService memberService
+@inject IJSRuntime JSRuntime
+@inject INativeNavigationService NativeNavigationService
+@implements IDisposable
+
+<div class="attendance-container">
+    <div class="page-header">
+        <h1 class="page-title">Attendance Management</h1>
+        <p class="page-subtitle">Scan QR codes to check members in and out</p>
+    </div>
+
+    <!-- Message Display -->
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @alertClass alert-dismissible fade show" role="alert" style="margin-bottom: 20px;">
+            <div class="d-flex align-items-center">
+                <i class="@GetAlertIcon() me-2"></i>
+                <div>@message</div>
+            </div>
+            <button type="button" class="btn-close" @onclick="ClearMessage" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row">
+        <div class="col-md-6">
+            <!-- Native Scanner Option -->
+            <div class="card mb-3">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-mobile-alt me-2"></i>Native Camera Scanner
+                    </h5>
+                </div>
+                <div class="card-body">
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-info btn-lg" @onclick="OpenNativeScanner" disabled="@isLoading">
+                            <i class="fas fa-camera me-2"></i>Open Native Scanner
+                        </button>
+                        <button class="btn btn-outline-secondary" @onclick="RefreshAttendance" disabled="@isLoading">
+                            <i class="fas fa-sync-alt me-2"></i>Refresh After Scan
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-3">
+                        Tip: After closing the native scanner, tap <strong>Refresh After Scan</strong> to pull the latest attendance entries.
+                    </small>
+                </div>
+            </div>
+
+            <!-- Today's Stats -->
+            <div class="card mt-3">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-bar me-2"></i>Today's Summary
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col">
+                            <div class="stat-card">
+                                <h4 class="text-primary">@currentCount</h4>
+                                <small class="text-muted">Currently In</small>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="stat-card">
+                                <h4 class="text-success">@todayTotal</h4>
+                                <small class="text-muted">Today Total</small>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="stat-card">
+                                <h4 class="text-info">@scanCount</h4>
+                                <small class="text-muted">Scans Today</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <!-- Today's Attendance Table -->
+            <div class="card h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list me-2"></i>Today's Attendance
+                    </h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary me-2" @onclick="RefreshAttendance"
+                                disabled="@isLoading" title="Refresh Data">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <span class="badge record-counter">@todayAttendance.Count Records</span>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    @if (todayAttendance?.Any() == true)
+                    {
+                        <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                            <table class="table table-sm table-striped table-hover mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Check In</th>
+                                        <th>Verified</th>
+                                        <th>Membership Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var record in todayAttendance)
+                                    {
+                                        <tr class="@(record.CheckOutTime == null ? "table-success" : "")">
+                                            <td>
+                                                <div class="member-name">
+                                                    @GetMemberName(record.MemberID)
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="time-badge">
+                                                    @record.CheckinTime.ToString("HH:mm")
+                                                </span>
+                                                <small class="text-muted d-block">
+                                                    @record.CheckinTime.ToString("MMM dd")
+                                                </small>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check-circle me-1"></i>Verified
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge @GetStatusBadge(record)">
+                                                    @GetStatusText(record)
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-clipboard-list fa-3x mb-3"></i>
+                            <p class="mb-1">No attendance records for today</p>
+                            <small>Scan QR codes to record attendance</small>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Indicator -->
+@if (isLoading)
+{
+    <div class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="background-color: rgba(0,0,0,0.5); z-index: 9999;">
+        <div class="bg-white rounded p-4 shadow-lg">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border text-primary me-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div>
+                    <h5 class="mb-0">Processing...</h5>
+                    <small class="text-muted">Please wait</small>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .attendance-container {
+        padding: 20px;
+        background: #ffffff;
+        min-height: 100vh;
+    }
+
+    .page-header {
+        background: white;
+        padding: 25px 30px;
+        border-radius: 15px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        margin-bottom: 30px;
+        border-left: 5px solid #007bff;
+    }
+
+    .page-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin: 0;
+        color: #234060;
+        background: linear-gradient(45deg, #007bff, #0056b3);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .page-subtitle {
+        color: #6c757d;
+        margin: 5px 0 0 0;
+        font-size: 16px;
+    }
+
+    .stat-card {
+        padding: 10px;
+    }
+
+        .stat-card h4 {
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+    .member-name {
+        font-weight: 500;
+        color: #495057;
+    }
+
+    .time-badge {
+        background: #e9ecef;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #495057;
+    }
+
+    .duration-badge {
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .duration-short {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .duration-normal {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+
+    .duration-long {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .table th {
+        border-top: none;
+        font-weight: 600;
+        color: #495057;
+        background: #f8f9fa;
+    }
+
+    .table td {
+        vertical-align: middle;
+        padding: 12px 8px;
+    }
+
+    .card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+
+    .card-header {
+        border-radius: 15px 15px 0 0 !important;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .btn {
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+    .alert {
+        border: none;
+        border-radius: 10px;
+        border-left: 4px solid;
+    }
+
+    .alert-success {
+        border-left-color: #28a745;
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    }
+
+    .alert-danger {
+        border-left-color: #dc3545;
+        background: linear-gradient(135deg, #f8d7da 0%, #f1b0b7 100%);
+    }
+
+    .alert-warning {
+        border-left-color: #ffc107;
+        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    }
+
+    .alert-info {
+        border-left-color: #17a2b8;
+        background: linear-gradient(135deg, #d1ecf1 0%, #b6e3ec 100%);
+    }
+
+    .record-counter {
+        background: #ffffff;
+        color: #234060;
+        border: 1px solid #dce3f1;
+        font-weight: 600;
+        padding: 8px 14px;
+        border-radius: 999px;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+    }
+</style>
+
+@code {
+    private string message = "";
+    private string alertClass = "alert-info";
+    private List<project.Models.Attendance> todayAttendance = new();
+    private bool isLoading = false;
+    private int currentCount = 0;
+    private int todayTotal = 0;
+    private int scanCount = 0;
+
+    // Dictionary to store member names for performance
+    private Dictionary<int, string> memberNames = new Dictionary<int, string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (NativeNavigationService != null)
+        {
+            NativeNavigationService.ScannerClosed += HandleScannerClosed;
+        }
+
+        await LoadTodayAttendance();
+        CalculateStats();
+        await PreloadMemberNames();
+    }
+
+    // Preload all member names for better performance
+    private async Task PreloadMemberNames()
+    {
+        try
+        {
+            var memberIds = todayAttendance.Select(a => a.MemberID).Distinct();
+            foreach (var memberId in memberIds)
+            {
+                if (!memberNames.ContainsKey(memberId))
+                {
+                    var member = await memberService.GetMemberByIdAsync(memberId);
+                    if (member != null)
+                    {
+                        memberNames[memberId] = $"{member.FirstName} {member.LastName}";
+                    }
+                    else
+                    {
+                        memberNames[memberId] = $"Member {memberId}";
+                    }
+                }
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error preloading member names: {ex.Message}");
+        }
+    }
+
+    private string GetMemberName(int memberId)
+    {
+        return memberNames.ContainsKey(memberId) ? memberNames[memberId] : $"Member {memberId}";
+    }
+
+    private async Task OpenNativeScanner()
+    {
+        if (NativeNavigationService != null)
+        {
+            await NativeNavigationService.ShowNativeScannerAsync();
+        }
+    }
+
+    // Force check out from table
+    private async Task LoadTodayAttendance()
+    {
+        try
+        {
+            todayAttendance = await attendanceService.GetTodayAttendanceAsync();
+            CalculateStats();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading attendance: {ex.Message}", "alert-danger");
+        }
+    }
+
+    private async Task RefreshAttendance()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await LoadTodayAttendance();
+            await PreloadMemberNames();
+            ShowMessage("Attendance data refreshed", "alert-info");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshAttendanceAfterScannerAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await LoadTodayAttendance();
+            await PreloadMemberNames();
+            CalculateStats();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async void HandleScannerClosed(object? sender, EventArgs e)
+    {
+        await InvokeAsync(async () =>
+        {
+            await RefreshAttendanceAfterScannerAsync();
+        });
+    }
+
+    private void CalculateStats()
+    {
+        var todayCount = todayAttendance.Count;
+        currentCount = todayCount;
+        todayTotal = todayCount;
+        scanCount = todayCount;
+    }
+
+    private string CalculateDuration(project.Models.Attendance record)
+    {
+        if (record.CheckOutTime == null)
+        {
+            var duration = DateTime.Now - record.CheckinTime;
+            return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+        }
+        else
+        {
+            var duration = record.CheckOutTime.Value - record.CheckinTime;
+            return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+        }
+    }
+
+    private string GetStatusBadge(project.Models.Attendance record)
+    {
+        return record.Member?.Status switch
+        {
+            "Active" => "bg-success",
+            "Inactive" => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetStatusText(project.Models.Attendance record)
+    {
+        return record.Member?.Status ?? "Unknown";
+    }
+
+    private string GetAlertIcon()
+    {
+        return alertClass switch
+        {
+            "alert-success" => "fas fa-check-circle",
+            "alert-danger" => "fas fa-exclamation-circle",
+            "alert-warning" => "fas fa-exclamation-triangle",
+            "alert-info" => "fas fa-info-circle",
+            _ => "fas fa-info-circle"
+        };
+    }
+
+    private void ClearMessage()
+    {
+        message = "";
+        StateHasChanged();
+    }
+
+    private void ShowMessage(string msg, string alertType = "alert-info")
+    {
+        message = msg;
+        alertClass = alertType;
+        StateHasChanged();
+
+        // Auto-clear success/info messages after 5 seconds
+        if (alertType == "alert-success" || alertType == "alert-info")
+        {
+            _ = Task.Delay(5000).ContinueWith(_ =>
+            {
+                InvokeAsync(() =>
+                {
+                    if (message == msg) // Only clear if it's the same message
+                    {
+                        message = "";
+                        StateHasChanged();
+                    }
+                });
+            });
+        }
+    }
+
+    public void Dispose()
+    {
+        if (NativeNavigationService != null)
+        {
+            NativeNavigationService.ScannerClosed -= HandleScannerClosed;
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+

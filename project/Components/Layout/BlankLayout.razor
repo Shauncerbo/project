@@ -1,3 +1,50 @@
 @inherits LayoutComponentBase
 
-@Body
+<div class="blank-layout">
+    @Body
+</div>
+
+<style>
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    .blank-layout {
+        min-height: 100vh;
+        width: 100vw;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Optional: Add some background styling */
+    .blank-layout::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: url('/gymbg.png');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        opacity: 0.1;
+        z-index: 0;
+    }
+
+    /* Ensure content stays above background */
+    .blank-layout > * {
+        position: relative;
+        z-index: 1;
+    }
+</style>
