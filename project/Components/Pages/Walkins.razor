@@ -1,11 +1,13 @@
 ﻿@page "/walkins"
 @layout MainLayout
 @using System.Diagnostics
+@using System.Linq
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
 @using project.Models
 @using project.Data
 @using Microsoft.EntityFrameworkCore
+@using TrainerScheduleModel = project.Models.TrainerSchedule
 
 <div class="members-container">
     <!-- Loading Indicator -->
@@ -38,8 +40,8 @@
                     <th>NAME</th>
                     <th>VISIT DATE</th>
                     <th>PAYMENT AMOUNT</th>
+                    <th>PAYMENT METHOD</th>
                     <th>TRAINER</th>
-                    <th>ACTIONS</th>
                 </tr>
             </thead>
             <tbody>
@@ -75,11 +77,18 @@
                                 <span class="payment-amount">₱@walkin.PaymentAmount.ToString("N2")</span>
                             </td>
                             <td>
+                                <span class="payment-method-tag">@walkin.PaymentMethod</span>
+                            </td>
+                            <td>
                                 <div class="trainer-info">
                                     @if (walkin.TrainerID.HasValue && walkin.Trainer != null)
                                     {
                                         <div class="trainer-name">@walkin.Trainer.FullName</div>
                                         <div class="trainer-specialty">@walkin.Trainer.Specialty</div>
+                                        @if (walkin.TrainerSchedule != null)
+                                        {
+                                            <div class="trainer-schedule">@walkin.TrainerSchedule.DisplayText</div>
+                                        }
                                     }
                                     else
                                     {
@@ -87,16 +96,7 @@
                                     }
                                 </div>
                             </td>
-                            <td>
-                                <div class="action-buttons">
-                                    <button class="action-btn edit-btn" @onclick="() => EditWalkin(walkin)" title="Edit">
-                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
-                                    </button>
-                                    <button class="action-btn archive-btn" @onclick="() => ConfirmWalkinArchive(walkin)" title="Archive">
-                                        <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
-                                    </button>
-                                </div>
-                            </td>
+
                         </tr>
                     }
                 }
@@ -181,12 +181,28 @@
                         }
                     </div>
 
+                    <!-- Payment Method -->
+                    <div class="form-group">
+                        <label class="required">Payment Method</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown @(validationErrors.ContainsKey("PaymentMethod") ? "error" : "")" @bind="currentWalkin.PaymentMethod">
+                                <option value="Cash">Cash</option>
+                                <option value="Ewallet">Ewallet</option>
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        @if (validationErrors.ContainsKey("PaymentMethod"))
+                        {
+                            <div class="error-message">@validationErrors["PaymentMethod"]</div>
+                        }
+                    </div>
+
                     
                     <!-- Trainer Assignment -->
                     <div class="form-group">
                         <label>Assign Trainer (Optional)</label>
                         <div class="select-wrapper">
-                            <select class="form-control select-dropdown" @bind="currentWalkin.TrainerID">
+                            <select class="form-control select-dropdown" @bind="currentWalkin.TrainerID" @bind:after="OnTrainerChanged">
                                 <option value="">Select a trainer (optional)</option>
                                 @foreach (var trainer in availableTrainers)
                                 {
@@ -196,6 +212,42 @@
                             <span class="dropdown-arrow">▼</span>
                         </div>
                     </div>
+
+                    @if (currentWalkin.TrainerID.HasValue)
+                    {
+                        <div class="form-group">
+                            <label class="required">Preferred Schedule</label>
+                            @if (visibleSchedules.Any())
+                            {
+                                <div class="select-wrapper">
+                                    <select class="form-control select-dropdown @(validationErrors.ContainsKey("TrainerScheduleID") ? "error" : "")"
+                                            @bind="selectedTrainerScheduleId"
+                                            @bind:after="OnScheduleChanged">
+                                        <option value="0">Select schedule</option>
+                                        @foreach (var schedule in visibleSchedules)
+                                        {
+                                            <option value="@schedule.TrainerScheduleID">@schedule.DisplayText</option>
+                                        }
+                                    </select>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                @if (validationErrors.ContainsKey("TrainerScheduleID"))
+                                {
+                                    <div class="error-message">@validationErrors["TrainerScheduleID"]</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="info-box">
+                                    <span class="info-icon">ℹ️</span>
+                                    <div class="info-content">
+                                        <strong>No schedule available</strong>
+                                        <p>This trainer has no schedule configured yet.</p>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
 
                     <!-- General error message -->
                     @if (validationErrors.ContainsKey("General"))
@@ -401,6 +453,11 @@
         display: inline-block;
     }
 
+    .trainer-schedule {
+        font-size: 11px;
+        color: #2d5bd1;
+    }
+
     .no-trainer {
         color: #999;
         font-style: italic;
@@ -410,6 +467,11 @@
     .payment-amount {
         color: #27ae60;
         font-size: 15px;
+    }
+
+    .payment-method-tag {
+        color: #333;
+        font-size: 14px;
     }
 
     .action-buttons {
@@ -780,12 +842,17 @@
     private List<WalkIn> walkins = new List<WalkIn>();
     private List<WalkIn> filteredWalkins = new List<WalkIn>();
     private List<Trainer> availableTrainers = new List<Trainer>();
+    private List<TrainerScheduleModel> trainerSchedules = new();
+    private List<TrainerScheduleModel> visibleSchedules = new();
+    private int selectedTrainerScheduleId = 0;
     private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
     private bool isLoading = false;
+    private bool isInitializingTrainerSelection = false;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadTrainersFromDatabase();
+        await LoadTrainerSchedules();
         await LoadWalkinsFromDatabase();
     }
 
@@ -799,6 +866,7 @@
             walkins = await Context.WalkIns
                 .Where(w => w.IsArchived == false)
                 .Include(w => w.Trainer)
+                .Include(w => w.TrainerSchedule)
                 .ToListAsync();
             filteredWalkins = walkins;
         }
@@ -817,41 +885,25 @@
     {
         try
         {
-            var assignedTrainerIds = await Context.Members
-                .Where(m => m.TrainerID.HasValue && !m.IsArchived)
-                .Select(m => m.TrainerID!.Value)
-                .ToListAsync();
-
-            var assignedTrainerIdsFromWalkins = await Context.WalkIns
-                .Where(w => w.TrainerID.HasValue && !w.IsArchived)
-                .Select(w => w.TrainerID!.Value)
-                .ToListAsync();
-
-            assignedTrainerIds.AddRange(assignedTrainerIdsFromWalkins);
-
-            if (includeTrainerId.HasValue)
-            {
-                assignedTrainerIds = assignedTrainerIds
-                    .Where(id => id != includeTrainerId.Value)
-                    .ToList();
-            }
-
+            // Load all trainers (same as Payment page) - trainers can be assigned to multiple members/walk-ins
             availableTrainers = await Context.Trainers
-                .Where(t => !assignedTrainerIds.Contains(t.TrainerID))
+                .AsNoTracking()
+                .OrderBy(t => t.LastName)
+                .ThenBy(t => t.FirstName)
                 .ToListAsync();
 
-            availableTrainers = availableTrainers
-                .OrderBy(t => t.FullName)
-                .ToList();
-
+            // If editing and trainer is already selected, ensure it's in the list
             if (includeTrainerId.HasValue && !availableTrainers.Any(t => t.TrainerID == includeTrainerId.Value))
             {
-                var currentTrainer = await Context.Trainers.FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
+                var currentTrainer = await Context.Trainers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
                 if (currentTrainer != null)
                 {
                     availableTrainers.Add(currentTrainer);
                     availableTrainers = availableTrainers
-                        .OrderBy(t => t.FullName)
+                        .OrderBy(t => t.LastName)
+                        .ThenBy(t => t.FirstName)
                         .ToList();
                 }
             }
@@ -860,6 +912,27 @@
         {
             await JSRuntime.InvokeVoidAsync("alert", $"Error loading trainers: {ex.Message}");
         }
+    }
+
+    private async Task LoadTrainerSchedules(int? includeScheduleId = null)
+    {
+        IQueryable<TrainerSchedule> query = Context.TrainerSchedules
+            .AsNoTracking()
+            .Include(ts => ts.Trainer);
+
+        if (includeScheduleId.HasValue)
+        {
+            query = query.Where(ts => ts.IsAvailable || ts.TrainerScheduleID == includeScheduleId.Value);
+        }
+        else
+        {
+            query = query.Where(ts => ts.IsAvailable);
+        }
+
+        trainerSchedules = await query
+            .OrderBy(ts => ts.DayOfWeek)
+            .ThenBy(ts => ts.StartTime)
+            .ToListAsync();
     }
 
     private void HandleSearch()
@@ -875,7 +948,8 @@
                 (w.MiddleName?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (w.LastName?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 GetFullName(w).Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                (w.Trainer != null && w.Trainer.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                (w.Trainer != null && w.Trainer.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                (w.PaymentMethod?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false)
             ).ToList();
         }
     }
@@ -892,17 +966,57 @@
         return string.Join(" ", parts);
     }
 
+    private void OnTrainerChanged()
+    {
+        if (currentWalkin.TrainerID.HasValue)
+        {
+            visibleSchedules = trainerSchedules
+                .Where(ts => ts.TrainerID == currentWalkin.TrainerID.Value)
+                .ToList();
+            if (isInitializingTrainerSelection && currentWalkin.TrainerScheduleID.HasValue &&
+                visibleSchedules.Any(ts => ts.TrainerScheduleID == currentWalkin.TrainerScheduleID.Value))
+            {
+                selectedTrainerScheduleId = currentWalkin.TrainerScheduleID.Value;
+            }
+            else
+            {
+                selectedTrainerScheduleId = 0;
+                currentWalkin.TrainerScheduleID = null;
+            }
+        }
+        else
+        {
+            visibleSchedules = new();
+            selectedTrainerScheduleId = 0;
+            currentWalkin.TrainerScheduleID = null;
+        }
+        OnScheduleChanged();
+    }
+
+    private void OnScheduleChanged()
+    {
+        currentWalkin.TrainerScheduleID = selectedTrainerScheduleId > 0
+            ? selectedTrainerScheduleId
+            : null;
+    }
+
     private async Task OpenAddWalkinModal()
     {
         isEditMode = false;
         currentWalkin = new WalkIn
         {
             VisitDate = DateTime.Now,
-            TrainerID = null
+            PaymentMethod = "Cash",
+            TrainerID = null,
+            TrainerScheduleID = null
         };
+        selectedTrainerScheduleId = 0;
+        visibleSchedules = new();
         validationErrors.Clear();
         showWalkinModal = true;
         await LoadTrainersFromDatabase(null);
+        await LoadTrainerSchedules();
+        OnTrainerChanged();
         StateHasChanged();
     }
 
@@ -917,11 +1031,18 @@
             LastName = walkin.LastName,
             VisitDate = walkin.VisitDate,
             PaymentAmount = walkin.PaymentAmount,
-            TrainerID = walkin.TrainerID
+            PaymentMethod = walkin.PaymentMethod ?? "Cash",
+            TrainerID = walkin.TrainerID,
+            TrainerScheduleID = walkin.TrainerScheduleID
         };
+        selectedTrainerScheduleId = walkin.TrainerScheduleID ?? 0;
         validationErrors.Clear();
         showWalkinModal = true;
         await LoadTrainersFromDatabase(currentWalkin.TrainerID);
+        await LoadTrainerSchedules(selectedTrainerScheduleId == 0 ? null : selectedTrainerScheduleId);
+        isInitializingTrainerSelection = true;
+        OnTrainerChanged();
+        isInitializingTrainerSelection = false;
         StateHasChanged();
     }
 
@@ -991,6 +1112,24 @@
             validationErrors["VisitDate"] = "Visit date cannot be in the future";
         }
 
+        if (string.IsNullOrWhiteSpace(currentWalkin.PaymentMethod))
+        {
+            validationErrors["PaymentMethod"] = "Payment method is required";
+        }
+
+        if (currentWalkin.TrainerID.HasValue)
+        {
+            if (selectedTrainerScheduleId <= 0)
+            {
+                validationErrors["TrainerScheduleID"] = "Please select a schedule for the trainer";
+            }
+        }
+        else
+        {
+            currentWalkin.TrainerScheduleID = null;
+            selectedTrainerScheduleId = 0;
+        }
+
         if (validationErrors.Count > 0)
         {
             validationErrors["General"] = "Please fill in all required fields correctly";
@@ -1019,7 +1158,10 @@
                     existingWalkin.LastName = currentWalkin.LastName;
                 existingWalkin.VisitDate = currentWalkin.VisitDate;
                 existingWalkin.PaymentAmount = currentWalkin.PaymentAmount;
+                existingWalkin.PaymentMethod = currentWalkin.PaymentMethod;
                 existingWalkin.TrainerID = currentWalkin.TrainerID;
+                existingWalkin.TrainerScheduleID = currentWalkin.TrainerScheduleID;
+                existingWalkin.TrainerScheduleID = currentWalkin.TrainerScheduleID;
                     Context.WalkIns.Update(existingWalkin);
             }
         }
@@ -1031,6 +1173,7 @@
             await Context.SaveChangesAsync();
             await LoadWalkinsFromDatabase();
             await LoadTrainersFromDatabase();
+            await LoadTrainerSchedules();
         CloseModal();
         }
         catch (Exception ex)
@@ -1046,6 +1189,8 @@
         showWalkinModal = false;
         currentWalkin = new WalkIn();
         validationErrors.Clear();
+        selectedTrainerScheduleId = 0;
+        visibleSchedules = new();
         StateHasChanged();
     }
 }

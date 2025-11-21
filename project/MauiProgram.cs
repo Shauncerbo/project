@@ -8,6 +8,7 @@ using project.Pages;
 using project.Services;
 using ZXing.Net.Maui;
 using ZXing.Net.Maui.Controls;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace project
 {
@@ -95,11 +96,37 @@ namespace project
             builder.Services.AddSingleton<INativeNavigationService, NativeNavigationService>();
             builder.Services.AddTransient<AttendanceScannerPage>();
 
-            // Database configuration
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseSqlServer("Data Source=LAPTOP-3VCGD3TV\\SQLEXPRESS;Initial Catalog=GymCRM_DB;Integrated Security=True;Trust Server Certificate=True"));
+            // Database configuration - Local SQL Server
+            const string localConnectionString =
+                "Data Source=LAPTOP-3VCGD3TV\\SQLEXPRESS;Initial Catalog=GymCRM_DB;Integrated Security=True;Trust Server Certificate=True";
 
-            return builder.Build();
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseSqlServer(localConnectionString));
+
+            // Register Database Initializer
+            builder.Services.AddScoped<DatabaseInitializer>();
+
+            var app = builder.Build();
+
+            // Initialize database on startup (async initialization)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using (var scope = app.Services.CreateScope())
+                    {
+                        var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
+                        await initializer.InitializeAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to initialize database: {ex.Message}");
+                    // Continue app startup even if database init fails
+                }
+            });
+
+            return app;
         }
     }
 }

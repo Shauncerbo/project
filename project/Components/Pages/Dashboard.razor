@@ -149,8 +149,8 @@
                 @if (currentUserRole?.ToLower() == "admin" || currentUserRole?.ToLower() == "staff" || currentUserRole?.ToLower() == "trainer")
                 {
                     <div class="activity-item role-action" @onclick="NavigateToAttendance">
-                        <span class="activity-badge">[@(currentUserRole?.ToLower() == "trainer" ? "VIEW" : "CHECK-IN")]</span>
-                        <span class="activity-text">@(currentUserRole?.ToLower() == "trainer" ? "View Member Attendance" : "Check Member Attendance")</span>
+                        <span class="activity-badge">[@(currentUserRole?.ToLower() == "trainer" ? "VIEW" : "VERIFY")]</span>
+                        <span class="activity-text">@(currentUserRole?.ToLower() == "trainer" ? "View Member Verification" : "Verify Member")</span>
                     </div>
                 }
 

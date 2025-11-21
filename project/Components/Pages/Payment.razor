@@ -1,1 +1,770 @@
-﻿
+﻿@page "/payment"
+@layout MainLayout
+@using System.Linq
+@using Microsoft.EntityFrameworkCore
+@using project.Data
+@using project.Models
+@using MemberModel = project.Models.Member
+@using MembershipTypeModel = project.Models.MembershipType
+@using PaymentModel = project.Models.Payment
+@using TrainerModel = project.Models.Trainer
+@using TrainerScheduleModel = project.Models.TrainerSchedule
+@inject AppDbContext Context
+@inject IJSRuntime JSRuntime
+
+<div class="payments-container">
+    <div class="payments-header">
+        <div>
+            <h1>Membership Payments</h1>
+            <p class="subtitle">Create new subscriptions and record payments based on membership plans.</p>
+        </div>
+        <div class="header-actions">
+            <button class="primary-btn" @onclick="OpenSubscriptionModal">+ New Subscription</button>
+        </div>
+    </div>
+
+    <div class="payments-content">
+        <div class="info-card">
+            <h3>How it works</h3>
+            <ul>
+                <li>Select the membership type the customer wants.</li>
+                <li>The form auto-fills the price and computes the expiration date.</li>
+                <li>Submitting the form creates the member record and records a payment entry.</li>
+            </ul>
+        </div>
+        <div class="placeholder-card">
+            <h3>Upcoming Enhancements</h3>
+            <p>The payments dashboard will soon display transaction history and revenue insights.</p>
+        </div>
+    </div>
+</div>
+
+@if (showSubscriptionModal)
+{
+    <div class="modal-overlay" @onclick="CloseSubscriptionModal">
+        <div class="modal-content subscription-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h2>New Subscription</h2>
+                <button class="close-btn" @onclick="CloseSubscriptionModal">×</button>
+            </div>
+
+            <div class="modal-body">
+                @if (!string.IsNullOrWhiteSpace(generalError))
+                {
+                    <div class="general-error">
+                        ⚠️ @generalError
+                    </div>
+                }
+
+                <div class="form-section">
+                    <h4>Member Information</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">First Name</label>
+                            <input type="text" class="form-control @(GetErrorClass("FirstName"))" @bind="subscriptionMember.FirstName" placeholder="First name" />
+                            @DisplayError("FirstName")
+                        </div>
+                        <div class="form-group">
+                            <label>Middle Initial</label>
+                            <input type="text" class="form-control" @bind="subscriptionMember.MiddleInitial" maxlength="10" placeholder="M.I." />
+                        </div>
+                        <div class="form-group">
+                            <label class="required">Last Name</label>
+                            <input type="text" class="form-control @(GetErrorClass("LastName"))" @bind="subscriptionMember.LastName" placeholder="Last name" />
+                            @DisplayError("LastName")
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">Contact Number</label>
+                            <input type="text"
+                                   class="form-control @(GetErrorClass("ContactNumber"))"
+                                   @bind-value="ContactNumberInput"
+                                   @bind-value:event="oninput"
+                                   inputmode="numeric"
+                                   pattern="[0-9]*"
+                                   maxlength="11"
+                                   placeholder="09XXXXXXXXX" />
+                            @DisplayError("ContactNumber")
+                        </div>
+                        <div class="form-group">
+                            <label class="required">Email</label>
+                            <input type="email" class="form-control @(GetErrorClass("Email"))" @bind="subscriptionMember.Email" placeholder="name@email.com" />
+                            @DisplayError("Email")
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="required">Address</label>
+                        <textarea class="form-control @(GetErrorClass("Address"))" rows="3" @bind="subscriptionMember.Address" placeholder="Complete address"></textarea>
+                        @DisplayError("Address")
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">Join Date</label>
+                            <input type="date" class="form-control @(GetErrorClass("JoinDate"))" @bind="subscriptionJoinDate" @bind:format="yyyy-MM-dd" @bind:after="OnJoinDateChanged" />
+                            @DisplayError("JoinDate")
+                        </div>
+                        <div class="form-group">
+                            <label>Assign Trainer (Optional)</label>
+                            <div class="select-wrapper">
+                                <select class="form-control select-dropdown"
+                                        @bind="subscriptionMember.TrainerID"
+                                        @bind:after="OnTrainerChanged">
+                                    <option value="">No trainer needed</option>
+                                    @foreach (var trainer in availableTrainers)
+                                    {
+                                        <option value="@trainer.TrainerID">@trainer.FullName - @trainer.Specialty</option>
+                                    }
+                                </select>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (subscriptionMember.TrainerID.HasValue)
+                    {
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="required">Preferred Schedule</label>
+                                @if (visibleSchedules.Any())
+                                {
+                                    <div class="select-wrapper">
+                                        <select class="form-control select-dropdown @(GetErrorClass("TrainerScheduleID"))"
+                                                @bind="selectedTrainerScheduleId"
+                                                @bind:after="OnScheduleChanged">
+                                            <option value="0">Select schedule</option>
+                                            @foreach (var schedule in visibleSchedules)
+                                            {
+                                                <option value="@schedule.TrainerScheduleID">@FormatScheduleOption(schedule)</option>
+                                            }
+                                        </select>
+                                        <span class="dropdown-arrow">▼</span>
+                                    </div>
+                                    @DisplayError("TrainerScheduleID")
+                                }
+                                else
+                                {
+                                    <div class="info-box">
+                                        <span class="info-icon">ℹ️</span>
+                                        <div class="info-content">
+                                            <strong>No schedule available</strong>
+                                            <p>This trainer has no schedule configured yet.</p>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="form-section">
+                    <h4>Membership Plan</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">Membership Type</label>
+                            <div class="select-wrapper">
+                                <select class="form-control select-dropdown @(GetErrorClass("MembershipTypeID"))" @bind="selectedMembershipTypeId" @bind:after="OnMembershipTypeChanged">
+                                    <option value="0">Select membership</option>
+                                    @foreach (var type in membershipTypes)
+                                    {
+                                        <option value="@type.MembershipTypeID">@type.TypeName - ₱@type.Price.ToString("N2") (@type.DurationInDays days)</option>
+                                    }
+                                </select>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            @DisplayError("MembershipTypeID")
+                        </div>
+                        <div class="form-group">
+                            <label class="required">Payment Method</label>
+                            <div class="select-wrapper">
+                                <select class="form-control select-dropdown @(GetErrorClass("PaymentMethod"))" @bind="selectedPaymentMethod">
+                                    <option value="Cash">Cash</option>
+                                    <option value="Ewallet">Ewallet</option>
+                                </select>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            @DisplayError("PaymentMethod")
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-cancel" @onclick="CloseSubscriptionModal">Cancel</button>
+                <button class="btn btn-primary" disabled="@isSaving" @onclick="SaveSubscriptionAsync">
+                    @(isSaving ? "Saving..." : "Complete Subscription")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .payments-container {
+        padding: 30px;
+    }
+
+    .payments-header {
+        background: #fff;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .payments-header h1 {
+        margin: 0;
+        font-size: 26px;
+        color: #233347;
+    }
+
+    .subtitle {
+        margin: 6px 0 0 0;
+        color: #6b7a8a;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 10px;
+    }
+
+    .primary-btn {
+        background: #5cb85c;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .primary-btn:hover {
+        background: #4aac4a;
+        box-shadow: 0 8px 20px rgba(92,184,92,0.35);
+        transform: translateY(-1px);
+    }
+
+    .payments-content {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+        margin-top: 25px;
+    }
+
+    .info-card, .placeholder-card {
+        background: #fff;
+        border-radius: 10px;
+        padding: 22px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    .info-card h3,
+    .placeholder-card h3 {
+        margin: 0 0 12px 0;
+        color: #233347;
+    }
+
+    .info-card ul {
+        padding-left: 18px;
+        margin: 0;
+        color: #4c5b6c;
+        line-height: 1.6;
+    }
+
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        padding: 20px;
+    }
+
+    .modal-content {
+        width: 95%;
+        max-width: 900px;
+        background: white;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        max-height: 95vh;
+        overflow: hidden;
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-body {
+        padding: 24px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .modal-footer {
+        padding: 16px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 32px;
+        color: #777;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    .close-btn:hover {
+        color: #000;
+    }
+
+    .form-section {
+        margin-bottom: 30px;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 18px;
+        margin-bottom: 16px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .form-group label {
+        font-weight: 600;
+        font-size: 14px;
+        color: #2d3b4f;
+    }
+
+    .required::after {
+        content: "*";
+        color: #e74c3c;
+        margin-left: 3px;
+    }
+
+    .form-control {
+        border: 1px solid #dcdfe5;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 14px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        font-family: inherit;
+    }
+
+    .form-control:focus {
+        border-color: #4aac4a;
+        box-shadow: 0 0 0 3px rgba(92,184,92,0.12);
+        outline: none;
+    }
+
+    .form-control.error {
+        border-color: #e74c3c;
+        box-shadow: 0 0 0 2px rgba(231,76,60,0.15);
+    }
+
+    textarea.form-control {
+        resize: vertical;
+    }
+
+    .select-wrapper {
+        position: relative;
+        overflow: visible;
+    }
+
+    .select-dropdown {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        width: 100%;
+        background: white;
+        padding-right: 35px;
+        box-sizing: border-box;
+        border: 1px solid #dcdfe5 !important;
+        border-radius: 8px;
+    }
+
+    .select-dropdown:focus {
+        border-color: #4aac4a !important;
+        box-shadow: 0 0 0 3px rgba(92,184,92,0.12);
+        outline: none;
+    }
+
+    .select-dropdown.error {
+        border-color: #e74c3c !important;
+        box-shadow: 0 0 0 2px rgba(231,76,60,0.15);
+    }
+
+    .dropdown-arrow {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        color: #777;
+        font-size: 12px;
+        z-index: 1;
+        background: white;
+        padding-left: 4px;
+    }
+
+    .btn {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 18px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-cancel {
+        background: #f3f4f6;
+        color: #555;
+    }
+
+    .btn-cancel:hover {
+        background: #e3e5e9;
+    }
+
+    .btn-primary {
+        background: #5cb85c;
+        color: white;
+    }
+
+    .btn-primary:hover:not([disabled]) {
+        background: #49a949;
+        box-shadow: 0 8px 20px rgba(92,184,92,0.35);
+    }
+
+    .btn-primary[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    .field-error {
+        font-size: 12px;
+        color: #d35400;
+    }
+
+    .general-error {
+        background: #fff3cd;
+        border: 1px solid #ffeeba;
+        padding: 10px 14px;
+        border-radius: 8px;
+        color: #856404;
+        margin-bottom: 15px;
+    }
+
+    @@media (max-width: 640px) {
+        .payments-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+@code {
+    private List<MembershipTypeModel> membershipTypes = new();
+    private List<TrainerModel> availableTrainers = new();
+    private List<TrainerScheduleModel> trainerSchedules = new();
+    private List<TrainerScheduleModel> visibleSchedules = new();
+    private MemberModel subscriptionMember = new();
+    private DateTime subscriptionJoinDate = DateTime.Today;
+    private DateTime? subscriptionExpiration;
+    private int selectedMembershipTypeId;
+    private MembershipTypeModel? selectedMembershipType;
+    private string selectedPaymentMethod = "Cash";
+    private int selectedTrainerScheduleId;
+    private bool showSubscriptionModal;
+    private bool isSaving;
+    private string? generalError;
+    private readonly Dictionary<string, string> fieldErrors = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReferenceDataAsync();
+    }
+
+    private async Task LoadReferenceDataAsync()
+    {
+        membershipTypes = await Context.MembershipTypes
+            .Where(mt => !mt.IsArchived)
+            .OrderBy(mt => mt.TypeName)
+            .ToListAsync();
+
+        availableTrainers = await Context.Trainers
+            .AsNoTracking()
+            .OrderBy(t => t.LastName)
+            .ThenBy(t => t.FirstName)
+            .ToListAsync();
+
+        trainerSchedules = await Context.TrainerSchedules
+            .AsNoTracking()
+            .Include(ts => ts.Trainer)
+            .Where(ts => ts.IsAvailable)
+            .OrderBy(ts => ts.DayOfWeek)
+            .ThenBy(ts => ts.StartTime)
+            .ToListAsync();
+    }
+
+    private void OpenSubscriptionModal()
+    {
+        subscriptionMember = new MemberModel
+        {
+            FirstName = string.Empty,
+            LastName = string.Empty,
+            ContactNumber = string.Empty,
+            Email = string.Empty,
+            Address = string.Empty,
+            Status = "Active"
+        };
+
+        subscriptionJoinDate = DateTime.Today;
+        subscriptionExpiration = null;
+        selectedMembershipTypeId = 0;
+        selectedMembershipType = null;
+        selectedPaymentMethod = "Cash";
+        selectedTrainerScheduleId = 0;
+        subscriptionMember.TrainerID = null;
+        subscriptionMember.TrainerScheduleID = null;
+        visibleSchedules = new();
+        generalError = null;
+        fieldErrors.Clear();
+        showSubscriptionModal = true;
+    }
+
+    private void CloseSubscriptionModal()
+    {
+        if (isSaving)
+            return;
+
+        showSubscriptionModal = false;
+    }
+
+    private async Task SaveSubscriptionAsync()
+    {
+        if (isSaving)
+            return;
+
+        generalError = null;
+        fieldErrors.Clear();
+
+        if (!ValidateForm())
+            return;
+
+        try
+        {
+            isSaving = true;
+
+            subscriptionMember.JoinDate = subscriptionJoinDate;
+            subscriptionMember.ExpirationDate = subscriptionExpiration;
+            subscriptionMember.MembershipTypeID = selectedMembershipTypeId;
+            if (subscriptionMember.TrainerID.HasValue && selectedTrainerScheduleId > 0)
+            {
+                subscriptionMember.TrainerScheduleID = selectedTrainerScheduleId;
+            }
+            else
+            {
+                subscriptionMember.TrainerScheduleID = null;
+                subscriptionMember.TrainerID = null;
+            }
+
+            Context.Members.Add(subscriptionMember);
+            await Context.SaveChangesAsync();
+
+            var payment = new PaymentModel
+            {
+                MemberID = subscriptionMember.MemberID,
+                Amount = selectedMembershipType?.Price ?? 0,
+                PaymentDate = DateTime.Now,
+                PaymentType = selectedPaymentMethod
+            };
+
+            Context.Payments.Add(payment);
+            await Context.SaveChangesAsync();
+
+            showSubscriptionModal = false;
+            await JSRuntime.InvokeVoidAsync("alert", $"Subscription created for {subscriptionMember.FullName}.");
+        }
+        catch (Exception ex)
+        {
+            generalError = $"Unable to save subscription: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private bool ValidateForm()
+    {
+        void AddError(string key, string message) => fieldErrors[key] = message;
+
+        if (string.IsNullOrWhiteSpace(subscriptionMember.FirstName))
+            AddError("FirstName", "First name is required.");
+
+        if (string.IsNullOrWhiteSpace(subscriptionMember.LastName))
+            AddError("LastName", "Last name is required.");
+
+        if (string.IsNullOrWhiteSpace(subscriptionMember.ContactNumber))
+            AddError("ContactNumber", "Contact number is required.");
+        else
+        {
+            var digitsOnly = new string(subscriptionMember.ContactNumber.Where(char.IsDigit).ToArray());
+            if (digitsOnly.Length != 11)
+                AddError("ContactNumber", "Contact number must be 11 digits.");
+            else
+                subscriptionMember.ContactNumber = digitsOnly;
+        }
+
+        if (string.IsNullOrWhiteSpace(subscriptionMember.Email))
+            AddError("Email", "Email is required.");
+
+        if (string.IsNullOrWhiteSpace(subscriptionMember.Address))
+            AddError("Address", "Address is required.");
+
+        if (subscriptionJoinDate == DateTime.MinValue)
+            AddError("JoinDate", "Join date is required.");
+
+        if (selectedMembershipTypeId <= 0)
+            AddError("MembershipTypeID", "Please select a membership type.");
+
+        if (string.IsNullOrWhiteSpace(selectedPaymentMethod))
+            AddError("PaymentMethod", "Please select a payment method.");
+
+        if (subscriptionMember.TrainerID.HasValue && selectedTrainerScheduleId <= 0)
+            AddError("TrainerScheduleID", "Please choose a schedule for the trainer.");
+
+        if (selectedMembershipType == null && selectedMembershipTypeId > 0)
+        {
+            selectedMembershipType = membershipTypes.FirstOrDefault(mt => mt.MembershipTypeID == selectedMembershipTypeId);
+        }
+
+        if (selectedMembershipType != null && subscriptionJoinDate != DateTime.MinValue)
+        {
+            subscriptionExpiration = subscriptionJoinDate.AddDays(selectedMembershipType.DurationInDays);
+        }
+
+        OnScheduleChanged();
+
+        return fieldErrors.Count == 0;
+    }
+
+    private void OnMembershipTypeChanged()
+    {
+        selectedMembershipType = membershipTypes.FirstOrDefault(mt => mt.MembershipTypeID == selectedMembershipTypeId);
+        if (selectedMembershipType != null && subscriptionJoinDate != DateTime.MinValue)
+        {
+            subscriptionExpiration = subscriptionJoinDate.AddDays(selectedMembershipType.DurationInDays);
+        }
+        else
+        {
+            subscriptionExpiration = null;
+        }
+    }
+
+    private void OnJoinDateChanged()
+    {
+        if (selectedMembershipType != null)
+        {
+            subscriptionExpiration = subscriptionJoinDate.AddDays(selectedMembershipType.DurationInDays);
+        }
+    }
+
+    private void OnTrainerChanged()
+    {
+        if (subscriptionMember.TrainerID.HasValue)
+        {
+            visibleSchedules = trainerSchedules
+                .Where(ts => ts.TrainerID == subscriptionMember.TrainerID.Value)
+                .ToList();
+            selectedTrainerScheduleId = 0;
+        }
+        else
+        {
+            visibleSchedules = new();
+            selectedTrainerScheduleId = 0;
+            subscriptionMember.TrainerScheduleID = null;
+        }
+    }
+
+    private void OnScheduleChanged()
+    {
+        if (selectedTrainerScheduleId > 0)
+        {
+            var schedule = trainerSchedules.FirstOrDefault(ts => ts.TrainerScheduleID == selectedTrainerScheduleId);
+            if (schedule != null)
+            {
+                subscriptionMember.TrainerScheduleID = schedule.TrainerScheduleID;
+            }
+        }
+        else
+        {
+            subscriptionMember.TrainerScheduleID = null;
+        }
+    }
+
+    private string GetErrorClass(string field) => fieldErrors.ContainsKey(field) ? "error" : string.Empty;
+
+    private RenderFragment DisplayError(string field) => builder =>
+    {
+        if (fieldErrors.TryGetValue(field, out var message))
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "field-error");
+            builder.AddContent(2, message);
+            builder.CloseElement();
+        }
+    };
+
+    private string ContactNumberInput
+    {
+        get => subscriptionMember.ContactNumber;
+        set
+        {
+            var digits = new string((value ?? string.Empty).Where(char.IsDigit).Take(11).ToArray());
+            subscriptionMember.ContactNumber = digits;
+        }
+    }
+
+    private string FormatScheduleOption(TrainerScheduleModel schedule)
+    {
+        var day = Enum.GetName(typeof(DayOfWeek), schedule.DayOfWeek) ?? $"Day {schedule.DayOfWeek}";
+        var start = DateTime.Today.Add(schedule.StartTime).ToString("hh\\:mm tt");
+        var end = DateTime.Today.Add(schedule.EndTime).ToString("hh\\:mm tt");
+        var trainerName = schedule.Trainer?.FullName ?? $"Trainer #{schedule.TrainerID}";
+        return $"{trainerName} - {day} {start} - {end}";
+    }
+}
+

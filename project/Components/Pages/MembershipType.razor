@@ -345,22 +345,30 @@
     }
 
     .edit-btn {
-        background: #e3f2fd;
+        background: transparent !important;
     }
 
         .edit-btn:hover {
-            background: #bbdefb;
-            transform: scale(1.05);
+            background: transparent !important;
+            transform: scale(1.1);
         }
 
+            .edit-btn:hover .action-icon {
+                filter: brightness(1.15);
+            }
+
     .archive-btn {
-        background: #ffebee;
+        background: transparent !important;
     }
 
         .archive-btn:hover {
-            background: #ffcdd2;
-            transform: scale(1.05);
+            background: transparent !important;
+            transform: scale(1.1);
         }
+
+            .archive-btn:hover .action-icon {
+                filter: brightness(1.15);
+            }
 
     .action-icon {
         width: 18px;

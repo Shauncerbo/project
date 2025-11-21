@@ -26,6 +26,9 @@ namespace project.Services
                 if (member == null)
                     return false;
 
+                if (!IsMemberEligible(member))
+                    return false;
+
                 // Check if member already verified today
                 var today = DateTime.Today;
                 var existingCheckIn = await _context.Attendances
@@ -104,6 +107,13 @@ namespace project.Services
                     var parts = qrData.Split(':');
                     if (parts.Length >= 3 && int.TryParse(parts[2], out int memberId))
                     {
+                        var member = await _context.Members.FindAsync(memberId);
+                        if (member == null)
+                            return false;
+
+                        if (!IsMemberEligible(member))
+                            return false;
+
                         // Check if member already verified today
                         var today = DateTime.Today;
                         var existing = await _context.Attendances
@@ -168,6 +178,20 @@ namespace project.Services
             {
                 return $"Database connection error: {ex.Message}";
             }
+        }
+
+        private bool IsMemberEligible(Member member)
+        {
+            if (member.IsArchived)
+                return false;
+
+            if (!string.Equals(member.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (member.ExpirationDate.HasValue && member.ExpirationDate.Value.Date < DateTime.Today)
+                return false;
+
+            return true;
         }
 
     }

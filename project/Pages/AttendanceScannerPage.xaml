@@ -7,20 +7,40 @@
     
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Camera Barcode Reader -->
-        <zxing:CameraBarcodeReaderView 
-            x:Name="BarcodeReader"
-            Grid.Row="0"
-            BarcodesDetected="OnBarcodeDetected"
-            IsTorchOn="False"
-            IsDetecting="True" />
+        <!-- Top spacing -->
+        <BoxView Grid.Row="0" HeightRequest="40" BackgroundColor="Black" />
+
+        <!-- Camera Barcode Reader - Resized and Centered -->
+        <Grid Grid.Row="1" 
+              HorizontalOptions="Fill" 
+              VerticalOptions="Fill"
+              Padding="40">
+            <Frame 
+                HorizontalOptions="Center"
+                VerticalOptions="Center"
+                WidthRequest="450"
+                HeightRequest="450"
+                HasShadow="False"
+                BorderColor="Transparent"
+                Padding="0"
+                BackgroundColor="Black">
+                <zxing:CameraBarcodeReaderView 
+                    x:Name="BarcodeReader"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
+                    BarcodesDetected="OnBarcodeDetected"
+                    IsTorchOn="False"
+                    IsDetecting="True" />
+            </Frame>
+        </Grid>
 
         <!-- Overlay with scanning frame -->
-        <Grid Grid.Row="0" BackgroundColor="Transparent">
+        <Grid Grid.Row="1" BackgroundColor="Transparent">
             <BoxView BackgroundColor="#80000000" />
             <Frame 
                 HorizontalOptions="Center"
@@ -43,7 +63,7 @@
         </Grid>
 
         <!-- Bottom Controls -->
-        <Grid Grid.Row="1" 
+        <Grid Grid.Row="2" 
               BackgroundColor="#F0F0F0"
               Padding="20">
             <Grid.RowDefinitions>
@@ -74,5 +94,8 @@
         </Grid>
     </Grid>
 </ContentPage>
+
+
+
 
 

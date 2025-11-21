@@ -29,6 +29,7 @@ namespace project.Data
         public DbSet<MembershipType> MembershipTypes { get; set; }
         public DbSet<WalkIn> WalkIns { get; set; }
         public DbSet<MemberPromo> MemberPromos { get; set; }
+        public DbSet<TrainerSchedule> TrainerSchedules { get; set; }
 
         // ✅ ADD OnModelCreating for relationships
         protected override void OnModelCreating(ModelBuilder modelBuilder)

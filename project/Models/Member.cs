@@ -19,6 +19,8 @@ namespace project.Models
         public string LastName { get; set; } = string.Empty;
 
         [Required]
+        [MaxLength(11)]
+        [RegularExpression(@"^\d{11}$", ErrorMessage = "Contact number must be 11 digits.")]
         public string ContactNumber { get; set; } = string.Empty;
 
         [Required]
@@ -39,10 +41,12 @@ namespace project.Models
         // Foreign Keys
         public int MembershipTypeID { get; set; }
         public int? TrainerID { get; set; }
+        public int? TrainerScheduleID { get; set; }
 
         // Navigation Properties
         public virtual MembershipType? MembershipType { get; set; }
         public virtual Trainer? Trainer { get; set; }
+        public virtual TrainerSchedule? TrainerSchedule { get; set; }
 
         // Collections
         public virtual ICollection<Attendance> Attendances { get; set; } = new List<Attendance>();

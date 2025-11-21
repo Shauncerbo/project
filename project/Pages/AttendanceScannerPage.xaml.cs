@@ -3,6 +3,7 @@ using project.Services;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
+using project.Models;
 
 namespace project.Pages;
 
@@ -66,15 +67,37 @@ public partial class AttendanceScannerPage : ContentPage
                 {
                     if (_attendanceService != null)
                     {
+                        Member? member = null;
+                        if (_memberService != null)
+                        {
+                            member = await _memberService.GetMemberByIdAsync(memberId);
+                            if (member == null)
+                            {
+                                await ShowAlertAsync("Member Not Found", $"Member ID {memberId} was not found in the system.");
+                                await Task.Delay(500);
+                                RestartCamera();
+                                return;
+                            }
+
+                            if (!IsMemberEligibleForAttendance(member, out var reason))
+                            {
+                                await ShowAlertAsync("Attendance Blocked", reason);
+                                await Task.Delay(500);
+                                RestartCamera();
+                                return;
+                            }
+                        }
+
                         // Process attendance asynchronously
                         var success = await _attendanceService.ProcessQrAttendanceAsync(qrCode);
                         
                         if (success)
                         {
-                            var member = _memberService != null 
-                                ? await _memberService.GetMemberByIdAsync(memberId) 
-                                : null;
-                            
+                            if (member == null && _memberService != null)
+                            {
+                                member = await _memberService.GetMemberByIdAsync(memberId);
+                            }
+
                             var memberName = member != null 
                                 ? $"{member.FirstName} {member.LastName}" 
                                 : $"Member {memberId}";
@@ -253,6 +276,31 @@ public partial class AttendanceScannerPage : ContentPage
                 System.Diagnostics.Debug.WriteLine($"Error showing alert: {ex.Message}");
             }
         });
+    }
+
+    private static bool IsMemberEligibleForAttendance(Member member, out string reason)
+    {
+        if (member.IsArchived)
+        {
+            reason = $"{member.FullName} is archived and cannot log attendance.";
+            return false;
+        }
+
+        if (!string.Equals(member.Status, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            var statusText = string.IsNullOrWhiteSpace(member.Status) ? "inactive" : member.Status.ToLower();
+            reason = $"{member.FullName} is currently {statusText} and cannot log attendance.";
+            return false;
+        }
+
+        if (member.ExpirationDate.HasValue && member.ExpirationDate.Value.Date < DateTime.Today)
+        {
+            reason = $"{member.FullName}'s membership expired on {member.ExpirationDate.Value:MM/dd/yyyy}.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
     }
 }
 

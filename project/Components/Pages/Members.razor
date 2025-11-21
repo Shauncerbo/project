@@ -27,11 +27,10 @@
         <div class="header-actions">
             <input type="text"
                    class="search-bar"
-                   placeholder="Search..."
+                   placeholder="Search members..."
                    @bind="searchQuery"
                    @bind:event="oninput"
                    @onkeyup="HandleSearch" />
-            <button class="add-member-btn" @onclick="OpenAddMemberModal">+ Add New Member</button>
         </div>
     </div>
 
@@ -47,6 +46,7 @@
                     <th>JOIN DATE</th>
                     <th>EXPIRATION DATE</th>
                     <th>STATUS</th>
+                    <th>PAYMENT METHOD</th>
                     <th>TRAINER</th>
                     <th>ACTIONS</th>
                 </tr>
@@ -55,7 +55,7 @@
                 @if (filteredMembers == null || !filteredMembers.Any())
                 {
                     <tr>
-                        <td colspan="9" class="no-data">
+                        <td colspan="10" class="no-data">
                             <div class="no-data-content">
                                 <span class="no-data-icon">👥</span>
                                 <p>No members found</p>
@@ -97,6 +97,13 @@
                                 </span>
                             </td>
                             <td>
+                                @{
+                                    var latestPayment = member.Payments?.OrderByDescending(p => p.PaymentDate).FirstOrDefault();
+                                    var paymentMethod = latestPayment?.PaymentType ?? "N/A";
+                                }
+                                <span class="payment-method-text">@paymentMethod</span>
+                            </td>
+                            <td>
                                 @if (member.TrainerID.HasValue && member.Trainer != null)
                                 {
                                     <div class="trainer-info">
@@ -118,7 +125,7 @@
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                     <button class="action-btn qr-btn" @onclick="() => ShowQrCode(member)" title="QR Code">
-                                        <img src="/qr_icon.svg" class="action-icon" alt="QR Code" />
+                                        <img src="/QR_icon.svg" class="action-icon" alt="QR Code" />
                                     </button>
                                 </div>
                             </td>
@@ -466,7 +473,14 @@
          background: white;
          border-radius: 10px;
          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-         overflow: hidden;
+         overflow-x: auto;
+         overflow-y: auto;
+         max-height: calc(100vh - 250px);
+     }
+
+     .payment-method-text {
+         color: #333;
+         font-size: 14px;
      }
 
      .members-table {
@@ -477,6 +491,9 @@
          .members-table thead {
              background: #234060;
              color: white;
+             position: sticky;
+             top: 0;
+             z-index: 10;
          }
 
          .members-table th {
@@ -510,6 +527,14 @@
          gap: 10px;
      }
 
+        .member-info span {
+            font-weight: 600;
+            color: #1f2b3d;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+        }
+
      .member-avatar {
          width: 36px;
          height: 36px;
@@ -530,20 +555,26 @@
      }
 
      .status-badge {
-         padding: 6px 12px;
-         border-radius: 20px;
-         font-size: 12px;
+         padding: 0;
+         border-radius: 0;
+         font-size: 14px;
          font-weight: 600;
+         background: transparent;
      }
 
      .status-active {
-         background: #d4edda;
-         color: #155724;
+         background: transparent;
+         color: #333;
      }
 
      .status-inactive {
-         background: #f8d7da;
-         color: #721c24;
+         background: transparent;
+         color: #333;
+     }
+
+     .status-suspended {
+         background: transparent;
+         color: #333;
      }
 
      .trainer-info {
@@ -578,67 +609,47 @@
          gap: 8px;
      }
 
-     .action-btn {
-         background: transparent;
-         border: none;
-         cursor: pointer;
-         padding: 8px;
-         border-radius: 6px;
-         transition: all 0.2s;
-         display: flex;
-         align-items: center;
-         justify-content: center;
-         width: 36px;
-         height: 36px;
-     }
+    .action-btn {
+        background: transparent !important;
+        border: none !important;
+        cursor: pointer;
+        padding: 0;
+        transition: transform 0.15s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: none !important;
+    }
 
-     .action-icon {
-         width: 18px;
-         height: 18px;
-         transition: all 0.2s;
-     }
+        .action-btn:hover {
+            transform: scale(1.1);
+            background: transparent !important;
+        }
 
-     .edit-btn {
-         background: #e3f2fd;
-         color: #3498db;
-     }
+        .action-btn:focus {
+            background: transparent !important;
+            outline: none;
+        }
 
-         .edit-btn:hover {
-             background: #3498db;
-             transform: scale(1.1);
-         }
+        .action-btn:active {
+            background: transparent !important;
+        }
 
-             .edit-btn:hover .action-icon {
-                 filter: brightness(0) invert(1);
-             }
+    .action-icon {
+        width: 20px;
+        height: 20px;
+        transition: filter 0.15s ease;
+    }
 
-     .archive-btn {
-         background: #fff3e0;
-         color: #f39c12;
-     }
+        .action-btn:hover .action-icon {
+            filter: brightness(1.15);
+        }
 
-         .archive-btn:hover {
-             background: #f39c12;
-             transform: scale(1.1);
-         }
-
-             .archive-btn:hover .action-icon {
-                 filter: brightness(0) invert(1);
-             }
-
-     .qr-btn {
-         background: #e8f5e8;
-         color: #27ae60;
-     }
-
-         .qr-btn:hover {
-             background: #27ae60;
-             transform: scale(1.1);
-         }
-
-             .qr-btn:hover .action-icon {
-                 filter: brightness(0) invert(1);
-             }
+    .edit-btn,
+    .archive-btn,
+    .qr-btn {
+        background: transparent !important;
+    }
 
      .no-data {
          text-align: center;
@@ -809,9 +820,9 @@
          font-weight: 500;
      }
 
-     .expiration-valid {
-         color: #27ae60;
-     }
+    .expiration-valid {
+        color: #f39c12;
+    }
 
      .expiration-preview {
          margin-top: 8px;
@@ -1308,6 +1319,7 @@
                 .Where(m => m.IsArchived == false)
                 .Include(m => m.Trainer)
                 .Include(m => m.MembershipType)
+                .Include(m => m.Payments)
                 .ToListAsync();
             
             // Calculate expiration dates for members that don't have one
@@ -1328,6 +1340,7 @@
                 members = await Context.Members
                     .Include(m => m.Trainer)
                     .Include(m => m.MembershipType)
+                    .Include(m => m.Payments)
                     .ToListAsync();
             }
             
