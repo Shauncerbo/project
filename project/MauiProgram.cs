@@ -108,23 +108,24 @@ namespace project
 
             var app = builder.Build();
 
-            // Initialize database on startup (async initialization)
-            _ = Task.Run(async () =>
+            // Initialize database on startup - wait for it to complete
+            try
             {
-                try
+                using (var scope = app.Services.CreateScope())
                 {
-                    using (var scope = app.Services.CreateScope())
-                    {
-                        var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
-                        await initializer.InitializeAsync();
-                    }
+                    var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
+                    // Run synchronously to ensure it completes before app starts
+                    initializer.InitializeAsync().GetAwaiter().GetResult();
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Failed to initialize database: {ex.Message}");
-                    // Continue app startup even if database init fails
-                }
-            });
+            }
+            catch (Exception ex)
+            {
+                // Show error in console and debug output
+                System.Diagnostics.Debug.WriteLine($"❌ Failed to initialize database: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                Console.WriteLine($"❌ Database initialization failed: {ex.Message}");
+                // Continue app startup even if database init fails
+            }
 
             return app;
         }

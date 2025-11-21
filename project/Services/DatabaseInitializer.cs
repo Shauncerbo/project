@@ -17,42 +17,60 @@ namespace project.Services
         {
             try
             {
+                System.Diagnostics.Debug.WriteLine("🔄 Starting database initialization...");
+
                 // Check if database exists, if not create it
                 if (!await _context.Database.CanConnectAsync())
                 {
+                    System.Diagnostics.Debug.WriteLine("📦 Database doesn't exist, creating...");
+                    
                     // Try to apply migrations first
                     try
                     {
                         await _context.Database.MigrateAsync();
+                        System.Diagnostics.Debug.WriteLine("✅ Migrations applied successfully");
                     }
-                    catch
+                    catch (Exception migrateEx)
                     {
+                        System.Diagnostics.Debug.WriteLine($"⚠️ Migrations failed: {migrateEx.Message}");
+                        System.Diagnostics.Debug.WriteLine("📝 Using EnsureCreated as fallback...");
+                        
                         // If migrations don't exist, create database using EnsureCreated
                         // This is a fallback for initial setup
                         await _context.Database.EnsureCreatedAsync();
+                        System.Diagnostics.Debug.WriteLine("✅ Database created using EnsureCreated");
                     }
                 }
                 else
                 {
+                    System.Diagnostics.Debug.WriteLine("✅ Database exists, checking for migrations...");
+                    
                     // Database exists, try to apply migrations
                     try
                     {
                         await _context.Database.MigrateAsync();
+                        System.Diagnostics.Debug.WriteLine("✅ Migrations applied successfully");
                     }
-                    catch
+                    catch (Exception migrateEx)
                     {
                         // Migrations might not exist yet, that's okay
-                        System.Diagnostics.Debug.WriteLine("Migrations not found, using existing database structure");
+                        System.Diagnostics.Debug.WriteLine($"ℹ️ Migrations not found or error: {migrateEx.Message}");
+                        System.Diagnostics.Debug.WriteLine("Using existing database structure");
                     }
                 }
 
                 // Seed initial data
+                System.Diagnostics.Debug.WriteLine("🌱 Seeding initial data...");
                 await SeedDataAsync();
+                System.Diagnostics.Debug.WriteLine("✅ Database initialization completed successfully!");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Database initialization error: {ex.Message}");
-                // Don't throw - allow app to continue even if DB init fails
+                System.Diagnostics.Debug.WriteLine($"❌ Database initialization error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                Console.WriteLine($"❌ Database initialization error: {ex.Message}");
+                // Re-throw so we can see the error in MauiProgram
+                throw;
             }
         }
 
