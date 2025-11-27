@@ -6,9 +6,11 @@
 @using System.Threading.Tasks
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
+@inject project.Services.IAuthService AuthService
 @using project.Data
 @using project.Models
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.Maui.Storage
 
 <div class="settings-container">
     <!-- Page Header -->
@@ -40,7 +42,6 @@
         else if (activeUsers == null || !activeUsers.Any())
         {
             <div class="empty-state small">
-                <div class="empty-icon">🔐</div>
                 <h3>No Staff/Trainer Accounts</h3>
                 <p>Create the first account to allow staff or trainers to log in.</p>
             </div>
@@ -69,7 +70,7 @@
                                         @(user.IsActive == true ? "Active" : "Inactive")
                                     </span>
                                 </td>
-                                <td>@(user.CreatedAt?.ToString("MMM dd, yyyy") ?? "-")</td>
+                                <td>@(user.CreatedAt.HasValue ? user.CreatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
                                 <td class="account-actions">
                                     <button class="btn-secondary" @onclick="() => OpenPasswordModal(user)">Change Password</button>
                                     <button class="btn-link red" @onclick="() => ArchiveAccount(user)">
@@ -103,7 +104,7 @@
                                 <tr>
                                     <td>@user.Username</td>
                                     <td>@user.Role?.RoleName</td>
-                                    <td>@(user.UpdatedAt?.ToString("MMM dd, yyyy") ?? "-")</td>
+                                    <td>@(user.UpdatedAt.HasValue ? user.UpdatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
                                     <td class="account-actions">
                                         <button class="btn-secondary" @onclick="() => RestoreAccount(user)">Restore</button>
                                     </td>
@@ -119,28 +120,32 @@
     <!-- Tabs Navigation -->
     <div class="tabs-container">
         <button class="tab-btn @(activeTab == "members" ? "active" : "")" @onclick='() => SwitchTab("members")'>
-            <span class="tab-icon">👥</span>
+            <span class="tab-icon"></span>
             Archived Members
             @if (archivedMembersCount > 0)
             {
                 <span class="badge">@archivedMembersCount</span>
             }
         </button>
-        <button class="tab-btn @(activeTab == "walkins" ? "active" : "")" @onclick='() => SwitchTab("walkins")'>
-            <span class="tab-icon">🚶‍♂️</span>
-            Archived Walk-ins
-            @if (archivedWalkinsCount > 0)
+        <button class="tab-btn @(activeTab == "promotions" ? "active" : "")" @onclick='() => SwitchTab("promotions")'>
+            <span class="tab-icon"></span>
+            Archived Promotions
+            @if (archivedPromotionsCount > 0)
             {
-                <span class="badge">@archivedWalkinsCount</span>
+                <span class="badge">@archivedPromotionsCount</span>
             }
         </button>
         <button class="tab-btn @(activeTab == "membershiptypes" ? "active" : "")" @onclick='() => SwitchTab("membershiptypes")'>
-            <span class="tab-icon">💳</span>
+            <span class="tab-icon"></span>
             Archived Membership Types
             @if (archivedMembershipTypesCount > 0)
             {
                 <span class="badge">@archivedMembershipTypesCount</span>
             }
+        </button>
+        <button class="tab-btn @(activeTab == "auditlogs" ? "active" : "")" @onclick='() => SwitchTab("auditlogs")'>
+            <span class="tab-icon"></span>
+            Audit Logs
         </button>
     </div>
 
@@ -171,7 +176,7 @@
                     @if (filteredArchivedMembers == null || !filteredArchivedMembers.Any())
                     {
                         <div class="empty-state">
-                            <div class="empty-icon">📦</div>
+                            <div class="empty-icon"></div>
                             <h3>No Archived Members</h3>
                             <p>There are no archived members to display.</p>
                         </div>
@@ -204,11 +209,12 @@
                                             <td>@member.ContactNumber</td>
                                             <td>@member.JoinDate.ToString("MM/dd/yyyy")</td>
                                             <td>
-                                                <span class="status-badge status-archived">@member.Status</span>
+                                                @* Archived members always show "Inactive" status *@
+                                                <span class="status-badge status-archived">Inactive</span>
                                             </td>
                                             <td>
                                                 <button class="btn-restore" @onclick="() => UnarchiveMember(member)" title="Restore">
-                                                    <span class="restore-icon">↩️</span>
+                                                    <span class="restore-icon"></span>
                                                     Restore
                                                 </button>
                                             </td>
@@ -221,26 +227,26 @@
                 </div>
             }
 
-            <!-- Archived Walk-ins Tab -->
-            @if (activeTab == "walkins")
+            <!-- Archived Promotions Tab -->
+            @if (activeTab == "promotions")
             {
                 <div class="archived-section">
                     <div class="section-header">
-                        <h2>Archived Walk-ins</h2>
+                        <h2>Archived Promotions</h2>
                         <input type="text"
                                class="search-bar"
-                               placeholder="Search archived walk-ins..."
-                               @bind="walkinSearchQuery"
+                               placeholder="Search archived promotions..."
+                               @bind="promotionSearchQuery"
                                @bind:event="oninput"
-                               @onkeyup="FilterArchivedWalkins" />
+                               @onkeyup="FilterArchivedPromotions" />
                     </div>
 
-                    @if (filteredArchivedWalkins == null || !filteredArchivedWalkins.Any())
+                    @if (filteredArchivedPromotions == null || !filteredArchivedPromotions.Any())
                     {
                         <div class="empty-state">
-                            <div class="empty-icon">📦</div>
-                            <h3>No Archived Walk-ins</h3>
-                            <p>There are no archived walk-ins to display.</p>
+                            <div class="empty-icon"></div>
+                            <h3>No Archived Promotions</h3>
+                            <p>There are no archived promotions to display.</p>
                         </div>
                     }
                     else
@@ -249,28 +255,29 @@
                             <table class="archived-table">
                                 <thead>
                                     <tr>
-                                        <th>NAME</th>
-                                        <th>VISIT DATE</th>
-                                        <th>PAYMENT AMOUNT</th>
+                                        <th>PROMO NAME</th>
+                                        <th>DESCRIPTION</th>
+                                        <th>DISCOUNT RATE</th>
+                                        <th>START DATE</th>
+                                        <th>END DATE</th>
                                         <th>ACTIONS</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var walkin in filteredArchivedWalkins)
+                                    @foreach (var promotion in filteredArchivedPromotions)
                                     {
                                         <tr>
                                             <td>
-                                                <div class="member-info">
-                                                    <div class="member-avatar">@GetInitials(walkin.FirstName, walkin.LastName)</div>
-                                                    <span>@GetFullName(walkin)</span>
-                                                </div>
+                                                <div class="type-name">@promotion.PromoName</div>
                                             </td>
-                                            <td>@walkin.VisitDate.ToString("MM/dd/yyyy hh:mm tt")</td>
-                                            <td class="amount-cell">
-                                                <span class="payment-amount">₱@walkin.PaymentAmount.ToString("N2")</span>
+                                            <td>@promotion.Description</td>
+                                            <td class="price-cell">
+                                                <span class="price">@promotion.DiscountRate.ToString("P0")</span>
                                             </td>
+                                            <td>@promotion.StartDate.ToString("MM/dd/yyyy")</td>
+                                            <td>@promotion.EndDate.ToString("MM/dd/yyyy")</td>
                                             <td>
-                                                <button class="btn-restore" @onclick="() => UnarchiveWalkin(walkin)" title="Restore">
+                                                <button class="btn-restore" @onclick="() => UnarchivePromotion(promotion)" title="Restore">
                                                     <span class="restore-icon">↩️</span>
                                                     Restore
                                                 </button>
@@ -301,7 +308,7 @@
                     @if (filteredArchivedMembershipTypes == null || !filteredArchivedMembershipTypes.Any())
                     {
                         <div class="empty-state">
-                            <div class="empty-icon">📦</div>
+                            <div class="empty-icon"></div>
                             <h3>No Archived Membership Types</h3>
                             <p>There are no archived membership types to display.</p>
                         </div>
@@ -334,6 +341,73 @@
                                                     <span class="restore-icon">↩️</span>
                                                     Restore
                                                 </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Audit Logs Tab -->
+            @if (activeTab == "auditlogs")
+            {
+                <div class="archived-section">
+                    <div class="section-header">
+                        <h2>Audit Logs</h2>
+                        <div class="audit-filters">
+                            <select @bind="auditLogFilter" @bind:after="LoadAuditLogs" class="filter-select">
+                                <option value="all">All Actions</option>
+                                <option value="Account">Account Actions</option>
+                                <option value="Member">Member Actions</option>
+                                <option value="Promotion">Promotion Actions</option>
+                                <option value="MembershipType">Membership Type Actions</option>
+                            </select>
+                            <input type="date" @bind="auditLogStartDate" @bind:after="LoadAuditLogs" class="date-filter-input" />
+                            <span>to</span>
+                            <input type="date" @bind="auditLogEndDate" @bind:after="LoadAuditLogs" class="date-filter-input" />
+                        </div>
+                    </div>
+
+                    @if (auditLogs == null || !auditLogs.Any())
+                    {
+                        <div class="empty-state">
+                            <div class="empty-icon"></div>
+                            <h3>No Audit Logs</h3>
+                            <p>There are no audit logs to display.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-container">
+                            <table class="archived-table">
+                                <thead>
+                                    <tr>
+                                        <th>TIMESTAMP</th>
+                                        <th>ACTION</th>
+                                        <th>ENTITY TYPE</th>
+                                        <th>ENTITY NAME</th>
+                                        <th>PERFORMED BY</th>
+                                        <th>DESCRIPTION</th>
+                                        <th>STATUS</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var log in auditLogs)
+                                    {
+                                        <tr>
+                                            <td>@log.Timestamp.ToString("MM/dd/yyyy HH:mm:ss")</td>
+                                            <td>@log.Action</td>
+                                            <td>@log.EntityType</td>
+                                            <td>@(string.IsNullOrEmpty(log.EntityName) ? "-" : log.EntityName)</td>
+                                            <td>@log.PerformedBy</td>
+                                            <td class="description-cell">@(string.IsNullOrEmpty(log.Description) ? "-" : log.Description)</td>
+                                            <td>
+                                                <span class="status-badge @(log.Status == "Success" ? "status-success" : "status-error")">
+                                                    @log.Status
+                                                </span>
                                             </td>
                                         </tr>
                                     }
@@ -657,16 +731,38 @@
 
     .status-badge {
         display: inline-block;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 12px;
+        padding: 0;
+        border-radius: 0;
+        font-size: 14px;
         font-weight: 600;
-        text-transform: uppercase;
+        text-transform: none;
+        background: transparent !important;
+        border: none !important;
+    }
+
+    .status-active {
+        background: transparent !important;
+        color: #333 !important;
+    }
+
+    .status-inactive {
+        background: transparent !important;
+        color: #333 !important;
     }
 
     .status-archived {
-        background: #e2e3e5;
-        color: #383d41;
+        background: transparent !important;
+        color: #333 !important;
+    }
+
+    .status-success {
+        background: transparent !important;
+        color: #333 !important;
+    }
+
+    .status-error {
+        background: transparent !important;
+        color: #333 !important;
     }
 
     .type-name {
@@ -689,6 +785,33 @@
 
     .amount-cell {
         font-weight: 600;
+    }
+
+    .audit-filters {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .filter-select {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .date-filter-input {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .description-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+        font-size: 13px;
     }
 
     .btn-restore {
@@ -947,26 +1070,33 @@
     
     // Search queries
     private string memberSearchQuery = "";
-    private string walkinSearchQuery = "";
+    private string promotionSearchQuery = "";
     private string membershipTypeSearchQuery = "";
 
     // Archived data
     private List<Member> archivedMembers = new List<Member>();
     private List<Member> filteredArchivedMembers = new List<Member>();
-    private List<WalkIn> archivedWalkins = new List<WalkIn>();
-    private List<WalkIn> filteredArchivedWalkins = new List<WalkIn>();
+    private List<Promotion> archivedPromotions = new List<Promotion>();
+    private List<Promotion> filteredArchivedPromotions = new List<Promotion>();
     private List<project.Models.MembershipType> archivedMembershipTypes = new List<project.Models.MembershipType>();
     private List<project.Models.MembershipType> filteredArchivedMembershipTypes = new List<project.Models.MembershipType>();
 
     // Counts
     private int archivedMembersCount = 0;
-    private int archivedWalkinsCount = 0;
+    private int archivedPromotionsCount = 0;
     private int archivedMembershipTypesCount = 0;
+
+    // Audit Logs
+    private List<AuditLog> auditLogs = new List<AuditLog>();
+    private string auditLogFilter = "all";
+    private DateTime? auditLogStartDate = DateTime.Today.AddDays(-30);
+    private DateTime? auditLogEndDate = DateTime.Today;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadArchivedData();
         await LoadAccountData();
+        await LoadAuditLogs();
     }
 
     private async Task LoadArchivedData()
@@ -984,12 +1114,12 @@
             filteredArchivedMembers = archivedMembers;
             archivedMembersCount = archivedMembers.Count;
 
-            // Load archived walk-ins
-            archivedWalkins = await Context.WalkIns
-                .Where(w => w.IsArchived == true)
+            // Load archived promotions
+            archivedPromotions = await Context.Promotions
+                .Where(p => p.IsArchived == true)
                 .ToListAsync();
-            filteredArchivedWalkins = archivedWalkins;
-            archivedWalkinsCount = archivedWalkins.Count;
+            filteredArchivedPromotions = archivedPromotions;
+            archivedPromotionsCount = archivedPromotions.Count;
 
             // Load archived membership types
             archivedMembershipTypes = await Context.MembershipTypes
@@ -1074,19 +1204,19 @@
         StateHasChanged();
     }
 
-    private void FilterArchivedWalkins()
+    private void FilterArchivedPromotions()
     {
-        if (string.IsNullOrWhiteSpace(walkinSearchQuery))
+        if (string.IsNullOrWhiteSpace(promotionSearchQuery))
         {
-            filteredArchivedWalkins = archivedWalkins;
+            filteredArchivedPromotions = archivedPromotions;
         }
         else
         {
-            var query = walkinSearchQuery.ToLower();
-            filteredArchivedWalkins = archivedWalkins
-                .Where(w => w.FirstName.ToLower().Contains(query) ||
-                           w.LastName.ToLower().Contains(query) ||
-                           w.MiddleName.ToLower().Contains(query))
+            var query = promotionSearchQuery.ToLower();
+            filteredArchivedPromotions = archivedPromotions
+                .Where(p => p.PromoName.ToLower().Contains(query) ||
+                           p.Description.ToLower().Contains(query) ||
+                           p.DiscountRate.ToString().Contains(query))
                 .ToList();
         }
         StateHasChanged();
@@ -1119,34 +1249,42 @@
         try
         {
             member.IsArchived = false;
+            // Restore status to Active when unarchiving
+            member.Status = "Active";
             Context.Members.Update(member);
             await Context.SaveChangesAsync();
+            await LogAuditAction("Member Restored", "Member", member.MemberID, $"{member.FirstName} {member.LastName}", $"Restored member {member.FirstName} {member.LastName} from archive");
             await LoadArchivedData();
+            await LoadAuditLogs();
             await JSRuntime.InvokeVoidAsync("alert", "Member restored successfully!");
         }
         catch (Exception ex)
         {
+            await LogAuditAction("Member Restore Failed", "Member", member.MemberID, $"{member.FirstName} {member.LastName}", $"Failed to restore member: {ex.Message}", "Failed", ex.Message);
             await JSRuntime.InvokeVoidAsync("alert", $"Error restoring member: {ex.Message}");
         }
     }
 
-    private async Task UnarchiveWalkin(WalkIn walkin)
+    private async Task UnarchivePromotion(Promotion promotion)
     {
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to restore walk-in '{GetFullName(walkin)}'?");
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to restore promotion '{promotion.PromoName}'?");
         if (!confirm)
             return;
 
         try
         {
-            walkin.IsArchived = false;
-            Context.WalkIns.Update(walkin);
+            promotion.IsArchived = false;
+            Context.Promotions.Update(promotion);
             await Context.SaveChangesAsync();
+            await LogAuditAction("Promotion Restored", "Promotion", promotion.PromoID, promotion.PromoName, $"Restored promotion {promotion.PromoName} from archive");
             await LoadArchivedData();
-            await JSRuntime.InvokeVoidAsync("alert", "Walk-in restored successfully!");
+            await LoadAuditLogs();
+            await JSRuntime.InvokeVoidAsync("alert", "Promotion restored successfully!");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error restoring walk-in: {ex.Message}");
+            await LogAuditAction("Promotion Restore Failed", "Promotion", promotion.PromoID, promotion.PromoName, $"Failed to restore promotion: {ex.Message}", "Failed", ex.Message);
+            await JSRuntime.InvokeVoidAsync("alert", $"Error restoring promotion: {ex.Message}");
         }
     }
 
@@ -1161,11 +1299,14 @@
             membershipType.IsArchived = false;
             Context.MembershipTypes.Update(membershipType);
             await Context.SaveChangesAsync();
+            await LogAuditAction("Membership Type Restored", "MembershipType", membershipType.MembershipTypeID, membershipType.TypeName, $"Restored membership type {membershipType.TypeName} from archive");
             await LoadArchivedData();
+            await LoadAuditLogs();
             await JSRuntime.InvokeVoidAsync("alert", "Membership type restored successfully!");
         }
         catch (Exception ex)
         {
+            await LogAuditAction("Membership Type Restore Failed", "MembershipType", membershipType.MembershipTypeID, membershipType.TypeName, $"Failed to restore membership type: {ex.Message}", "Failed", ex.Message);
             await JSRuntime.InvokeVoidAsync("alert", $"Error restoring membership type: {ex.Message}");
         }
     }
@@ -1175,18 +1316,6 @@
         var firstInitial = !string.IsNullOrEmpty(firstName) ? firstName[0].ToString().ToUpper() : "";
         var lastInitial = !string.IsNullOrEmpty(lastName) ? lastName[0].ToString().ToUpper() : "";
         return $"{firstInitial}{lastInitial}";
-    }
-
-    private string GetFullName(WalkIn walkin)
-    {
-        if (walkin == null) return "";
-        
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(walkin.FirstName)) parts.Add(walkin.FirstName);
-        if (!string.IsNullOrWhiteSpace(walkin.MiddleName)) parts.Add(walkin.MiddleName);
-        if (!string.IsNullOrWhiteSpace(walkin.LastName)) parts.Add(walkin.LastName);
-        
-        return string.Join(" ", parts);
     }
 
     private void OpenAccountModal()
@@ -1254,12 +1383,16 @@
             Context.Users.Add(user);
             await Context.SaveChangesAsync();
 
+            var roleName = availableRoles.FirstOrDefault(r => r.RoleID == selectedRoleId)?.RoleName ?? "Unknown";
+            await LogAuditAction("Account Created", "User", user.UserID, username, $"Created new {roleName} account: {username}");
             await LoadAccountData();
+            await LoadAuditLogs();
             CloseAccountModal();
             await JSRuntime.InvokeVoidAsync("alert", "Account created successfully.");
         }
         catch (Exception ex)
         {
+            await LogAuditAction("Account Creation Failed", "User", null, newAccountUsername, $"Failed to create account: {ex.Message}", "Failed", ex.Message);
             accountModalError = $"Error creating account: {ex.Message}";
         }
         finally
@@ -1322,11 +1455,14 @@
             selectedPasswordUser.LastPasswordChange = DateTime.Now;
             Context.Users.Update(selectedPasswordUser);
             await Context.SaveChangesAsync();
+            await LogAuditAction("Password Changed", "User", selectedPasswordUser.UserID, selectedPasswordUser.Username, $"Password changed for account: {selectedPasswordUser.Username}");
+            await LoadAuditLogs();
             await JSRuntime.InvokeVoidAsync("alert", "Password updated.");
             ClosePasswordModal();
         }
         catch (Exception ex)
         {
+            await LogAuditAction("Password Change Failed", "User", selectedPasswordUser.UserID, selectedPasswordUser.Username, $"Failed to change password: {ex.Message}", "Failed", ex.Message);
             passwordModalError = $"Error updating password: {ex.Message}";
         }
         finally
@@ -1348,11 +1484,14 @@
             user.UpdatedAt = DateTime.Now;
             Context.Users.Update(user);
             await Context.SaveChangesAsync();
+            await LogAuditAction("Account Archived", "User", user.UserID, user.Username, $"Archived account: {user.Username}");
             await LoadAccountData();
+            await LoadAuditLogs();
             await JSRuntime.InvokeVoidAsync("alert", "Account archived.");
         }
         catch (Exception ex)
         {
+            await LogAuditAction("Account Archive Failed", "User", user.UserID, user.Username, $"Failed to archive account: {ex.Message}", "Failed", ex.Message);
             await JSRuntime.InvokeVoidAsync("alert", $"Error archiving account: {ex.Message}");
         }
     }
@@ -1365,12 +1504,88 @@
             user.UpdatedAt = DateTime.Now;
             Context.Users.Update(user);
             await Context.SaveChangesAsync();
+            await LogAuditAction("Account Restored", "User", user.UserID, user.Username, $"Restored account: {user.Username}");
             await LoadAccountData();
+            await LoadAuditLogs();
             await JSRuntime.InvokeVoidAsync("alert", "Account restored.");
         }
         catch (Exception ex)
         {
+            await LogAuditAction("Account Restore Failed", "User", user.UserID, user.Username, $"Failed to restore account: {ex.Message}", "Failed", ex.Message);
             await JSRuntime.InvokeVoidAsync("alert", $"Error restoring account: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAuditLogs()
+    {
+        try
+        {
+            var query = Context.AuditLogs.AsQueryable();
+
+            // Filter by entity type
+            if (auditLogFilter != "all")
+            {
+                query = query.Where(log => log.EntityType == auditLogFilter);
+            }
+
+            // Filter by date range
+            if (auditLogStartDate.HasValue)
+            {
+                query = query.Where(log => log.Timestamp >= auditLogStartDate.Value);
+            }
+
+            if (auditLogEndDate.HasValue)
+            {
+                var endDate = auditLogEndDate.Value.AddDays(1); // Include the entire end date
+                query = query.Where(log => log.Timestamp < endDate);
+            }
+
+            auditLogs = await query
+                .OrderByDescending(log => log.Timestamp)
+                .Take(500) // Limit to last 500 logs for performance
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            // If AuditLogs table doesn't exist yet, just set empty list
+            auditLogs = new List<AuditLog>();
+            System.Diagnostics.Debug.WriteLine($"Error loading audit logs: {ex.Message}");
+        }
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
+            int? userId = null;
+            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
+            {
+                userId = parsedUserId;
+            }
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Silently fail if audit logging fails (e.g., table doesn't exist yet)
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
         }
     }
 }

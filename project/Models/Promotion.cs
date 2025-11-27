@@ -13,5 +13,6 @@ namespace project.Models
         public decimal DiscountRate { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
+        public bool IsArchived { get; set; } = false;
     }
 }

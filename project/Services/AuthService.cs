@@ -15,6 +15,8 @@ namespace project.Services
         Task LogoutAsync();
         Task<string> GetCurrentUserRole();
         Task<string> GetCurrentUsername();
+        Task<int?> GetCurrentUserId();
+        Task<int?> GetCurrentTrainerId();
     }
 
     public class AuthService : IAuthService
@@ -48,25 +50,75 @@ namespace project.Services
                 // Load all users first, then filter in memory to ensure case-insensitive comparison works correctly
                 System.Diagnostics.Debug.WriteLine("Querying database for users...");
 
-                // Test database connection
-                try
-                {
-                    if (!await _context.Database.CanConnectAsync())
-                    {
-                        System.Diagnostics.Debug.WriteLine("ERROR: Cannot connect to database!");
-                        throw new Exception("Cannot connect to database. Please check your SQL Server connection.");
-                    }
-                    System.Diagnostics.Debug.WriteLine("Database connection successful");
-                }
-                catch (Exception dbEx)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Database connection error: {dbEx.Message}");
-                    throw new Exception($"Database connection failed: {dbEx.Message}", dbEx);
-                }
+                // Skip CanConnectAsync check - it can fail even when database is accessible
+                // Instead, we'll test the connection by trying to query
+                System.Diagnostics.Debug.WriteLine("Skipping CanConnectAsync check - will test connection by querying...");
 
-                var allUsers = await _context.Users
-                    .Include(u => u.Role)
-                    .ToListAsync();
+                // Query users - use simple query first, then load roles separately
+                List<User> allUsers;
+                try
+                    {
+                    System.Diagnostics.Debug.WriteLine("Attempting to query Users table (simple query, no Include)...");
+                    
+                    // Use simple query without Include to avoid relationship issues
+                    allUsers = await _context.Users
+                        .AsNoTracking()
+                        .ToListAsync();
+                    
+                    System.Diagnostics.Debug.WriteLine($"✓ Successfully loaded {allUsers.Count} users from database");
+                    
+                    // Load roles separately for each user
+                    System.Diagnostics.Debug.WriteLine("Loading roles for users...");
+                    foreach (var u in allUsers)
+                    {
+                        if (u.RoleID > 0)
+                        {
+                            try
+                            {
+                                u.Role = await _context.Roles
+                                    .AsNoTracking()
+                                    .FirstOrDefaultAsync(r => r.RoleID == u.RoleID);
+                                if (u.Role != null)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"  - User '{u.Username}' has role: {u.Role.RoleName}");
+                                }
+                                else
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"  - WARNING: User '{u.Username}' has RoleID {u.RoleID} but role not found!");
+                                }
+                            }
+                            catch (Exception roleEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  - ERROR loading role for user '{u.Username}': {roleEx.Message}");
+                                u.Role = null;
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"  - User '{u.Username}' has no RoleID (RoleID = {u.RoleID})");
+                        }
+                    }
+                    System.Diagnostics.Debug.WriteLine("✓ Roles loaded for all users");
+                }
+                catch (Exception queryEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"✗✗✗ CRITICAL ERROR querying Users table ✗✗✗");
+                    System.Diagnostics.Debug.WriteLine($"Error message: {queryEx.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Error type: {queryEx.GetType().Name}");
+                    System.Diagnostics.Debug.WriteLine($"Inner exception: {queryEx.InnerException?.Message ?? "None"}");
+                    System.Diagnostics.Debug.WriteLine($"Stack trace: {queryEx.StackTrace}");
+                    
+                    if (queryEx.InnerException != null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Inner exception type: {queryEx.InnerException.GetType().Name}");
+                        System.Diagnostics.Debug.WriteLine($"Inner stack trace: {queryEx.InnerException.StackTrace}");
+                    }
+                    
+                    // Re-throw with more context
+                    throw new Exception($"Database query failed: {queryEx.Message}. " +
+                                      $"This usually means: (1) Database connection failed, (2) Table 'Users' doesn't exist, " +
+                                      $"or (3) Column mapping mismatch. Check Debug output for details.", queryEx);
+                }
 
                 System.Diagnostics.Debug.WriteLine($"Found {allUsers.Count} users in database");
 #if DEBUG
@@ -80,6 +132,14 @@ namespace project.Services
                     string.Equals(u.Username?.Trim(), username, StringComparison.OrdinalIgnoreCase));
 
                 System.Diagnostics.Debug.WriteLine($"User lookup result: {(user != null ? $"Found user '{user.Username}'" : "User not found")}");
+                
+                // If Role is null, try to load it explicitly
+                if (user != null && user.Role == null && user.RoleID > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Role is null, loading RoleID {user.RoleID} explicitly...");
+                    user.Role = await _context.Roles.FindAsync(user.RoleID);
+                    System.Diagnostics.Debug.WriteLine($"Role loaded: {user.Role?.RoleName ?? "Still null"}");
+                }
 
                 if (user == null)
                 {
@@ -89,14 +149,18 @@ namespace project.Services
                 }
 
                 // Check if user is active (treat NULL as active for backward compatibility)
-                if (user.IsActive == false)
+                // IsActive can be NULL, true (1), or false (0)
+                // Only block login if IsActive is explicitly false (0)
+                if (user.IsActive.HasValue && user.IsActive.Value == false)
                 {
                     System.Diagnostics.Debug.WriteLine($"Login failed: User '{username}' is not active (IsActive = false)");
                     await SecureStorage.Default.SetAsync("is_authenticated", "false");
                     return false;
                 }
 
-                System.Diagnostics.Debug.WriteLine($"User '{username}' is active (IsActive = {(user.IsActive.HasValue ? user.IsActive.Value.ToString() : "NULL (treated as true)")})");
+                // If IsActive is NULL or true, allow login
+                var isActiveStatus = user.IsActive.HasValue ? user.IsActive.Value.ToString() : "NULL (treated as active)";
+                System.Diagnostics.Debug.WriteLine($"User '{username}' is active (IsActive = {isActiveStatus})");
 
                 // Check password (trim and compare - currently plain text - consider hashing in production)
                 var dbPassword = user.Password?.Trim() ?? "";
@@ -149,23 +213,59 @@ namespace project.Services
                     var roleToStore = user.Role?.RoleName ?? "Member";
                     System.Diagnostics.Debug.WriteLine($"Storing role as: '{roleToStore}'");
 
+                    // Store all authentication data
                     await SecureStorage.Default.SetAsync("is_authenticated", "true");
                     await SecureStorage.Default.SetAsync("username", user.Username);
                     await SecureStorage.Default.SetAsync("user_id", user.UserID.ToString());
                     await SecureStorage.Default.SetAsync("user_role", roleToStore);
 
-                    // Verify storage
+                    // If this user is linked to a trainer record, store TrainerID as well
+                    if (user.TrainerID.HasValue)
+                    {
+                        await SecureStorage.Default.SetAsync("trainer_id", user.TrainerID.Value.ToString());
+                        System.Diagnostics.Debug.WriteLine($"Storing trainer_id = {user.TrainerID.Value}");
+                    }
+                    else
+                    {
+                        // Ensure no stale trainer_id is left from previous logins
+                        SecureStorage.Default.Remove("trainer_id");
+                        System.Diagnostics.Debug.WriteLine("No TrainerID for user; cleared any existing trainer_id");
+                    }
+
+                    // Small delay to ensure storage is committed
+                    await Task.Delay(100);
+
+                    // Verify storage multiple times
                     var verifyAuth = await SecureStorage.Default.GetAsync("is_authenticated");
-                    System.Diagnostics.Debug.WriteLine($"Verification - is_authenticated stored as: '{verifyAuth}'");
+                    var verifyUsername = await SecureStorage.Default.GetAsync("username");
+                    var verifyRole = await SecureStorage.Default.GetAsync("user_role");
+                    
+                    System.Diagnostics.Debug.WriteLine($"Verification - is_authenticated: '{verifyAuth}'");
+                    System.Diagnostics.Debug.WriteLine($"Verification - username: '{verifyUsername}'");
+                    System.Diagnostics.Debug.WriteLine($"Verification - user_role: '{verifyRole}'");
 
                     if (verifyAuth != "true")
                     {
-                        System.Diagnostics.Debug.WriteLine("WARNING: Authentication state not saved correctly!");
+                        System.Diagnostics.Debug.WriteLine("WARNING: Authentication state not saved correctly! Retrying...");
+                        // Retry once
+                        await SecureStorage.Default.SetAsync("is_authenticated", "true");
+                        await Task.Delay(100);
+                        verifyAuth = await SecureStorage.Default.GetAsync("is_authenticated");
+                        System.Diagnostics.Debug.WriteLine($"Retry verification - is_authenticated: '{verifyAuth}'");
                     }
+
+                    if (verifyAuth != "true")
+                    {
+                        System.Diagnostics.Debug.WriteLine("ERROR: Authentication state still not saved after retry!");
+                        throw new Exception("Failed to save authentication state to SecureStorage");
+                    }
+
+                    System.Diagnostics.Debug.WriteLine("✓ Authentication data stored and verified successfully");
                 }
                 catch (Exception storageEx)
                 {
                     System.Diagnostics.Debug.WriteLine($"ERROR storing authentication: {storageEx.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Stack trace: {storageEx.StackTrace}");
                     throw;
                 }
 
@@ -174,8 +274,16 @@ namespace project.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Login error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"=== LOGIN ERROR ===");
+                System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Inner stack: {ex.InnerException.StackTrace}");
+                }
+                Console.WriteLine($"Login error: {ex.Message}");
+                Console.WriteLine($"Full exception: {ex}");
                 await SecureStorage.Default.SetAsync("is_authenticated", "false");
                 return false;
             }
@@ -186,10 +294,13 @@ namespace project.Services
             try
             {
                 var authStatus = await SecureStorage.Default.GetAsync("is_authenticated");
-                return authStatus == "true";
+                var result = authStatus == "true";
+                System.Diagnostics.Debug.WriteLine($"IsUserAuthenticated check: authStatus='{authStatus}', result={result}");
+                return result;
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"IsUserAuthenticated error: {ex.Message}");
                 return false;
             }
         }
@@ -201,7 +312,7 @@ namespace project.Services
                 System.Diagnostics.Debug.WriteLine("=== STARTING LOGOUT PROCESS ===");
 
                 // Method 1: Remove individual keys with verification
-                var keys = new[] { "is_authenticated", "username", "user_role", "user_id" };
+                var keys = new[] { "is_authenticated", "username", "user_role", "user_id", "trainer_id" };
                 foreach (var key in keys)
                 {
                     await RemoveSecureStorageKey(key);
@@ -290,6 +401,40 @@ namespace project.Services
             catch
             {
                 return "Guest";
+            }
+        }
+
+        public async Task<int?> GetCurrentUserId()
+        {
+            try
+            {
+                var idStr = await SecureStorage.Default.GetAsync("user_id");
+                if (!string.IsNullOrEmpty(idStr) && int.TryParse(idStr, out var id))
+                {
+                    return id;
+                }
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public async Task<int?> GetCurrentTrainerId()
+        {
+            try
+            {
+                var trainerStr = await SecureStorage.Default.GetAsync("trainer_id");
+                if (!string.IsNullOrEmpty(trainerStr) && int.TryParse(trainerStr, out var trainerId))
+                {
+                    return trainerId;
+                }
+                return null;
+            }
+            catch
+            {
+                return null;
             }
         }
     }

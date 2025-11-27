@@ -12,6 +12,8 @@
 
     <!-- Add jsQR library for QR code scanning -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <!-- html2pdf.js for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -188,7 +190,6 @@ Windows Settings → Privacy & Security → Camera → Allow apps to access your
                     console.log('QR scan error:', error);
                 }
             }, 500); // Scan every 500ms
-        }
 
         function stopCamera() {
             console.log('🛑 Stopping camera...');
@@ -248,6 +249,82 @@ Windows Settings → Privacy & Security → Camera → Allow apps to access your
                 return false;
             }
         }
+
+        // PDF Export function using html2pdf.js
+        window.exportToPDF = function(elementId, fileName) {
+            return new Promise((resolve) => {
+                try {
+                    // First, hide any loading messages
+                    const loadingMessages = document.querySelectorAll('.loading-message');
+                    loadingMessages.forEach(el => {
+                        el.style.display = 'none';
+                        el.style.visibility = 'hidden';
+                    });
+
+                    // Wait for content to be visible
+                    setTimeout(() => {
+                        const element = document.getElementById(elementId);
+                        if (!element) {
+                            console.error('Element not found:', elementId);
+                            resolve(false);
+                            return;
+                        }
+
+                        // Make sure element is visible
+                        const originalDisplay = element.style.display;
+                        const originalVisibility = element.style.visibility;
+                        element.style.display = 'block';
+                        element.style.visibility = 'visible';
+
+                        // Scroll to top to ensure we capture everything
+                        window.scrollTo(0, 0);
+
+                        // Wait a bit more for rendering
+                        setTimeout(() => {
+                            const opt = {
+                                margin: [10, 10, 10, 10],
+                                filename: fileName,
+                                image: { type: 'jpeg', quality: 0.98 },
+                                html2canvas: { 
+                                    scale: 2,
+                                    useCORS: true,
+                                    logging: false,
+                                    letterRendering: true,
+                                    backgroundColor: '#ffffff',
+                                    windowWidth: element.scrollWidth || window.innerWidth,
+                                    windowHeight: element.scrollHeight || window.innerHeight,
+                                    scrollX: 0,
+                                    scrollY: 0
+                                },
+                                jsPDF: { 
+                                    unit: 'mm', 
+                                    format: 'a4', 
+                                    orientation: 'portrait',
+                                    compress: true
+                                },
+                                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                            };
+
+                            html2pdf().set(opt).from(element).save().then(() => {
+                                // Restore original styles
+                                element.style.display = originalDisplay;
+                                element.style.visibility = originalVisibility;
+                                resolve(true);
+                            }).catch((error) => {
+                                console.error('PDF generation error:', error);
+                                // Restore original styles
+                                element.style.display = originalDisplay;
+                                element.style.visibility = originalVisibility;
+                                resolve(false);
+                            });
+                        }, 300);
+                    }, 200);
+                } catch (error) {
+                    console.error('PDF export error:', error);
+                    resolve(false);
+                }
+            });
+        };
 
         function printQRCode(base64Image) {
             try {

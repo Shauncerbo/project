@@ -37,9 +37,9 @@
         @if (!string.IsNullOrEmpty(errorMessage))
         {
             <div class="error-message">
-                <strong>⚠️ Login Failed</strong><br />
+                <strong> Login Failed</strong><br />
                 @errorMessage<br />
-                <small style="opacity: 0.8; margin-top: 8px; display: block;">Check Debug output (View → Output → Debug) for details</small>
+                 
             </div>
         }
     </div>
@@ -185,11 +185,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Check if user is already logged in
-        if (await AuthService.IsUserAuthenticated())
-        {
-            NavigationManager.NavigateTo("/dashboard");
-        }
+        // Always reset auth state when visiting the login page
+        // so that starting the app shows the login screen,
+        // even if a previous session left credentials in SecureStorage.
+        await AuthService.LogoutAsync();
     }
 
     private async Task HandleLogin()
@@ -242,6 +241,9 @@
             {
                 System.Diagnostics.Debug.WriteLine("Login successful! Verifying authentication state...");
                 
+                // Wait a bit longer to ensure SecureStorage is committed
+                await Task.Delay(300);
+                
                 // Verify authentication was saved
                 var verifyAuth = await AuthService.IsUserAuthenticated();
                 System.Diagnostics.Debug.WriteLine($"Authentication verification: {verifyAuth}");
@@ -249,17 +251,21 @@
                 if (!verifyAuth)
                 {
                     System.Diagnostics.Debug.WriteLine("WARNING: Authentication state not saved, retrying...");
-                    await Task.Delay(200);
+                    await Task.Delay(500);
                     verifyAuth = await AuthService.IsUserAuthenticated();
                     System.Diagnostics.Debug.WriteLine($"Retry verification: {verifyAuth}");
+                    
+                    if (!verifyAuth)
+                    {
+                        errorMessage = "Authentication failed to save. Please try again.";
+                        System.Diagnostics.Debug.WriteLine("ERROR: Authentication state still not saved after retry!");
+                        return;
+                    }
                 }
-                
-                // Add a small delay to ensure authentication state is saved
-                await Task.Delay(200);
 
-                System.Diagnostics.Debug.WriteLine("Navigating to dashboard...");
-                // Navigate to dashboard on successful login (without forceLoad to avoid Blazor restart)
-                NavigationManager.NavigateTo("/dashboard");
+                System.Diagnostics.Debug.WriteLine("✓ Authentication verified, navigating to role-based start page...");
+                
+                await RedirectBasedOnRoleAsync();
             }
             else
             {
@@ -272,23 +278,45 @@
             System.Diagnostics.Debug.WriteLine($"=== LOGIN EXCEPTION ===");
             System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"Stack: {ex.StackTrace}");
+            System.Diagnostics.Debug.WriteLine($"Inner Exception: {ex.InnerException?.Message ?? "None"}");
             
-            // Show user-friendly error message
+            // Show detailed error message for debugging
             if (ex.Message.Contains("database") || ex.Message.Contains("connection"))
             {
-                errorMessage = "Database connection error. Please check if SQL Server is running.";
+                errorMessage = $"Database connection error: {ex.Message}. Please check if SQL Server is running.";
+            }
+            else if (ex.Message.Contains("Blazor"))
+            {
+                errorMessage = $"Application error: {ex.Message}. Please restart the application.";
             }
             else
             {
-                errorMessage = $"Login failed: {ex.Message}";
+                errorMessage = $"Login failed: {ex.Message}. Check Debug output for details.";
             }
             
             Console.WriteLine($"Login error: {ex.Message}");
+            Console.WriteLine($"Full exception: {ex}");
         }
         finally
         {
             isLoading = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task RedirectBasedOnRoleAsync()
+    {
+        var role = (await AuthService.GetCurrentUserRole())?.ToLower();
+
+        if (role == "trainer")
+        {
+            // Trainers go directly to their schedule dashboard
+            NavigationManager.NavigateTo("/trainer-dashboard", forceLoad: false);
+        }
+        else
+        {
+            // Everyone else goes to main dashboard
+            NavigationManager.NavigateTo("/dashboard", forceLoad: false);
         }
     }
 }

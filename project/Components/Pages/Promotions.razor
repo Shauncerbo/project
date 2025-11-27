@@ -1,6 +1,8 @@
 ﻿@page "/promotions"
 @layout MainLayout
-@using System.Diagnostics
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
 
 <div class="members-container">
     <!-- Page Header - No gaps with sidebar and top -->
@@ -22,7 +24,6 @@
         <table class="members-table">
             <thead>
                 <tr>
-                    <th>PROMO ID</th>
                     <th>PROMO NAME</th>
                     <th>DESCRIPTION</th>
                     <th>DISCOUNT RATE</th>
@@ -36,7 +37,7 @@
                 @if (filteredPromotions == null || !filteredPromotions.Any())
                 {
                     <tr>
-                        <td colspan="8" class="no-data">
+                        <td colspan="7" class="no-data">
                             <div class="no-data-content">
                                 <span class="no-data-icon">🎯</span>
                                 <p>No promotions found</p>
@@ -50,7 +51,6 @@
                     @foreach (var promo in filteredPromotions)
                     {
                         <tr>
-                            <td>@promo.PromoID</td>
                             <td>
                                 <div class="promo-name">@promo.PromoName</div>
                             </td>
@@ -70,7 +70,7 @@
                             <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditPromotion(promo)" title="Edit">
-                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
+                                        <img src="/Newedit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
                                     <button class="action-btn archive-btn" @onclick="() => ArchivePromotion(promo)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
@@ -189,7 +189,7 @@
     .members-container {
         padding: 30px;
         background: #ffffff;
-        min-height: 100vh;
+        min-height: 0; /* don't force full-page height when not needed */
     }
 
     /* Page Header */
@@ -256,7 +256,8 @@
         background: white;
         border-radius: 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: auto; /* scrollbar only if content is taller than viewport */
     }
 
     .members-table {
@@ -312,12 +313,13 @@
     }
 
     .discount-rate {
-        color: #e74c3c;
+        color: #333;
         font-size: 14px;
-        background: #ffeaea;
-        padding: 4px 8px;
-        border-radius: 12px;
-        border: 1px solid #ffcdd2;
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+        border: none;
+        font-weight: 600;
     }
 
     /* Status Badges */
@@ -330,18 +332,18 @@
     }
 
     .status-active {
-        background: #e8f5e8;
-        color: #2e7d32;
+        background: transparent;
+        color: #333;
     }
 
     .status-upcoming {
-        background: #e3f2fd;
-        color: #1976d2;
+        background: transparent;
+        color: #333;
     }
 
     .status-expired {
-        background: #f5f5f5;
-        color: #757575;
+        background: transparent;
+        color: #333;
     }
 
     .action-buttons {
@@ -350,51 +352,50 @@
     }
 
     .action-btn {
-        background: transparent;
+        background: transparent !important;
         border: none;
         cursor: pointer;
-        padding: 8px;
-        border-radius: 6px;
-        transition: all 0.2s;
+        padding: 0;
+        border-radius: 0;
+        transition: transform 0.15s ease;
         display: flex;
         align-items: center;
         justify-content: center;
         width: 36px;
         height: 36px;
+        box-shadow: none !important;
     }
+
+        .action-btn:hover {
+            background: transparent !important;
+            transform: scale(1.1);
+    }
+
+        .action-btn:focus {
+            background: transparent !important;
+            outline: none;
+    }
+
+        .action-btn:active {
+            background: transparent !important;
+        }
 
     .action-icon {
         width: 18px;
         height: 18px;
-        transition: all 0.2s;
-    }
-
-    .edit-btn {
-        background: #e3f2fd;
-        color: #3498db;
-    }
-
-        .edit-btn:hover {
-            background: #3498db;
-            transform: scale(1.1);
+        transition: filter 0.15s ease;
         }
 
-            .edit-btn:hover .action-icon {
-                filter: brightness(0) invert(1);
+        .action-btn:hover .action-icon {
+            filter: brightness(1.15);
             }
 
-    .archive-btn {
-        background: #fff3e0;
-        color: #f39c12;
+    .edit-btn {
+        background: transparent !important;
     }
 
-        .archive-btn:hover {
-            background: #f39c12;
-            transform: scale(1.1);
-        }
-
-            .archive-btn:hover .action-icon {
-                filter: brightness(0) invert(1);
+    .archive-btn {
+        background: transparent !important;
             }
 
     .no-data {
@@ -660,49 +661,44 @@
 </style>
 
 @code {
+    [Inject] private AppDbContext Context { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
     private string searchQuery = "";
     private bool showPromoModal = false;
     private bool isEditMode = false;
+    private bool isLoading = false;
     private Promotion currentPromo = new Promotion();
     private List<Promotion> promotions = new List<Promotion>();
     private List<Promotion> filteredPromotions = new List<Promotion>();
     private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        LoadSampleData();
-        filteredPromotions = promotions;
+        await LoadPromotions();
     }
 
-    private void LoadSampleData()
+    private async Task LoadPromotions()
     {
-        promotions = new List<Promotion>
+        try
         {
-            new Promotion {
-                PromoID = "PROMO001",
-                PromoName = "Summer Fitness Special",
-                Description = "Get fit this summer with our exclusive member-only discount",
-                DiscountRate = 20,
-                StartDate = DateTime.Now.AddDays(-10),
-                EndDate = DateTime.Now.AddDays(20)
-            },
-            new Promotion {
-                PromoID = "PROMO002",
-                PromoName = "New Year Resolution",
-                Description = "Start your fitness journey with this special new year offer for members",
-                DiscountRate = 15,
-                StartDate = DateTime.Now.AddDays(5),
-                EndDate = DateTime.Now.AddDays(35)
-            },
-            new Promotion {
-                PromoID = "PROMO003",
-                PromoName = "Loyalty Reward",
-                Description = "Special discount for our loyal gym members",
-                DiscountRate = 25,
-                StartDate = DateTime.Now.AddDays(-30),
-                EndDate = DateTime.Now.AddDays(-1)
-            }
-        };
+            isLoading = true;
+            promotions = await Context.Promotions
+                .AsNoTracking()
+                .Where(p => p.IsArchived == false)
+                .OrderByDescending(p => p.StartDate)
+                .ToListAsync();
+            HandleSearch();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading promotions: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
     }
 
     private void HandleSearch()
@@ -713,12 +709,14 @@
         }
         else
         {
+            var query = searchQuery.ToLower();
             filteredPromotions = promotions.Where(p =>
-                p.PromoID.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                p.PromoName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                p.Description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                p.PromoID.ToString().Contains(query) ||
+                p.PromoName.ToLower().Contains(query) ||
+                (p.Description != null && p.Description.ToLower().Contains(query))
             ).ToList();
         }
+        StateHasChanged();
     }
 
     private void OpenAddPromoModal()
@@ -726,7 +724,6 @@
         isEditMode = false;
         currentPromo = new Promotion
         {
-            PromoID = $"PROMO{(promotions.Count + 1):D3}",
             StartDate = DateTime.Now,
             EndDate = DateTime.Now.AddDays(30)
         };
@@ -752,12 +749,26 @@
         StateHasChanged();
     }
 
-    private void ArchivePromotion(Promotion promo)
+    private async Task ArchivePromotion(Promotion promo)
     {
-        // TODO: Add archive confirmation dialog or logic
-        promotions.Remove(promo);
-        HandleSearch();
-        StateHasChanged();
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to archive promotion '{promo.PromoName}'?");
+        
+        if (!confirm)
+            return;
+
+        try
+        {
+            promo.IsArchived = true;
+            Context.Promotions.Update(promo);
+            await Context.SaveChangesAsync();
+            await LoadPromotions();
+            await JSRuntime.InvokeVoidAsync("alert", "Promotion archived successfully.");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error archiving promotion: {ex.Message}");
+        }
     }
 
     private void ValidatePromotion()
@@ -795,7 +806,7 @@
         }
     }
 
-    private void SavePromotion()
+    private async Task SavePromotion()
     {
         ValidatePromotion();
 
@@ -805,9 +816,12 @@
             return;
         }
 
+        try
+        {
         if (isEditMode)
         {
-            var existingPromo = promotions.FirstOrDefault(p => p.PromoID == currentPromo.PromoID);
+                // Fetch the entity from database to avoid tracking conflicts
+                var existingPromo = await Context.Promotions.FindAsync(currentPromo.PromoID);
             if (existingPromo != null)
             {
                 existingPromo.PromoName = currentPromo.PromoName;
@@ -815,15 +829,28 @@
                 existingPromo.DiscountRate = currentPromo.DiscountRate;
                 existingPromo.StartDate = currentPromo.StartDate;
                 existingPromo.EndDate = currentPromo.EndDate;
+                    await Context.SaveChangesAsync();
+                    await JSRuntime.InvokeVoidAsync("alert", "Promotion updated successfully.");
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Promotion not found.");
             }
         }
         else
         {
-            promotions.Add(currentPromo);
+                Context.Promotions.Add(currentPromo);
+                await Context.SaveChangesAsync();
+                await JSRuntime.InvokeVoidAsync("alert", "Promotion created successfully.");
         }
 
-        HandleSearch();
+            await LoadPromotions();
         CloseModal();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving promotion: {ex.Message}");
+        }
     }
 
     private void CloseModal()
@@ -854,15 +881,5 @@
             return "Expired";
         else
             return "Active";
-    }
-
-    public class Promotion
-    {
-        public string PromoID { get; set; } = "";
-        public string PromoName { get; set; } = "";
-        public string Description { get; set; } = "";
-        public decimal DiscountRate { get; set; }
-        public DateTime StartDate { get; set; } = DateTime.Now;
-        public DateTime EndDate { get; set; } = DateTime.Now.AddDays(30);
     }
 }

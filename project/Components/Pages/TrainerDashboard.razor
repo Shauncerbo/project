@@ -1,0 +1,332 @@
+@page "/trainer-dashboard"
+@layout MainLayout
+@using project.Models
+@using project.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Context
+@inject project.Services.IAuthService AuthService
+@inject NavigationManager NavigationManager
+
+<div class="trainer-dashboard" >
+    @if (!isAuthorized)
+    {
+        <p>Redirecting...</p>
+    }
+    else
+    {
+        <div class="page-header">
+            <h1 class="page-title">My Trainer Dashboard</h1>
+            <p class="page-subtitle">View only your own schedules and bookings.</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">My Schedule</h2>
+                </div>
+                <div class="card-body">
+                    @if (trainerSchedules == null || !trainerSchedules.Any())
+                    {
+                        <div class="empty-state">
+                            <p>No schedules configured yet.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm schedule-table">
+                            <thead>
+                                <tr>
+                                    <th>Day</th>
+                                    <th>Start</th>
+                                    <th>End</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in trainerSchedules)
+                                {
+                                    <tr>
+                                        <td>@GetDayName(s.DayOfWeek)</td>
+                                        <td>@FormatTime(s.StartTime)</td>
+                                        <td>@FormatTime(s.EndTime)</td>
+                                        <td>@(s.IsAvailable ? "Available" : "Unavailable")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Member Bookings</h2>
+                </div>
+                <div class="card-body">
+                    @if (memberBookings == null || !memberBookings.Any())
+                    {
+                        <div class="empty-state">
+                            <p>No members booked to you yet.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm bookings-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Membership</th>
+                                    <th>Status</th>
+                                    <th>Schedule</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in memberBookings)
+                                {
+                                    <tr>
+                                        <td>@m.FullName</td>
+                                        <td>@m.MembershipType?.TypeName</td>
+                                        <td>@m.Status</td>
+                                        <td>
+                                            @if (m.TrainerSchedule != null)
+                                            {
+                                                @GetDayName(m.TrainerSchedule.DayOfWeek)
+                                                @(" ")
+                                                @FormatTime(m.TrainerSchedule.StartTime)
+                                                @(" - ")
+                                                @FormatTime(m.TrainerSchedule.EndTime)
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No schedule</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Walk-in Bookings</h2>
+                </div>
+                <div class="card-body">
+                    @if (walkInBookings == null || !walkInBookings.Any())
+                    {
+                        <div class="empty-state">
+                            <p>No walk-ins booked to you yet.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm bookings-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Visit Date</th>
+                                    <th>Payment</th>
+                                    <th>Schedule</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var w in walkInBookings)
+                                {
+                                    <tr>
+                                        <td>@($"{w.FirstName} {w.LastName}")</td>
+                                        <td>@w.VisitDate.ToString("MMM dd, yyyy HH:mm")</td>
+                                        <td>₱@w.PaymentAmount.ToString("N2")</td>
+                                        <td>
+                                            @if (w.TrainerSchedule != null)
+                                            {
+                                                @GetDayName(w.TrainerSchedule.DayOfWeek)
+                                                @(" ")
+                                                @FormatTime(w.TrainerSchedule.StartTime)
+                                                @(" - ")
+                                                @FormatTime(w.TrainerSchedule.EndTime)
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No schedule</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isAuthorized = false;
+    private int? trainerId;
+    private List<TrainerSchedule> trainerSchedules = new();
+    private List<Member> memberBookings = new();
+    private List<WalkIn> walkInBookings = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Require authentication
+        if (!await AuthService.IsUserAuthenticated())
+        {
+            NavigationManager.NavigateTo("/login", true);
+            return;
+        }
+
+        var role = (await AuthService.GetCurrentUserRole())?.ToLower();
+        if (role != "trainer")
+        {
+            // Only trainers can view this dashboard
+            NavigationManager.NavigateTo("/dashboard", true);
+            return;
+        }
+
+        trainerId = await AuthService.GetCurrentTrainerId();
+
+        // Fallback: resolve TrainerID from Users table if not stored
+        if (!trainerId.HasValue)
+        {
+            var userId = await AuthService.GetCurrentUserId();
+            if (userId.HasValue)
+            {
+                var user = await Context.Users.AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.UserID == userId.Value);
+                if (user?.TrainerID != null)
+                {
+                    trainerId = user.TrainerID;
+                }
+            }
+        }
+
+        if (!trainerId.HasValue)
+        {
+            // No trainer mapping; show nothing but keep page
+            isAuthorized = true;
+            return;
+        }
+
+        // Load data filtered strictly by TrainerID
+        trainerSchedules = await Context.TrainerSchedules
+            .AsNoTracking()
+            .Where(ts => ts.TrainerID == trainerId.Value)
+            .OrderBy(ts => ts.DayOfWeek)
+            .ThenBy(ts => ts.StartTime)
+            .ToListAsync();
+
+        memberBookings = await Context.Members
+            .Include(m => m.MembershipType)
+            .Include(m => m.TrainerSchedule)
+            .Where(m => !m.IsArchived && m.TrainerID == trainerId.Value)
+            .OrderBy(m => m.LastName)
+            .ThenBy(m => m.FirstName)
+            .ToListAsync();
+
+        walkInBookings = await Context.WalkIns
+            .Include(w => w.TrainerSchedule)
+            .Where(w => !w.IsArchived && w.TrainerID == trainerId.Value)
+            .OrderByDescending(w => w.VisitDate)
+            .ToListAsync();
+
+        isAuthorized = true;
+    }
+
+    private string GetDayName(byte dayOfWeek)
+    {
+        return dayOfWeek switch
+        {
+            0 => "Sunday",
+            1 => "Monday",
+            2 => "Tuesday",
+            3 => "Wednesday",
+            4 => "Thursday",
+            5 => "Friday",
+            6 => "Saturday",
+            _ => "Unknown"
+        };
+    }
+
+    private string FormatTime(TimeSpan time)
+    {
+        var hours = time.Hours;
+        var minutes = time.Minutes;
+        var period = hours >= 12 ? "PM" : "AM";
+        var displayHours = hours % 12;
+        if (displayHours == 0) displayHours = 12;
+        return $"{displayHours:00}:{minutes:00} {period}";
+    }
+}
+
+<style>
+    .trainer-dashboard {
+        padding: 30px;
+        background: #ffffff;
+        min-height: 100vh;
+    }
+
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 20px;
+    }
+
+    .card {
+        background: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .card-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #e5e5e5;
+    }
+
+    .card-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .card-body {
+        padding: 16px 20px 20px 20px;
+        overflow-x: auto;
+    }
+
+    .empty-state {
+        padding: 20px 0;
+        text-align: center;
+        color: #888;
+    }
+
+    .schedule-table,
+    .bookings-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+
+    .schedule-table th,
+    .schedule-table td,
+    .bookings-table th,
+    .bookings-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #f0f0f0;
+        text-align: left;
+    }
+
+    .schedule-table thead,
+    .bookings-table thead {
+        background: #f5f7fb;
+        color: #234060;
+    }
+</style>
+
+

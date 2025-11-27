@@ -8,7 +8,6 @@ using project.Pages;
 using project.Services;
 using ZXing.Net.Maui;
 using ZXing.Net.Maui.Controls;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace project
 {
@@ -93,29 +92,67 @@ namespace project
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IAttendanceService, AttendanceService>();
             builder.Services.AddScoped<IMemberService, MemberService>();
+            builder.Services.AddScoped<IUserService, UserService>();
+            builder.Services.AddSingleton<IToastService, ToastService>();
             builder.Services.AddSingleton<INativeNavigationService, NativeNavigationService>();
             builder.Services.AddTransient<AttendanceScannerPage>();
 
-            // Database configuration - Local SQL Server
-            const string localConnectionString =
-                "Data Source=LAPTOP-3VCGD3TV\\SQLEXPRESS;Initial Catalog=GymCRM_DB;Integrated Security=True;Trust Server Certificate=True";
+            // Database configuration - Toggle between Local and Cloud
+            // 🔄 TOGGLE: Set to true for MonsterASP.net (online), false for SQL Server Express (local)
+            const bool USE_MONSTERASP_DB = false;
 
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseSqlServer(localConnectionString));
+            // Local SQL Server Express Database
+            const string localConnectionString = 
+                "Data Source=LAPTOP-3VCGD3TV\\SQLEXPRESS;Initial Catalog=GymCRM_DB;Integrated Security=True;Encrypt=True;Trust Server Certificate=True";
 
-            // Register Database Initializer
-            builder.Services.AddScoped<DatabaseInitializer>();
+            // MonsterASP.net Cloud Database (for production/online)
+            // Remote access connection string from MonsterASP.net dashboard
+            const string monsterAspConnectionString =
+                "Server=db32884.public.databaseasp.net;Database=db32884;User Id=db32884;Password=P_y79xY!kQ%6;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;Connection Timeout=60;";
+
+            // Select connection string based on toggle
+            var connectionString = USE_MONSTERASP_DB ? monsterAspConnectionString : localConnectionString;
+
+            // Register EF Core DbContext (scoped) and factory (for background/off-thread usage)
+            void ConfigureDbContext(DbContextOptionsBuilder options)
+            {
+                options.UseSqlServer(connectionString, sqlOptions =>
+                {
+                    sqlOptions.EnableRetryOnFailure(
+                        maxRetryCount: 3,
+                        maxRetryDelay: TimeSpan.FromSeconds(5),
+                        errorNumbersToAdd: null);
+                });
+            }
+
+            builder.Services.AddDbContext<AppDbContext>(ConfigureDbContext);
+            builder.Services.AddDbContextFactory<AppDbContext>(ConfigureDbContext);
+
+            
 
             var app = builder.Build();
 
-            // Initialize database on startup - wait for it to complete
+            // DISABLED: Automatic database initialization on startup
+            // Database and tables must be created manually using SQL scripts
+            /*
             try
             {
                 using (var scope = app.Services.CreateScope())
                 {
                     var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
-                    // Run synchronously to ensure it completes before app starts
-                    initializer.InitializeAsync().GetAwaiter().GetResult();
+                    // Run synchronously with timeout to prevent hanging
+                    var initTask = initializer.InitializeAsync();
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
+                    var completedTask = Task.WhenAny(initTask, timeoutTask).GetAwaiter().GetResult();
+                    
+                    if (completedTask == initTask)
+                    {
+                        initTask.GetAwaiter().GetResult(); // Task completed within timeout
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("⚠️ Database initialization timed out, continuing anyway...");
+                    }
                 }
             }
             catch (Exception ex)
@@ -123,9 +160,9 @@ namespace project
                 // Show error in console and debug output
                 System.Diagnostics.Debug.WriteLine($"❌ Failed to initialize database: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                Console.WriteLine($"❌ Database initialization failed: {ex.Message}");
                 // Continue app startup even if database init fails
             }
+            */
 
             return app;
         }

@@ -9,6 +9,7 @@
 @using PaymentModel = project.Models.Payment
 @using TrainerModel = project.Models.Trainer
 @using TrainerScheduleModel = project.Models.TrainerSchedule
+@using MemberPromo = project.Models.MemberPromo
 @inject AppDbContext Context
 @inject IJSRuntime JSRuntime
 
@@ -189,6 +190,52 @@
                             @DisplayError("PaymentMethod")
                         </div>
                     </div>
+
+                    <div class="form-group">
+                        <label>Promotion (Optional)</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown" @bind="selectedPromotionId" @bind:after="OnPromotionChanged">
+                                <option value="0">No promotion</option>
+                                @if (activePromotions != null && activePromotions.Any())
+                                {
+                                    @foreach (var promo in activePromotions)
+                                    {
+                                        <option value="@promo.PromoID">@promo.PromoName - @promo.DiscountRate.ToString("F0")% off</option>
+                                    }
+                                }
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        @if (selectedPromotion != null)
+                        {
+                            <small class="promo-description">@selectedPromotion.Description</small>
+                        }
+                        @if (activePromotions != null && !activePromotions.Any())
+                        {
+                            <small class="promo-description" style="color: #999;">No active promotions available</small>
+                        }
+                    </div>
+
+                    @if (selectedMembershipType != null)
+                    {
+                        <div class="price-breakdown">
+                            <div class="price-row">
+                                <span>Original Price:</span>
+                                <span class="price-original">₱@(selectedMembershipType.Price.ToString("N2"))</span>
+                            </div>
+                            @if (selectedPromotion != null && discountAmount > 0)
+                            {
+                                <div class="price-row discount-row">
+                                    <span>Discount (@selectedPromotion.DiscountRate.ToString("F0")%):</span>
+                                    <span class="price-discount">-₱@(discountAmount.ToString("N2"))</span>
+                                </div>
+                            }
+                            <div class="price-row total-row">
+                                <span><strong>Final Price:</strong></span>
+                                <span class="price-final"><strong>₱@(finalPrice.ToString("N2"))</strong></span>
+                            </div>
+                        </div>
+                    }
 
                 </div>
             </div>
@@ -482,6 +529,56 @@
         margin-bottom: 15px;
     }
 
+    .promo-description {
+        display: block;
+        margin-top: 5px;
+        font-size: 12px;
+        color: #666;
+        font-style: italic;
+    }
+
+    .price-breakdown {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+
+    .price-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .price-row:last-child {
+        border-bottom: none;
+        margin-top: 5px;
+        padding-top: 12px;
+        border-top: 2px solid #dee2e6;
+    }
+
+    .price-original {
+        color: #666;
+        text-decoration: line-through;
+    }
+
+    .price-discount {
+        color: #28a745;
+        font-weight: 600;
+    }
+
+    .price-final {
+        color: #234060;
+        font-size: 1.1em;
+    }
+
+    .total-row {
+        font-size: 1.05em;
+    }
+
     @@media (max-width: 640px) {
         .payments-header {
             flex-direction: column;
@@ -499,6 +596,7 @@
     private List<TrainerModel> availableTrainers = new();
     private List<TrainerScheduleModel> trainerSchedules = new();
     private List<TrainerScheduleModel> visibleSchedules = new();
+    private List<Promotion> activePromotions = new();
     private MemberModel subscriptionMember = new();
     private DateTime subscriptionJoinDate = DateTime.Today;
     private DateTime? subscriptionExpiration;
@@ -506,6 +604,10 @@
     private MembershipTypeModel? selectedMembershipType;
     private string selectedPaymentMethod = "Cash";
     private int selectedTrainerScheduleId;
+    private int selectedPromotionId = 0;
+    private Promotion? selectedPromotion;
+    private decimal discountAmount = 0;
+    private decimal finalPrice = 0;
     private bool showSubscriptionModal;
     private bool isSaving;
     private string? generalError;
@@ -536,9 +638,33 @@
             .OrderBy(ts => ts.DayOfWeek)
             .ThenBy(ts => ts.StartTime)
             .ToListAsync();
+
+        await LoadActivePromotions();
     }
 
-    private void OpenSubscriptionModal()
+    private async Task LoadActivePromotions()
+    {
+        try
+        {
+            var today = DateTime.Today;
+            // Show promotions that haven't expired yet (EndDate >= today)
+            // This includes both active and upcoming promotions
+            activePromotions = await Context.Promotions
+                .AsNoTracking()
+                .Where(p => p.EndDate >= today)
+                .OrderByDescending(p => p.DiscountRate)
+                .ThenByDescending(p => p.StartDate)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            // Promotions table might not exist yet or there's an error
+            System.Diagnostics.Debug.WriteLine($"Error loading promotions: {ex.Message}");
+            activePromotions = new List<Promotion>();
+        }
+    }
+
+    private async void OpenSubscriptionModal()
     {
         subscriptionMember = new MemberModel
         {
@@ -556,12 +682,18 @@
         selectedMembershipType = null;
         selectedPaymentMethod = "Cash";
         selectedTrainerScheduleId = 0;
+        selectedPromotionId = 0;
+        selectedPromotion = null;
+        discountAmount = 0;
+        finalPrice = 0;
         subscriptionMember.TrainerID = null;
         subscriptionMember.TrainerScheduleID = null;
         visibleSchedules = new();
         generalError = null;
         fieldErrors.Clear();
+        await LoadActivePromotions();
         showSubscriptionModal = true;
+        StateHasChanged();
     }
 
     private void CloseSubscriptionModal()
@@ -603,10 +735,13 @@
             Context.Members.Add(subscriptionMember);
             await Context.SaveChangesAsync();
 
+            // Use final price (with discount if promotion applied)
+            var paymentAmount = finalPrice > 0 ? finalPrice : (selectedMembershipType?.Price ?? 0);
+            
             var payment = new PaymentModel
             {
                 MemberID = subscriptionMember.MemberID,
-                Amount = selectedMembershipType?.Price ?? 0,
+                Amount = paymentAmount,
                 PaymentDate = DateTime.Now,
                 PaymentType = selectedPaymentMethod
             };
@@ -614,8 +749,32 @@
             Context.Payments.Add(payment);
             await Context.SaveChangesAsync();
 
+            // Save promotion usage if a promotion was selected
+            if (selectedPromotion != null && selectedPromotionId > 0)
+            {
+                try
+                {
+                    var memberPromo = new MemberPromo
+                    {
+                        MemberID = subscriptionMember.MemberID,
+                        PromotionID = selectedPromotion.PromoID,
+                        DateUsed = DateTime.Now
+                    };
+                    Context.MemberPromos.Add(memberPromo);
+                    await Context.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Log error but don't fail the subscription
+                    System.Diagnostics.Debug.WriteLine($"Error saving promotion usage: {ex.Message}");
+                }
+            }
+
             showSubscriptionModal = false;
-            await JSRuntime.InvokeVoidAsync("alert", $"Subscription created for {subscriptionMember.FullName}.");
+            var promoMessage = selectedPromotion != null 
+                ? $" with {selectedPromotion.DiscountRate}% discount" 
+                : "";
+            await JSRuntime.InvokeVoidAsync("alert", $"Subscription created for {subscriptionMember.FullName}{promoMessage}.");
         }
         catch (Exception ex)
         {
@@ -692,6 +851,38 @@
         {
             subscriptionExpiration = null;
         }
+        CalculatePrice();
+    }
+
+    private void OnPromotionChanged()
+    {
+        selectedPromotion = activePromotions.FirstOrDefault(p => p.PromoID == selectedPromotionId);
+        CalculatePrice();
+    }
+
+    private void CalculatePrice()
+    {
+        if (selectedMembershipType == null)
+        {
+            finalPrice = 0;
+            discountAmount = 0;
+            return;
+        }
+
+        var originalPrice = selectedMembershipType.Price;
+        
+        if (selectedPromotion != null && selectedPromotion.DiscountRate > 0)
+        {
+            discountAmount = originalPrice * (selectedPromotion.DiscountRate / 100);
+            finalPrice = originalPrice - discountAmount;
+        }
+        else
+        {
+            discountAmount = 0;
+            finalPrice = originalPrice;
+        }
+        
+        StateHasChanged();
     }
 
     private void OnJoinDateChanged()

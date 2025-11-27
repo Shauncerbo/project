@@ -6,6 +6,7 @@
 @inject IAuthService AuthService
 @inject NavigationManager NavigationManager
 @inject AppDbContext Context
+@inject IJSRuntime JSRuntime
 
 <div class="container-fluid px-0">
     <div class="dashboard-page">
@@ -17,7 +18,7 @@
                     <p>Welcome @currentUsername! | @GetDashboardDescription()</p>
                 </div>
                 <div class="header-actions">
-                    <div class="user-badge">
+                    <div class="user-badge" @onclick="OpenPasswordChangeModal" style="cursor: pointer;">
                         <div class="user-circle">
                             @currentUsername?.FirstOrDefault().ToString().ToUpper()
                         </div>
@@ -34,35 +35,35 @@
                 <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
                     <div class="stat-card role-card" data-role="admin" @onclick="NavigateToMembers">
                         <h3>MANAGE MEMBERS</h3>
-                        <p class="stat-number">@totalActiveMembers</p>
+                        <p class="stat-number @GetStatNumberClass(totalActiveMembers)">@totalActiveMembers</p>
                         <span class="stat-note">Active members in the system</span>
                     </div>
                 </div>
                 <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
                     <div class="stat-card role-card" data-role="admin" @onclick="NavigateToAttendance">
                         <h3>CHECK-INS TODAY</h3>
-                        <p class="stat-number">@todaysCheckIns</p>
+                        <p class="stat-number @GetStatNumberClass(todaysCheckIns)">@todaysCheckIns</p>
                         <span class="stat-note">Verified scans for @DateTime.Today.ToString("MMM dd")</span>
                     </div>
                 </div>
                 <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
-                    <div class="stat-card role-card" data-role="admin">
-                        <h3>FINANCIAL REPORT </h3>
-                        <p class="stat-number">₱0.00</p>
-                        <span class="stat-note">Payments module not configured yet</span>
+                    <div class="stat-card role-card" data-role="admin" @onclick="NavigateToReports">
+                        <h3>TOTAL REVENUE</h3>
+                        <p class="stat-number @GetStatNumberClass(totalRevenue)">₱@totalRevenue.ToString("N2")</p>
+                        <span class="stat-note">All-time revenue</span>
                     </div>
                 </div>
                 <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
-                    <div class="stat-card role-card" data-role="admin">
-                        <h3>PENDING PAYMENTS</h3>
-                        <p class="stat-number">0</p>
-                        <span class="stat-note">Will update once payments are live</span>
+                    <div class="stat-card role-card" data-role="admin" @onclick="NavigateToPayments">
+                        <h3>TODAY'S PAYMENTS</h3>
+                        <p class="stat-number @GetStatNumberClass(todaysRevenue)">@FormatRevenue(todaysRevenue)</p>
+                        <span class="stat-note">Revenue for @DateTime.Today.ToString("MMM dd")</span>
                     </div>
                 </div>
             </div>
         }
 
-        <!-- Role-Based Features -->
+        <!-- Role-Based Features (for non-admin roles) -->
         @if (currentUserRole?.ToLower() != "admin")
         {
             <div class="row g-3 mb-4">
@@ -71,8 +72,8 @@
                     <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
                         <div class="stat-card role-card" data-role="staff" @onclick="NavigateToMembers">
                             <h3>MANAGE MEMBERS</h3>
-                            <p class="stat-number">150</p>
-                            <span class="stat-alert info">Add/Edit Access</span>
+                            <p class="stat-number @GetStatNumberClass(totalActiveMembers)">@totalActiveMembers</p>
+                            <span class="stat-note">Active members</span>
                         </div>
                     </div>
                 }
@@ -81,9 +82,9 @@
                 {
                     <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
                         <div class="stat-card role-card" data-role="trainer" @onclick="NavigateToAttendance">
-                            <h3>@(currentUserRole?.ToLower() == "trainer" ? "MY CHECK-INS" : "CHECK-INS TODAY")</h3>
-                            <p class="stat-number">@(currentUserRole?.ToLower() == "trainer" ? "8" : "45")</p>
-                            <span class="stat-alert positive">@(currentUserRole?.ToLower() == "trainer" ? "Active" : "On track")</span>
+                            <h3>CHECK-INS TODAY</h3>
+                            <p class="stat-number @GetStatNumberClass(todaysCheckIns)">@todaysCheckIns</p>
+                            <span class="stat-note">Verified scans for @DateTime.Today.ToString("MMM dd")</span>
                         </div>
                     </div>
                 }
@@ -92,45 +93,160 @@
                 {
                     <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
                         <div class="stat-card role-card" data-role="staff" @onclick="NavigateToPayments">
-                            <h3>PENDING PAYMENTS</h3>
-                            <p class="stat-number">3</p>
-                            <span class="stat-alert warning">Action needed</span>
+                            <h3>TODAY'S PAYMENTS</h3>
+                            <p class="stat-number @GetStatNumberClass(todaysRevenue)">@FormatRevenue(todaysRevenue)</p>
+                            <span class="stat-note">Revenue for today</span>
                         </div>
                     </div>
                 }
+            </div>
+        }
 
-                @if (currentUserRole?.ToLower() == "trainer")
-                {
-                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
-                        <div class="stat-card role-card" data-role="trainer" @onclick="NavigateToWorkoutPlans">
-                            <h3>WORKOUT PLANS</h3>
-                            <p class="stat-number">18</p>
-                            <span class="stat-alert warning">3 pending</span>
-                        </div>
+        <!-- Charts / Summaries Section (admin only, no external JS) -->
+        @if (currentUserRole?.ToLower() == "admin")
+        {
+            <div class="row g-3 mb-4">
+                <div class="col-xxl-8 col-xl-8 col-lg-12">
+                    <div class="chart-card">
+                        <h3>Revenue Trend (Last 7 Days)</h3>
+                        @if (revenueLabels.Any())
+                        {
+                            <svg class="svg-chart" viewBox="0 0 100 50" preserveAspectRatio="none">
+                                <polyline class="svg-chart-background" points="0,49 100,49" />
+                                <polyline class="svg-chart-line revenue"
+                                          points="@string.Join(' ', revenueChartPoints.Select(p => $"{p.X:F2},{p.Y:F2}"))" />
+                                @foreach (var pt in revenueChartPoints)
+                                {
+                                    <circle cx="@pt.X" cy="@pt.Y" r="1.5" fill="#234060">
+                                        <title>@pt.Label - ₱@pt.Value.ToString("N2")</title>
+                                    </circle>
+                                }
+                            </svg>
+                            <table class="summary-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th class="text-right">Revenue (₱)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int i = 0; i < revenueLabels.Count; i++)
+                                    {
+                                        <tr>
+                                            <td>@revenueLabels[i]</td>
+                                            <td class="text-right">@revenueData[i].ToString("N2")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <div class="empty-summary">No revenue data found for the last 7 days.</div>
+                        }
                     </div>
-                }
+                </div>
+                <div class="col-xxl-4 col-xl-4 col-lg-12">
+                    <div class="chart-card">
+                        <h3>Membership Types Distribution</h3>
+                        @if (membershipTypeNames.Any())
+                        {
+                            <table class="summary-table">
+                                <thead>
+                                    <tr>
+                                        <th>Membership Type</th>
+                                        <th class="text-right">Members</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int i = 0; i < membershipTypeNames.Count; i++)
+                                    {
+                                        <tr>
+                                            <td>@membershipTypeNames[i]</td>
+                                            <td class="text-right">@membershipTypeCounts[i]</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <div class="empty-summary">No active members by membership type yet.</div>
+                        }
+                    </div>
+                </div>
+            </div>
 
-                @if (currentUserRole?.ToLower() == "staff")
-                {
-                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
-                        <div class="stat-card role-card" data-role="staff" @onclick="NavigateToCheckout">
-                            <h3>CHECK-OUTS</h3>
-                            <p class="stat-number">Today</p>
-                            <span class="stat-alert info">Manage</span>
-                        </div>
+            <div class="row g-3 mb-4">
+                <div class="col-xxl-6 col-xl-6 col-lg-12">
+                    <div class="chart-card">
+                        <h3>Check-ins Trend (Last 7 Days)</h3>
+                        @if (checkinsLabels.Any())
+                        {
+                            <svg class="svg-chart" viewBox="0 0 100 50" preserveAspectRatio="none">
+                                <polyline class="svg-chart-background" points="0,49 100,49" />
+                                <polyline class="svg-chart-line checkins"
+                                          points="@string.Join(' ', checkinsChartPoints.Select(p => $"{p.X:F2},{p.Y:F2}"))" />
+                                @foreach (var pt in checkinsChartPoints)
+                                {
+                                    <circle cx="@pt.X" cy="@pt.Y" r="1.5" fill="#27ae60">
+                                        <title>@pt.Label - @pt.Value check-ins</title>
+                                    </circle>
+                                }
+                            </svg>
+                            <table class="summary-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th class="text-right">Check-ins</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int i = 0; i < checkinsLabels.Count; i++)
+                                    {
+                                        <tr>
+                                            <td>@checkinsLabels[i]</td>
+                                            <td class="text-right">@checkinsData[i]</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <div class="empty-summary">No attendance records for the last 7 days.</div>
+                        }
                     </div>
-                }
-
-                @if (currentUserRole?.ToLower() == "trainer")
-                {
-                    <div class="col-xxl-3 col-xl-3 col-lg-6 col-md-6 col-sm-6 col-12">
-                        <div class="stat-card role-card" data-role="trainer" @onclick="NavigateToSchedule">
-                            <h3>MY SCHEDULE</h3>
-                            <p class="stat-number">Today</p>
-                            <span class="stat-alert info">5 sessions</span>
-                        </div>
+                </div>
+                <div class="col-xxl-6 col-xl-6 col-lg-12">
+                    <div class="chart-card">
+                        <h3>Member Growth (Last 6 Months)</h3>
+                        @if (memberGrowthLabels.Any())
+                        {
+                            <table class="summary-table">
+                                <thead>
+                                    <tr>
+                                        <th>Month</th>
+                                        <th class="text-right">New Members</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int i = 0; i < memberGrowthLabels.Count; i++)
+                                    {
+                                        <tr>
+                                            <td>@memberGrowthLabels[i]</td>
+                                            <td class="text-right">@memberGrowthData[i]</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <div class="empty-summary">No new member records for the last 6 months.</div>
+                        }
                     </div>
-                }
+                </div>
             </div>
         }
 
@@ -170,33 +286,83 @@
                     </div>
                 }
 
-                @if (currentUserRole?.ToLower() == "trainer")
+                @if (currentUserRole?.ToLower() == "admin")
                 {
-                    <div class="activity-item role-action" @onclick="NavigateToAssignedMembers">
-                        <span class="activity-badge">[VIEW]</span>
-                        <span class="activity-text">View My Assigned Members</span>
+                    <div class="activity-item role-action" @onclick="NavigateToReports">
+                        <span class="activity-badge">[REPORTS]</span>
+                        <span class="activity-text">View Financial & Marketing Reports</span>
                     </div>
                 }
 
-                @if (currentUserRole?.ToLower() == "staff")
+                @if (currentUserRole?.ToLower() == "admin")
                 {
-                    <div class="activity-item role-action" @onclick="NavigateToCheckout">
-                        <span class="activity-badge">[CHECK-OUT]</span>
-                        <span class="activity-text">Check Out Members</span>
+                    <div class="activity-item role-action" @onclick="NavigateToTrainers">
+                        <span class="activity-badge">[TRAINERS]</span>
+                        <span class="activity-text">Manage Trainers</span>
                     </div>
                 }
 
-                @if (currentUserRole?.ToLower() == "trainer")
+                @if (currentUserRole?.ToLower() == "admin")
                 {
-                    <div class="activity-item role-action" @onclick="NavigateToWorkoutPlans">
-                        <span class="activity-badge">[PLANS]</span>
-                        <span class="activity-text">Manage Workout Plans</span>
+                    <div class="activity-item role-action" @onclick="NavigateToPromotions">
+                        <span class="activity-badge">[PROMOTIONS]</span>
+                        <span class="activity-text">Manage Promotions</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "admin")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToMembershipTypes">
+                        <span class="activity-badge">[MEMBERSHIPS]</span>
+                        <span class="activity-text">Manage Membership Types</span>
+                    </div>
+                }
+
+                @if (currentUserRole?.ToLower() == "admin" || currentUserRole?.ToLower() == "staff")
+                {
+                    <div class="activity-item role-action" @onclick="NavigateToSettings">
+                        <span class="activity-badge">[SETTINGS]</span>
+                        <span class="activity-text">Account & System Settings</span>
                     </div>
                 }
             </div>
         </div>
     </div>
 </div>
+
+<!-- Password Change Modal -->
+@if (showPasswordModal)
+{
+    <div class="modal-overlay" @onclick="ClosePasswordModal">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Change Password</h3>
+                <button class="close-btn" @onclick="ClosePasswordModal">×</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-subtitle">Updating password for <strong>@currentUsername</strong></p>
+                @if (!string.IsNullOrEmpty(passwordModalError))
+                {
+                    <div class="modal-error">@passwordModalError</div>
+                }
+                <div class="form-group">
+                    <label>New Password</label>
+                    <input type="password" @bind="passwordInput" @bind:event="oninput" placeholder="Enter new password" />
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" @bind="passwordConfirm" @bind:event="oninput" placeholder="Confirm new password" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" @onclick="ClosePasswordModal">Cancel</button>
+                <button class="btn-primary" @onclick="SavePasswordChange" disabled="@isSavingPassword">
+                    @(isSavingPassword ? "Saving..." : "Update Password")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 <style>
     .container-fluid {
@@ -251,6 +417,13 @@
         border: 1px solid #e0e0e0;
         box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         min-width: 100px;
+        transition: all 0.3s ease;
+    }
+
+    .user-badge:hover {
+        background: #e9ecef;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.12);
     }
 
     .user-circle {
@@ -332,6 +505,11 @@
         font-size: 2rem;
         font-weight: bold;
         color: #234060;
+    }
+
+    .stat-number.single-digit {
+        text-align: right;
+        display: block;
     }
 
     .stat-note {
@@ -439,6 +617,239 @@
         font-weight: 500;
     }
 
+    /* Password Change Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.4);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        padding: 20px;
+    }
+
+    .modal-card {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 420px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        animation: fadeIn 0.2s ease;
+    }
+
+    .modal-header {
+        padding: 20px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-header h3 {
+        margin: 0;
+        font-size: 20px;
+        color: #234060;
+    }
+
+    .modal-footer {
+        padding: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 6px;
+        color: #333;
+    }
+
+    .form-group input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+
+    .form-group input:focus {
+        outline: none;
+        border-color: #234060;
+        box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
+    }
+
+    .modal-error {
+        background: #fdecea;
+        color: #b0382f;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        font-size: 14px;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #666;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .close-btn:hover {
+        color: #333;
+    }
+
+    .modal-subtitle {
+        color: #666;
+        margin-top: 0;
+        margin-bottom: 15px;
+        font-size: 14px;
+    }
+
+    .btn-primary {
+        background: #234060;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover:not([disabled]) {
+        background: #1a3450;
+        transform: translateY(-1px);
+    }
+
+    .btn-primary[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-secondary {
+        background: #f1f3f7;
+        color: #234060;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-secondary:hover {
+        background: #e0e4e9;
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Chart Cards / Summary Panels */
+    .chart-card {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        height: 100%;
+        min-height: 350px;
+    }
+
+    .chart-card h3 {
+        margin: 0 0 20px 0;
+        color: #234060;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-bottom: 2px solid #f0f4f8;
+        padding-bottom: 10px;
+    }
+
+    .summary-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+
+    .summary-table th,
+    .summary-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #eef2f7;
+    }
+
+    .summary-table th {
+        text-align: left;
+        color: #6c757d;
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .summary-table td.text-right {
+        text-align: right;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .empty-summary {
+        font-size: 0.9rem;
+        color: #999;
+        font-style: italic;
+    }
+
+    /* Simple inline SVG charts (offline, no JS) */
+    .svg-chart {
+        width: 100%;
+        height: 120px;
+        margin-bottom: 16px;
+    }
+
+    .svg-chart-background {
+        fill: none;
+        stroke: #eef2f7;
+        stroke-width: 1;
+    }
+
+    .svg-chart-line {
+        fill: none;
+        stroke-width: 2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+    }
+
+    .svg-chart-line.revenue {
+        stroke: #234060;
+    }
+
+    .svg-chart-line.checkins {
+        stroke: #27ae60;
+    }
+
     /* Responsive Design */
     @@media (max-width: 768px) {
         .header-content {
@@ -450,6 +861,10 @@
             width: 100%;
             justify-content: space-between;
         }
+
+        .modal-card {
+            max-width: 95%;
+        }
     }
 </style>
 
@@ -458,6 +873,15 @@
     private string currentUserRole = "";
     private int totalActiveMembers = 0;
     private int todaysCheckIns = 0;
+    private decimal totalRevenue = 0;
+    private decimal todaysRevenue = 0;
+    
+    // Password change modal
+    private bool showPasswordModal = false;
+    private string passwordInput = "";
+    private string passwordConfirm = "";
+    private string passwordModalError = "";
+    private bool isSavingPassword = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -475,6 +899,12 @@
         Console.WriteLine($"User {currentUsername} with role {currentUserRole} logged in");
 
         await LoadDashboardMetrics();
+
+        // Load dashboard summaries for admin (no external JS/chart library needed)
+        if (currentUserRole?.ToLower() == "admin")
+        {
+            await LoadChartData();
+        }
     }
 
     private string GetDashboardTitle()
@@ -513,30 +943,344 @@
     // Navigation methods
     private void NavigateToMembers() => NavigationManager.NavigateTo("/members");
     private void NavigateToAttendance() => NavigationManager.NavigateTo("/attendance");
-    private void NavigateToPayments() => NavigationManager.NavigateTo("/payments");
-    private void NavigateToCheckout() => NavigationManager.NavigateTo("/checkout");
+    private void NavigateToPayments() => NavigationManager.NavigateTo("/payment");
     private void NavigateToReports() => NavigationManager.NavigateTo("/reports");
-    private void NavigateToTrainerAssignment() => NavigationManager.NavigateTo("/trainer-assignment");
-    private void NavigateToAssignedMembers() => NavigationManager.NavigateTo("/my-members");
-    private void NavigateToWorkoutPlans() => NavigationManager.NavigateTo("/workout-plans");
-    private void NavigateToSchedule() => NavigationManager.NavigateTo("/trainer-schedule");
     private void NavigateToWalkIns() => NavigationManager.NavigateTo("/walkins");
+    private void NavigateToTrainers() => NavigationManager.NavigateTo("/trainers");
+    private void NavigateToPromotions() => NavigationManager.NavigateTo("/promotions");
+    private void NavigateToMembershipTypes() => NavigationManager.NavigateTo("/membershiptype");
+    private void NavigateToSettings() => NavigationManager.NavigateTo("/settings");
 
     private async Task LoadDashboardMetrics()
     {
         try
         {
+            // Load active members count
             totalActiveMembers = await Context.Members.CountAsync(m => !m.IsArchived);
 
+            // Load today's check-ins
             var today = DateTime.Today;
             var tomorrow = today.AddDays(1);
 
             todaysCheckIns = await Context.Attendances
                 .CountAsync(a => a.CheckinTime >= today && a.CheckinTime < tomorrow);
+
+            // Load total revenue from both Payments and WalkIns (matching Reports calculation)
+            var allPaymentsRevenue = await Context.Payments
+                .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+            var allWalkinsRevenue = await Context.WalkIns
+                .Where(w => !w.IsArchived)
+                .SumAsync(w => (decimal?)w.PaymentAmount) ?? 0;
+
+            totalRevenue = allPaymentsRevenue + allWalkinsRevenue;
+
+            // Load today's revenue from both Payments and WalkIns
+            var paymentsRevenue = await Context.Payments
+                .Where(p => p.PaymentDate >= today && p.PaymentDate < tomorrow)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+            var walkinsRevenue = await Context.WalkIns
+                .Where(w => w.VisitDate >= today && w.VisitDate < tomorrow && !w.IsArchived)
+                .SumAsync(w => (decimal?)w.PaymentAmount) ?? 0;
+
+            todaysRevenue = paymentsRevenue + walkinsRevenue;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Dashboard metrics error: {ex.Message}");
+            // Set defaults if there's an error
+            totalRevenue = 0;
+            todaysRevenue = 0;
         }
+    }
+
+    private string GetStatNumberClass(int value)
+    {
+        // Check if value is a single digit (0-9)
+        return (value >= 0 && value <= 9) ? "single-digit" : "";
+    }
+
+    private string GetStatNumberClass(decimal value)
+    {
+        // For decimal values, check if the integer part is a single digit (0-9)
+        // Also check if the value is less than 10 (before formatting)
+        int intValue = (int)Math.Floor(value);
+        return (intValue >= 0 && intValue <= 9) ? "single-digit" : "";
+    }
+
+    private string FormatRevenue(decimal amount)
+    {
+        // If amount is 0, display just "0" without peso sign or decimals
+        if (amount == 0)
+        {
+            return "0";
+        }
+        // Otherwise, display with peso sign and 2 decimal places
+        return $"₱{amount.ToString("N2")}";
+    }
+
+
+    // Password change methods
+    private void OpenPasswordChangeModal()
+    {
+        passwordInput = "";
+        passwordConfirm = "";
+        passwordModalError = "";
+        isSavingPassword = false;
+        showPasswordModal = true;
+        StateHasChanged();
+    }
+
+    private void ClosePasswordModal()
+    {
+        showPasswordModal = false;
+        passwordInput = "";
+        passwordConfirm = "";
+        passwordModalError = "";
+        isSavingPassword = false;
+        StateHasChanged();
+    }
+
+    private async Task SavePasswordChange()
+    {
+        if (isSavingPassword || string.IsNullOrWhiteSpace(currentUsername))
+            return;
+
+        passwordModalError = "";
+
+        if (string.IsNullOrWhiteSpace(passwordInput) || string.IsNullOrWhiteSpace(passwordConfirm))
+        {
+            passwordModalError = "Please enter and confirm the new password.";
+            StateHasChanged();
+            return;
+        }
+
+        if (passwordInput.Length < 4)
+        {
+            passwordModalError = "Password must be at least 4 characters.";
+            StateHasChanged();
+            return;
+        }
+
+        if (passwordInput != passwordConfirm)
+        {
+            passwordModalError = "Passwords do not match.";
+            StateHasChanged();
+            return;
+        }
+
+        isSavingPassword = true;
+        StateHasChanged();
+
+        try
+        {
+            // Get current user ID from secure storage
+            var userIdStr = await Microsoft.Maui.Storage.SecureStorage.Default.GetAsync("user_id");
+            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
+            {
+                passwordModalError = "Unable to identify current user. Please log out and log back in.";
+                isSavingPassword = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Find the user in database
+            var user = await Context.Users.FirstOrDefaultAsync(u => u.UserID == userId);
+            if (user == null)
+            {
+                passwordModalError = "User not found. Please log out and log back in.";
+                isSavingPassword = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Update password
+            user.Password = passwordInput.Trim();
+            user.LastPasswordChange = DateTime.Now;
+            Context.Users.Update(user);
+            await Context.SaveChangesAsync();
+
+            await JSRuntime.InvokeVoidAsync("alert", "Password updated successfully!");
+            ClosePasswordModal();
+        }
+        catch (Exception ex)
+        {
+            passwordModalError = $"Error updating password: {ex.Message}";
+            isSavingPassword = false;
+            StateHasChanged();
+        }
+    }
+
+    // Chart data variables
+    private List<decimal> revenueData = new();
+    private List<string> revenueLabels = new();
+    private List<int> checkinsData = new();
+    private List<string> checkinsLabels = new();
+    private List<int> memberGrowthData = new();
+    private List<string> memberGrowthLabels = new();
+    private List<int> membershipTypeCounts = new();
+    private List<string> membershipTypeNames = new();
+
+    // === Chart data for summaries (used for tables and line graphs) ===
+    private async Task LoadChartData()
+    {
+        try
+        {
+            var today = DateTime.Today;
+            
+            // Load revenue data for last 7 days
+            revenueData.Clear();
+            revenueLabels.Clear();
+            for (int i = 6; i >= 0; i--)
+            {
+                var date = today.AddDays(-i);
+                var nextDate = date.AddDays(1);
+                
+                var dayPayments = await Context.Payments
+                    .Where(p => p.PaymentDate >= date && p.PaymentDate < nextDate)
+                    .SumAsync(p => (decimal?)p.Amount) ?? 0;
+                
+                var dayWalkins = await Context.WalkIns
+                    .Where(w => w.VisitDate >= date && w.VisitDate < nextDate && !w.IsArchived)
+                    .SumAsync(w => (decimal?)w.PaymentAmount) ?? 0;
+                
+                revenueData.Add(dayPayments + dayWalkins);
+                revenueLabels.Add(date.ToString("MMM dd"));
+            }
+
+            // Load check-ins data for last 7 days
+            checkinsData.Clear();
+            checkinsLabels.Clear();
+            for (int i = 6; i >= 0; i--)
+            {
+                var date = today.AddDays(-i);
+                var nextDate = date.AddDays(1);
+                
+                var count = await Context.Attendances
+                    .CountAsync(a => a.CheckinTime >= date && a.CheckinTime < nextDate);
+                
+                checkinsData.Add(count);
+                checkinsLabels.Add(date.ToString("MMM dd"));
+            }
+
+            // Load member growth for last 6 months
+            memberGrowthData.Clear();
+            memberGrowthLabels.Clear();
+            for (int i = 5; i >= 0; i--)
+            {
+                var monthStart = new DateTime(today.Year, today.Month, 1).AddMonths(-i);
+                var monthEnd = monthStart.AddMonths(1);
+                
+                var count = await Context.Members
+                    .CountAsync(m => m.JoinDate >= monthStart && m.JoinDate < monthEnd && !m.IsArchived);
+                
+                memberGrowthData.Add(count);
+                memberGrowthLabels.Add(monthStart.ToString("MMM yyyy"));
+            }
+
+            // Load membership type distribution
+            membershipTypeCounts.Clear();
+            membershipTypeNames.Clear();
+            var membershipTypes = await Context.MembershipTypes
+                .Where(mt => !mt.IsArchived)
+                .ToListAsync();
+            
+            foreach (var mt in membershipTypes)
+            {
+                var count = await Context.Members
+                    .CountAsync(m => m.MembershipTypeID == mt.MembershipTypeID && !m.IsArchived);
+                
+                if (count > 0)
+                {
+                    membershipTypeCounts.Add(count);
+                    membershipTypeNames.Add(mt.TypeName);
+                }
+            }
+
+            // Build chart points for revenue and check-ins (for SVG line graphs)
+            BuildLinePoints(
+                revenueData.Select(d => (double)d).ToList(),
+                revenueLabels,
+                revenueChartPoints,
+                100,
+                45);
+
+            BuildLinePoints(
+                checkinsData.Select(d => (double)d).ToList(),
+                checkinsLabels,
+                checkinsChartPoints,
+                100,
+                45);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading chart data: {ex.Message}");
+        }
+    }
+
+    // === Inline SVG chart helpers (offline, no JS) ===
+    private class ChartPoint
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Value { get; set; }
+        public string Label { get; set; } = string.Empty;
+    }
+
+    private List<ChartPoint> revenueChartPoints = new();
+    private List<ChartPoint> checkinsChartPoints = new();
+
+    private void BuildLinePoints(
+        List<double> values,
+        List<string> labels,
+        List<ChartPoint> target,
+        double width,
+        double height)
+    {
+        target.Clear();
+        if (values == null || values.Count == 0)
+            return;
+
+        var max = values.Max();
+        if (max <= 0)
+            max = 1; // avoid divide-by-zero; keep line at bottom
+
+        var stepX = values.Count == 1 ? 0 : width / (values.Count - 1);
+
+        for (int i = 0; i < values.Count; i++)
+        {
+            var x = stepX * i;
+            var normalized = values[i] / max;
+            var y = height - (normalized * height) + 5; // padding from top
+            if (y > height) y = height;
+
+            var label = (labels != null && labels.Count > i) ? labels[i] : string.Empty;
+
+            target.Add(new ChartPoint
+            {
+                X = x,
+                Y = y,
+                Value = values[i],
+                Label = label
+            });
+        }
+    }
+
+    private async Task InitializeCharts()
+    {
+        await LoadChartData();
+        
+        // Initialize charts using JavaScript interop
+        await JSRuntime.InvokeVoidAsync("initializeDashboardCharts",
+            revenueLabels.ToArray(),
+            revenueData.Select(d => (double)d).ToArray(),
+            checkinsLabels.ToArray(),
+            checkinsData.ToArray(),
+            memberGrowthLabels.ToArray(),
+            memberGrowthData.ToArray(),
+            membershipTypeNames.ToArray(),
+            membershipTypeCounts.ToArray()
+        );
     }
 }

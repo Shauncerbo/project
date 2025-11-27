@@ -6,11 +6,15 @@
 @using System.Threading.Tasks
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
+@inject IDbContextFactory<AppDbContext> DbContextFactory
 @inject IMemberService MemberService
+@inject IToastService ToastService
 @using project.Data
 @using project.Models
 @using project.Services
 @using Microsoft.EntityFrameworkCore
+@using MemberPromo = project.Models.MemberPromo
+@using PaymentModel = project.Models.Payment
 
 <div class="members-container">
     <!-- Loading Indicator -->
@@ -24,28 +28,27 @@
     <!-- Page Header -->
     <div class="page-header">
         <h1 class="page-title">Manage Members</h1>
-        <div class="header-actions">
-            <input type="text"
-                   class="search-bar"
-                   placeholder="Search members..."
-                   @bind="searchQuery"
-                   @bind:event="oninput"
-                   @onkeyup="HandleSearch" />
-        </div>
     </div>
 
     <!-- Members Data Table -->
     <div class="table-container">
+        <div class="table-toolbar">
+            <span class="table-title">Active Members</span>
+            <input type="text"
+                   class="search-bar"
+                   placeholder="Search Active members..."
+                   @bind="searchQuery"
+                   @bind:event="oninput"
+                   @onkeyup="HandleSearch" />
+        </div>
         <table class="members-table">
             <thead>
                 <tr>
                     <th>NAME</th>
                     <th>CONTACT NUMBER</th>
                     <th>EMAIL</th>
-                    <th>ADDRESS</th>
                     <th>JOIN DATE</th>
                     <th>EXPIRATION DATE</th>
-                    <th>STATUS</th>
                     <th>PAYMENT METHOD</th>
                     <th>TRAINER</th>
                     <th>ACTIONS</th>
@@ -55,7 +58,7 @@
                 @if (filteredMembers == null || !filteredMembers.Any())
                 {
                     <tr>
-                        <td colspan="10" class="no-data">
+                        <td colspan="8" class="no-data">
                             <div class="no-data-content">
                                 <span class="no-data-icon">👥</span>
                                 <p>No members found</p>
@@ -77,7 +80,6 @@
                             </td>
                             <td>@member.ContactNumber</td>
                             <td>@member.Email</td>
-                            <td class="address-cell">@member.Address</td>
                             <td>@member.JoinDate.ToString("MM/dd/yyyy")</td>
                             <td>
                                 @if (member.ExpirationDate.HasValue)
@@ -92,11 +94,6 @@
                                 }
                             </td>
                             <td>
-                                <span class="status-badge @GetStatusClass(member)">
-                                    @GetStatusText(member)
-                                </span>
-                            </td>
-                            <td>
                                 @{
                                     var latestPayment = member.Payments?.OrderByDescending(p => p.PaymentDate).FirstOrDefault();
                                     var paymentMethod = latestPayment?.PaymentType ?? "N/A";
@@ -109,6 +106,10 @@
                                     <div class="trainer-info">
                                         <span class="trainer-name">@member.Trainer.FullName</span>
                                         <span class="trainer-specialty">@member.Trainer.Specialty</span>
+                                        @if (member.TrainerSchedule != null)
+                                        {
+                                            <span class="trainer-schedule">@member.TrainerSchedule.DisplayText</span>
+                                        }
                                     </div>
                                 }
                                 else
@@ -119,7 +120,7 @@
                             <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditMember(member)" title="Edit">
-                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
+                                        <img src="/Newedit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
                                     <button class="action-btn archive-btn" @onclick="() => ShowArchiveConfirmation(member)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
@@ -135,6 +136,242 @@
             </tbody>
         </table>
     </div>
+
+    <!-- Expired/Inactive Members Section -->
+    @if (expiredInactiveMembers != null && expiredInactiveMembers.Any())
+    {
+        <div class="expired-section">
+            <div class="section-header">
+            </div>
+            <div class="table-container">
+                <div class="table-toolbar">
+                    <span class="table-title">Expired / Inactive Members</span>
+                    <input type="text"
+                           class="search-bar"
+                           placeholder="Search expired/inactive members..."
+                           @bind="expiredSearchQuery"
+                           @bind:event="oninput"
+                           @onkeyup="FilterExpiredMembers" />
+                </div>
+                <table class="members-table expired-table">
+                    <thead>
+                        <tr>
+                            <th>NAME</th>
+                            <th>CONTACT NUMBER</th>
+                            <th>EMAIL</th>
+                            <th>EXPIRED DATE</th>
+                            <th>LAST MEMBERSHIP</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var member in expiredInactiveMembers)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="member-info">
+                                        <div class="member-avatar">@GetInitials(member.FirstName, member.LastName)</div>
+                                        <span>@member.FirstName @member.LastName</span>
+                                    </div>
+                                </td>
+                                <td>@member.ContactNumber</td>
+                                <td>@member.Email</td>
+                                <td>
+                                    @if (member.ExpirationDate.HasValue)
+                                    {
+                                        <span class="expiration-expired">
+                                            @member.ExpirationDate.Value.ToString("MM/dd/yyyy")
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">N/A</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (member.MembershipType != null)
+                                    {
+                                        <span>@member.MembershipType.TypeName</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">N/A</span>
+                                    }
+                                </td>
+                                <td>
+                                    <button class="renew-btn" @onclick="() => OpenRenewModal(member)" title="Renew Membership">
+                                        Renew
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <!-- Renew Membership Modal -->
+    @if (showRenewModal)
+    {
+        <div class="modal-overlay" @onclick="CloseRenewModal">
+            <div class="modal-content" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Renew Membership - @(memberToRenew?.FirstName) @(memberToRenew?.LastName)</h2>
+                    <button class="close-btn" @onclick="CloseRenewModal">×</button>
+                </div>
+
+                <div class="modal-body">
+                    @if (!string.IsNullOrWhiteSpace(renewError))
+                    {
+                        <div class="general-error">
+                            ⚠️ @renewError
+                        </div>
+                    }
+
+                    <div class="form-section">
+                        <h4>Renewal Details</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="required">New Membership Type</label>
+                                <div class="select-wrapper">
+                                    <select class="form-control select-dropdown @(HasRenewError("MembershipTypeID") ? "error" : "")" 
+                                            @bind="renewMembershipTypeId" 
+                                            @bind:after="OnRenewMembershipTypeChanged">
+                                        <option value="0">Select membership type</option>
+                                        @foreach (var type in availableMembershipTypes)
+                                        {
+                                            <option value="@type.MembershipTypeID">@type.TypeName - ₱@type.Price.ToString("N2") (@type.DurationInDays days)</option>
+                                        }
+                                    </select>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                @if (HasRenewError("MembershipTypeID"))
+                                {
+                                    <div class="field-error">Membership type is required</div>
+                                }
+                            </div>
+                            <div class="form-group">
+                                <label class="required">Payment Method</label>
+                                <div class="select-wrapper">
+                                    <select class="form-control select-dropdown @(HasRenewError("PaymentMethod") ? "error" : "")" @bind="renewPaymentMethod">
+                                        <option value="Cash">Cash</option>
+                                        <option value="Ewallet">Ewallet</option>
+                                    </select>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                @if (HasRenewError("PaymentMethod"))
+                                {
+                                    <div class="field-error">Payment method is required</div>
+                                }
+                            </div>
+                            <div class="form-group">
+                                <label>Assign Trainer (Optional)</label>
+                                <div class="select-wrapper">
+                                    <select class="form-control select-dropdown @(HasRenewError("TrainerID") ? "error" : "")"
+                                            @bind="renewTrainerId"
+                                            @bind:after="OnRenewTrainerChanged">
+                                        <option value="">Select a trainer (optional)</option>
+                                        @foreach (var trainer in availableRenewTrainers)
+                                        {
+                                            <option value="@trainer.TrainerID">@trainer.FullName - @trainer.Specialty</option>
+                                        }
+                                    </select>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Preferred Schedule</label>
+                            @if (renewTrainerId.HasValue && visibleRenewTrainerSchedules.Any())
+                            {
+                                <div class="select-wrapper">
+                                    <select class="form-control select-dropdown @(HasRenewError("TrainerScheduleID") ? "error" : "")"
+                                            @bind="renewTrainerScheduleId"
+                                            @bind:after="OnRenewTrainerScheduleChanged">
+                                        <option value="">Select schedule</option>
+                                        @foreach (var schedule in visibleRenewTrainerSchedules)
+                                        {
+                                            <option value="@schedule.TrainerScheduleID">@schedule.DisplayText</option>
+                                        }
+                                    </select>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                @if (HasRenewError("TrainerScheduleID"))
+                                {
+                                    <div class="field-error">Please select a schedule for the trainer.</div>
+                                }
+                            }
+                            else if (renewTrainerId.HasValue)
+                            {
+                                <div class="info-box">
+                                    <span class="info-icon">ℹ️</span>
+                                    <div class="info-content">
+                                        <strong>No schedule available</strong>
+                                        <p>This trainer has no available schedules yet.</p>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="form-group">
+                            <label>Promotion (Optional)</label>
+                            <div class="select-wrapper">
+                                <select class="form-control select-dropdown" @bind="renewPromotionId" @bind:after="OnRenewPromotionChanged">
+                                    <option value="0">No promotion</option>
+                                    @if (activePromotions != null && activePromotions.Any())
+                                    {
+                                        @foreach (var promo in activePromotions)
+                                        {
+                                            <option value="@promo.PromoID">@promo.PromoName - @promo.DiscountRate.ToString("F0")% off</option>
+                                        }
+                                    }
+                                </select>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            @if (selectedRenewPromotion != null)
+                            {
+                                <small class="promo-description">@selectedRenewPromotion.Description</small>
+                            }
+                            @if (activePromotions != null && !activePromotions.Any())
+                            {
+                                <small class="promo-description" style="color: #999;">No active promotions available</small>
+                            }
+                        </div>
+
+                        @if (renewMembershipType != null)
+                        {
+                            <div class="price-breakdown">
+                                <div class="price-row">
+                                    <span>Membership Price:</span>
+                                    <span class="price-original">₱@(renewMembershipType.Price.ToString("N2"))</span>
+                                </div>
+                                @if (selectedRenewPromotion != null && renewDiscountAmount > 0)
+                                {
+                                    <div class="price-row discount-row">
+                                        <span>Discount (@selectedRenewPromotion.DiscountRate.ToString("F0")%):</span>
+                                        <span class="price-discount">-₱@(renewDiscountAmount.ToString("N2"))</span>
+                                    </div>
+                                }
+                                <div class="price-row total-row">
+                                    <span><strong>Amount to Pay:</strong></span>
+                                    <span class="price-final"><strong>₱@(renewFinalPrice.ToString("N2"))</strong></span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseRenewModal">Cancel</button>
+                    <button class="btn btn-primary" disabled="@isRenewing" @onclick="RenewMembershipAsync">
+                        @(isRenewing ? "Processing..." : "Renew Membership")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 
     <!-- Add/Edit Member Modal -->
     @if (showModal)
@@ -185,10 +422,17 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label class="required">Contact Number</label>
-                            <input type="tel" class="form-control @(HasError("ContactNumber") ? "error" : "")" @bind="currentMember.ContactNumber" placeholder="Enter contact number" />
+                            <input type="text"
+                                   class="form-control @(HasError("ContactNumber") ? "error" : "")"
+                                   @bind-value="ContactNumberInput"
+                                   @bind-value:event="oninput"
+                                   inputmode="numeric"
+                                   pattern="[0-9]*"
+                                   maxlength="11"
+                                   placeholder="09XXXXXXXXX" />
                             @if (HasError("ContactNumber"))
                             {
-                                <div class="field-error">Contact number is required</div>
+                                <div class="field-error">Contact number is required (11 digits)</div>
                             }
                         </div>
                         <div class="form-group">
@@ -253,7 +497,9 @@
                     <div class="form-group">    
                         <label>Assign Trainer (Optional)</label>
                         <div class="select-wrapper">
-                            <select class="form-control select-dropdown" @bind="currentMember.TrainerID">
+                            <select class="form-control select-dropdown" 
+                                    @bind="currentMember.TrainerID"
+                                    @bind:after="OnTrainerSelectionChanged">
                                 <option value="">Select a trainer (optional)</option>
                                 @foreach (var trainer in availableTrainers)
                                 {
@@ -264,17 +510,52 @@
                         </div>
                     </div>
 
+                    @if (currentMember.TrainerID.HasValue)
+                    {
+                        <div class="form-group">
+                            <label class="required">Preferred Schedule</label>
+                            @if (visibleTrainerSchedules.Any())
+                            {
+                                <div class="select-wrapper">
+                                    <select class="form-control select-dropdown @(HasError("TrainerScheduleID") ? "error" : "")"
+                                            @bind="selectedTrainerScheduleId"
+                                            @bind:after="OnTrainerScheduleChanged">
+                                        <option value="0">Select schedule</option>
+                                        @foreach (var schedule in visibleTrainerSchedules)
+                                        {
+                                            <option value="@schedule.TrainerScheduleID">@schedule.DisplayText</option>
+                                        }
+                                    </select>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                @if (HasError("TrainerScheduleID"))
+                                {
+                                    <div class="field-error">Please select a schedule for the trainer.</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="info-box">
+                                    <span class="info-icon">ℹ️</span>
+                                    <div class="info-content">
+                                        <strong>No schedule available</strong>
+                                        <p>This trainer has no available schedules yet.</p>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
                     <!-- QR Code Generation Section -->
                     @if (currentMember.MemberID > 0 && qrCodeImage != null)
                     {
                         <div class="divider"></div>
                         <div class="qr-code-section">
-                            <h4>🎯 Member QR Code</h4>
+                            <h4>Member QR Code</h4>
                             <div class="qr-code-container">
                                 <div class="qr-code-display">
                                     <div class="qr-header">
                                         <strong>@currentMember.FirstName @currentMember.LastName</strong>
-                                        <small>Member ID: @currentMember.MemberID</small>
                                     </div>
                                     <div class="qr-image-container">
                                         <img src="data:image/png;base64,@Convert.ToBase64String(qrCodeImage)"
@@ -282,17 +563,17 @@
                                              class="qr-image" />
                                     </div>
                                     <div class="qr-instructions">
-                                        <small>📱 Scan this code for attendance tracking</small>
+                                        <small> Scan this code for attendance tracking</small>
                                     </div>
                                     <div class="qr-actions">
                                         <button class="btn btn-outline-primary btn-sm" @onclick="PrintQrCode">
-                                            🖨️ Print
+                                             Print
                                         </button>
                                         <button class="btn btn-outline-secondary btn-sm" @onclick="DownloadQrCode">
-                                            📥 Download
+                                             Download
                                         </button>
                                         <button class="btn btn-outline-info btn-sm" @onclick="GenerateNewQrCode">
-                                            🔄 Regenerate
+                                             Regenerate
                                         </button>
                                     </div>
                                 </div>
@@ -351,7 +632,6 @@
                     <div class="qr-code-display-full">
                         <div class="qr-header-full">
                             <h4>@selectedMember?.FirstName @selectedMember?.LastName</h4>
-                            <p class="text-muted">Member ID: @selectedMember?.MemberID</p>
                         </div>
                         <div class="qr-image-container-full">
                             @if (selectedMemberQrImage != null)
@@ -366,14 +646,14 @@
                             }
                         </div>
                         <div class="qr-instructions-full">
-                            <p>📱 Show this code at the gym for quick check-in</p>
+                            <p> Show this code at the gym for quick check-in</p>
                         </div>
                         <div class="qr-actions-full">
                             <button class="btn btn-primary" @onclick="PrintQrCode">
-                                🖨️ Print QR Code
+                                 Print QR Code
                             </button>
                             <button class="btn btn-secondary" @onclick="DownloadQrCode">
-                                📥 Download QR Code
+                                 Download QR Code
                             </button>
                         </div>
                     </div>
@@ -476,6 +756,24 @@
          overflow-x: auto;
          overflow-y: auto;
          max-height: calc(100vh - 250px);
+         position: relative;
+     }
+
+     .table-toolbar {
+         display: flex;
+         align-items: center;
+         padding: 12px 16px 8px 16px;
+         margin-bottom: 4px;
+     }
+
+     .table-toolbar .search-bar {
+         margin-left: auto; /* push search to the right */
+     }
+
+     .table-title {
+         font-size: 16px;
+         font-weight: 600;
+         color: #234060;
      }
 
      .payment-method-text {
@@ -533,7 +831,7 @@
             white-space: nowrap;
             display: inline-flex;
             align-items: center;
-        }
+     }
 
      .member-avatar {
          width: 36px;
@@ -559,22 +857,23 @@
          border-radius: 0;
          font-size: 14px;
          font-weight: 600;
-         background: transparent;
+         background: transparent !important;
+         border: none !important;
      }
 
      .status-active {
-         background: transparent;
-         color: #333;
+         background: transparent !important;
+         color: #333 !important;
      }
 
      .status-inactive {
-         background: transparent;
-         color: #333;
+         background: transparent !important;
+         color: #333 !important;
      }
 
      .status-suspended {
-         background: transparent;
-         color: #333;
+         background: transparent !important;
+         color: #333 !important;
      }
 
      .trainer-info {
@@ -598,6 +897,11 @@
          display: inline-block;
      }
 
+    .trainer-schedule {
+        font-size: 11px;
+        color: #2d5bd1;
+     }
+
      .no-trainer {
          color: #999;
          font-style: italic;
@@ -609,27 +913,27 @@
          gap: 8px;
      }
 
-    .action-btn {
+     .action-btn {
         background: transparent !important;
         border: none !important;
-        cursor: pointer;
+         cursor: pointer;
         padding: 0;
         transition: transform 0.15s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+         display: flex;
+         align-items: center;
+         justify-content: center;
         box-shadow: none !important;
-    }
+     }
 
         .action-btn:hover {
-            transform: scale(1.1);
+             transform: scale(1.1);
             background: transparent !important;
-        }
+             }
 
         .action-btn:focus {
             background: transparent !important;
             outline: none;
-        }
+     }
 
         .action-btn:active {
             background: transparent !important;
@@ -639,17 +943,17 @@
         width: 20px;
         height: 20px;
         transition: filter 0.15s ease;
-    }
+         }
 
         .action-btn:hover .action-icon {
             filter: brightness(1.15);
-        }
+             }
 
     .edit-btn,
     .archive-btn,
-    .qr-btn {
+     .qr-btn {
         background: transparent !important;
-    }
+             }
 
      .no-data {
          text-align: center;
@@ -694,8 +998,8 @@
      .modal-content {
          background: white;
          border-radius: 12px;
-         width: 90%;
-         max-width: 600px;
+         width: 95%;
+         max-width: 900px;
          max-height: 90vh;
          overflow-y: auto;
          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
@@ -820,9 +1124,9 @@
          font-weight: 500;
      }
 
-    .expiration-valid {
+     .expiration-valid {
         color: #f39c12;
-    }
+     }
 
      .expiration-preview {
          margin-top: 8px;
@@ -935,15 +1239,22 @@
              background: #e0e0e0;
          }
 
-     .btn-save {
+     .btn-save,
+     .btn-primary {
          background: #5cb85c;
          color: white;
      }
 
-         .btn-save:hover {
+         .btn-save:hover,
+         .btn-primary:hover:not([disabled]) {
              background: #4cae4c;
              transform: translateY(-1px);
              box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+         }
+
+         .btn-primary[disabled] {
+             opacity: 0.7;
+             cursor: not-allowed;
          }
 
      .form-row {
@@ -1114,6 +1425,153 @@
              color: white;
          }
 
+     /* Expired/Inactive Members Section */
+     .expired-section {
+         margin-top: 40px;
+         padding-top: 30px;
+         border-top: 2px solid #e9ecef;
+     }
+
+     .section-header {
+         margin-bottom: 20px;
+     }
+
+     .section-title {
+         font-size: 20px;
+         font-weight: 600;
+         color: #234060;
+         margin: 0 0 5px 0;
+     }
+
+     .section-subtitle {
+         font-size: 14px;
+         color: #666;
+         margin: 0;
+     }
+
+    .expired-table {
+        margin-top: 0; /* align header gap with active members table */
+    }
+
+     .expired-table tbody tr {
+         background: #fff5f5;
+     }
+
+     .expired-table tbody tr:hover {
+         background: #ffeaea;
+     }
+
+     .expiration-expired {
+         color: #e74c3c;
+         font-weight: 600;
+     }
+
+     .renew-btn {
+         background: #FFA500;
+         color: white;
+         border: none;
+         padding: 8px 16px;
+         border-radius: 6px;
+         font-size: 13px;
+         font-weight: 600;
+         cursor: pointer;
+         transition: all 0.2s;
+     }
+
+     .renew-btn:hover {
+            background: #ff8c00;
+         transform: translateY(-1px);
+         box-shadow: 0 4px 12px rgba(255,165,0,0.3);
+     }
+
+     .renew-btn:active {
+         transform: translateY(0);
+     }
+
+     .price-breakdown {
+         background: #f8f9fa;
+         border: 1px solid #e9ecef;
+         border-radius: 8px;
+         padding: 15px;
+         margin-top: 15px;
+     }
+
+     .price-row {
+         display: flex;
+         justify-content: space-between;
+         align-items: center;
+         padding: 8px 0;
+         border-bottom: 1px solid #e9ecef;
+     }
+
+     .price-row:last-child {
+         border-bottom: none;
+         margin-top: 5px;
+         padding-top: 12px;
+         border-top: 2px solid #dee2e6;
+     }
+
+     .price-original {
+         color: #666;
+     }
+
+     .price-discount {
+         color: #28a745;
+         font-weight: 600;
+     }
+
+     .price-final {
+         color: #234060;
+         font-size: 1.1em;
+     }
+
+     .total-row {
+         font-size: 1.05em;
+     }
+
+     .promo-description {
+         display: block;
+         margin-top: 5px;
+         font-size: 12px;
+         color: #666;
+         font-style: italic;
+     }
+
+     .general-error {
+         background: #fff3cd;
+         border: 1px solid #ffeeba;
+         padding: 10px 14px;
+         border-radius: 8px;
+         color: #856404;
+         margin-bottom: 15px;
+     }
+
+    .info-box {
+        display: flex;
+        gap: 12px;
+        padding: 12px;
+        border: 1px dashed #cfd8dc;
+        border-radius: 8px;
+        background: #f8fbff;
+        color: #546e7a;
+    }
+
+    .info-icon {
+        font-size: 20px;
+        line-height: 1;
+    }
+
+    .info-content {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .info-content p {
+        margin: 0;
+        font-size: 13px;
+    }
+
      /* QR Modal Styles */
      .qr-modal {
          max-width: 500px;
@@ -1211,6 +1669,7 @@
 
 @code {
     private string searchQuery = "";
+    private string expiredSearchQuery = "";
     private bool showModal = false;
     private bool isEditMode = false;
     private bool showValidationError = false;
@@ -1222,70 +1681,156 @@
     };
     private List<Member> members = new List<Member>();
     private List<Member> filteredMembers = new List<Member>();
+    private List<Member> expiredInactiveMembers = new List<Member>();
     private List<string> validationErrors = new List<string>();
     private bool showArchiveConfirmation = false;
     private Member? selectedMember;
     private List<Trainer> availableTrainers = new List<Trainer>();
+    private List<Trainer> availableRenewTrainers = new();
+    private List<TrainerSchedule> trainerSchedules = new();
+    private List<TrainerSchedule> visibleTrainerSchedules = new();
+    private List<TrainerSchedule> visibleRenewTrainerSchedules = new();
+    private int selectedTrainerScheduleId = 0;
+    private bool isInitializingTrainerSelection = false;
+    // Renew modal trainer selection
+    private int? renewTrainerId;
+    private int? renewTrainerScheduleId;
     private List<project.Models.MembershipType> availableMembershipTypes = new List<project.Models.MembershipType>();
+    private List<Promotion> activePromotions = new List<Promotion>();
 
     // QR Code Variables
     private byte[]? qrCodeImage;
     private byte[]? selectedMemberQrImage;
     private bool showQrModal = false;
 
+    // Renew Membership Variables
+    private bool showRenewModal = false;
+    private Member? memberToRenew;
+    private int renewMembershipTypeId = 0;
+    private project.Models.MembershipType? renewMembershipType;
+    private string renewPaymentMethod = "Cash";
+    private int renewPromotionId = 0;
+    private Promotion? selectedRenewPromotion;
+    private decimal renewDiscountAmount = 0;
+    private decimal renewFinalPrice = 0;
+    private bool isRenewing = false;
+    private string? renewError;
+    private List<string> renewErrors = new List<string>();
+
     protected override async Task OnInitializedAsync()
     {
+        await ReleaseCompletedTrainerSchedulesAsync();
         await LoadMembersFromDatabase();
         await LoadTrainersFromDatabase();
+        await LoadTrainerSchedules();
         await LoadMembershipTypesFromDatabase();
+        await LoadActivePromotions();
+    }
+
+    private async Task LoadActivePromotions()
+    {
+        try
+        {
+            var today = DateTime.Today;
+            activePromotions = await Context.Promotions
+                .AsNoTracking()
+                .Where(p => p.EndDate >= today)
+                .OrderByDescending(p => p.DiscountRate)
+                .ThenByDescending(p => p.StartDate)
+                .ToListAsync();
+        }
+        catch (Exception)
+        {
+            activePromotions = new List<Promotion>();
+        }
     }
 
     private async Task LoadTrainersFromDatabase(int? includeTrainerId = null)
     {
         try
         {
-            var assignedTrainerIds = await Context.Members
-                .Where(m => m.TrainerID.HasValue && !m.IsArchived)
-                .Select(m => m.TrainerID!.Value)
-                .ToListAsync();
-
-            var assignedTrainerIdsFromWalkins = await Context.WalkIns
-                .Where(w => w.TrainerID.HasValue && !w.IsArchived)
-                .Select(w => w.TrainerID!.Value)
-                .ToListAsync();
-
-            assignedTrainerIds.AddRange(assignedTrainerIdsFromWalkins);
-
-            if (includeTrainerId.HasValue)
-            {
-                assignedTrainerIds = assignedTrainerIds
-                    .Where(id => id != includeTrainerId.Value)
-                    .ToList();
-            }
-
-            availableTrainers = await Context.Trainers
-                .Where(t => !assignedTrainerIds.Contains(t.TrainerID))
-                .ToListAsync();
-
-            availableTrainers = availableTrainers
-                .OrderBy(t => t.FullName)
-                .ToList();
-
-            if (includeTrainerId.HasValue && !availableTrainers.Any(t => t.TrainerID == includeTrainerId.Value))
-            {
-                var currentTrainer = await Context.Trainers.FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
-                if (currentTrainer != null)
-                {
-                    availableTrainers.Add(currentTrainer);
-                    availableTrainers = availableTrainers
-                        .OrderBy(t => t.FullName)
-                        .ToList();
-                }
-            }
+            availableTrainers = await FetchAvailableTrainersAsync(includeTrainerId);
         }
         catch (Exception ex)
         {
             await JSRuntime.InvokeVoidAsync("alert", $"Error loading trainers: {ex.Message}");
+        }
+    }
+
+    private async Task LoadRenewTrainersAsync(int? includeTrainerId = null)
+    {
+        try
+        {
+            availableRenewTrainers = await FetchAvailableTrainersAsync(includeTrainerId);
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading trainers: {ex.Message}");
+        }
+    }
+
+    private async Task<List<Trainer>> FetchAvailableTrainersAsync(int? includeTrainerId = null)
+    {
+        var bookedScheduleIdsQuery = GetBookedTrainerScheduleIdsQuery();
+
+        var availableTrainerIdsQuery = Context.TrainerSchedules
+            .Where(ts => ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID))
+            .Select(ts => ts.TrainerID)
+            .Distinct();
+
+        var trainersList = await Context.Trainers
+                .AsNoTracking()
+            .Where(t => availableTrainerIdsQuery.Contains(t.TrainerID))
+                .OrderBy(t => t.LastName)
+                .ThenBy(t => t.FirstName)
+                .ToListAsync();
+
+        if (includeTrainerId.HasValue && !trainersList.Any(t => t.TrainerID == includeTrainerId.Value))
+            {
+                var currentTrainer = await Context.Trainers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
+                if (currentTrainer != null)
+                {
+                trainersList.Add(currentTrainer);
+                trainersList = trainersList
+                        .OrderBy(t => t.LastName)
+                        .ThenBy(t => t.FirstName)
+                        .ToList();
+                }
+            }
+
+        return trainersList;
+    }
+
+    private async Task LoadTrainerSchedules(int? includeScheduleId = null)
+    {
+        try
+        {
+            var bookedScheduleIdsQuery = GetBookedTrainerScheduleIdsQuery();
+            IQueryable<TrainerSchedule> query = Context.TrainerSchedules
+                .AsNoTracking()
+                .Include(ts => ts.Trainer);
+
+            if (includeScheduleId.HasValue)
+            {
+                query = query.Where(ts =>
+                    ts.TrainerScheduleID == includeScheduleId.Value ||
+                    (ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID)));
+            }
+            else
+            {
+                query = query.Where(ts => ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID));
+            }
+
+            trainerSchedules = await query
+                .OrderBy(ts => ts.DayOfWeek)
+                .ThenBy(ts => ts.StartTime)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading trainer schedules: {ex.Message}");
         }
     }
 
@@ -1318,6 +1863,7 @@
             members = await Context.Members
                 .Where(m => m.IsArchived == false)
                 .Include(m => m.Trainer)
+                .Include(m => m.TrainerSchedule)
                 .Include(m => m.MembershipType)
                 .Include(m => m.Payments)
                 .ToListAsync();
@@ -1338,13 +1884,26 @@
                 await Context.SaveChangesAsync();
                 // Reload to get updated data
                 members = await Context.Members
+                    .Where(m => m.IsArchived == false)
                     .Include(m => m.Trainer)
+                    .Include(m => m.TrainerSchedule)
                     .Include(m => m.MembershipType)
                     .Include(m => m.Payments)
                     .ToListAsync();
             }
             
-            filteredMembers = members;
+            // Separate active and expired/inactive members
+            var today = DateTime.Today;
+            filteredMembers = members.Where(m => 
+                m.Status == "Active" && 
+                (m.ExpirationDate == null || m.ExpirationDate.Value.Date > today)
+            ).ToList();
+
+            expiredInactiveMembers = members.Where(m => 
+                m.Status == "Inactive" || 
+                (m.ExpirationDate.HasValue && m.ExpirationDate.Value.Date <= today)
+            ).OrderByDescending(m => m.ExpirationDate ?? DateTime.MinValue)
+            .ToList();
         }
         catch (Exception ex)
         {
@@ -1384,7 +1943,7 @@
     private string GetStatusClass(Member member)
     {
         // Check if membership is expired based on expiration date
-        if (member.ExpirationDate.HasValue && member.ExpirationDate.Value.Date < DateTime.Today)
+        if (member.ExpirationDate.HasValue && member.ExpirationDate.Value.Date <= DateTime.Today)
         {
             return "status-inactive";
         }
@@ -1400,7 +1959,7 @@
 
     private string GetStatusText(Member member)
     {
-        if (member.ExpirationDate.HasValue && member.ExpirationDate.Value.Date < DateTime.Today)
+        if (member.ExpirationDate.HasValue && member.ExpirationDate.Value.Date <= DateTime.Today)
             return "Inactive";
         else
             return member.Status;
@@ -1413,13 +1972,12 @@
 
     private void HandleSearch()
     {
-        if (string.IsNullOrWhiteSpace(searchQuery))
+        var today = DateTime.Today;
+        var allMembers = members;
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
         {
-            filteredMembers = members;
-        }
-        else
-        {
-            filteredMembers = members.Where(m =>
+            allMembers = members.Where(m =>
                 m.FirstName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
                 m.LastName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
                 m.Email.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
@@ -1428,6 +1986,111 @@
                 (m.Trainer != null && m.Trainer.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
             ).ToList();
         }
+
+        // Separate active and expired/inactive members
+        filteredMembers = allMembers.Where(m => 
+            m.Status == "Active" && 
+            (m.ExpirationDate == null || m.ExpirationDate.Value.Date > today)
+        ).ToList();
+
+        expiredInactiveMembers = allMembers.Where(m => 
+            m.Status == "Inactive" || 
+            (m.ExpirationDate.HasValue && m.ExpirationDate.Value.Date <= today)
+        ).OrderByDescending(m => m.ExpirationDate ?? DateTime.MinValue)
+        .ToList();
+    }
+
+    private void FilterExpiredMembers()
+    {
+        var today = DateTime.Today;
+        var baseQuery = members.Where(m =>
+            m.Status == "Inactive" ||
+            (m.ExpirationDate.HasValue && m.ExpirationDate.Value.Date <= today));
+
+        if (!string.IsNullOrWhiteSpace(expiredSearchQuery))
+        {
+            var query = expiredSearchQuery.Trim();
+            baseQuery = baseQuery.Where(m =>
+                m.FirstName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                m.LastName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                m.Email.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                m.ContactNumber.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                m.Address.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                (m.Trainer != null && m.Trainer.FullName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            );
+        }
+
+        expiredInactiveMembers = baseQuery
+            .OrderByDescending(m => m.ExpirationDate ?? DateTime.MinValue)
+            .ToList();
+    }
+
+    private void OnTrainerSelectionChanged()
+    {
+        if (currentMember.TrainerID.HasValue)
+        {
+            visibleTrainerSchedules = trainerSchedules
+                .Where(ts => ts.TrainerID == currentMember.TrainerID.Value)
+                .ToList();
+
+            if (isInitializingTrainerSelection &&
+                currentMember.TrainerScheduleID.HasValue &&
+                visibleTrainerSchedules.Any(ts => ts.TrainerScheduleID == currentMember.TrainerScheduleID.Value))
+            {
+                selectedTrainerScheduleId = currentMember.TrainerScheduleID.Value;
+            }
+            else
+            {
+                selectedTrainerScheduleId = 0;
+                currentMember.TrainerScheduleID = null;
+            }
+        }
+        else
+        {
+            visibleTrainerSchedules = new();
+            selectedTrainerScheduleId = 0;
+            currentMember.TrainerScheduleID = null;
+        }
+
+        OnTrainerScheduleChanged();
+    }
+
+    private void OnTrainerScheduleChanged()
+    {
+        currentMember.TrainerScheduleID = selectedTrainerScheduleId > 0
+            ? selectedTrainerScheduleId
+            : null;
+    }
+
+    private void OnRenewTrainerChanged()
+    {
+        UpdateRenewVisibleTrainerSchedules();
+        StateHasChanged();
+    }
+
+    private void UpdateRenewVisibleTrainerSchedules()
+    {
+        if (renewTrainerId.HasValue)
+        {
+            visibleRenewTrainerSchedules = trainerSchedules
+                .Where(ts => ts.TrainerID == renewTrainerId.Value)
+                .ToList();
+
+            if (!visibleRenewTrainerSchedules.Any(ts => ts.TrainerScheduleID == renewTrainerScheduleId))
+            {
+                renewTrainerScheduleId = null;
+            }
+        }
+        else
+        {
+            visibleRenewTrainerSchedules = new();
+            renewTrainerScheduleId = null;
+        }
+    }
+
+    private void OnRenewTrainerScheduleChanged()
+    {
+        // Intentionally left blank - binding updates renewTrainerScheduleId
     }
 
     private async Task OpenAddMemberModal()
@@ -1439,13 +2102,19 @@
             Status = "Active",
             MembershipTypeID = 0, // Start with no selection
             TrainerID = null,
-            ExpirationDate = null
+            ExpirationDate = null,
+            TrainerScheduleID = null
         };
         showValidationError = false;
         validationErrors.Clear();
         qrCodeImage = null;
         showModal = true;
         await LoadTrainersFromDatabase(null);
+        await LoadTrainerSchedules();
+        selectedTrainerScheduleId = 0;
+        visibleTrainerSchedules = new();
+        isInitializingTrainerSelection = false;
+        OnTrainerSelectionChanged();
         StateHasChanged();
     }
 
@@ -1465,13 +2134,19 @@
             ExpirationDate = member.ExpirationDate,
             Status = member.Status,
             MembershipTypeID = member.MembershipTypeID,
-            TrainerID = member.TrainerID
+            TrainerID = member.TrainerID,
+            TrainerScheduleID = member.TrainerScheduleID
         };
         showValidationError = false;
         validationErrors.Clear();
 
         await GenerateQrCodeForMember();
+        selectedTrainerScheduleId = member.TrainerScheduleID ?? 0;
         await LoadTrainersFromDatabase(currentMember.TrainerID);
+        await LoadTrainerSchedules(selectedTrainerScheduleId == 0 ? null : selectedTrainerScheduleId);
+        isInitializingTrainerSelection = true;
+        OnTrainerSelectionChanged();
+        isInitializingTrainerSelection = false;
         showModal = true;
         StateHasChanged();
     }
@@ -1520,17 +2195,20 @@
         {
             try
             {
+                var previousScheduleId = selectedMember.TrainerScheduleID;
                 selectedMember.IsArchived = true;
+                selectedMember.Status = "Inactive"; // Set status to Inactive when archiving
                 Context.Members.Update(selectedMember);
+                await UpdateTrainerScheduleAvailability(previousScheduleId, null);
                 await Context.SaveChangesAsync();
                 await LoadMembersFromDatabase();
                 await LoadTrainersFromDatabase();
                 CloseArchiveConfirmation();
-                await JSRuntime.InvokeVoidAsync("alert", "Member archived successfully!");
+                ToastService.ShowSuccess("Archived successfully");
             }
             catch (Exception ex)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error archiving member: {ex.Message}");
+                ToastService.ShowError($"Error archiving member: {ex.Message}");
             }
         }
     }
@@ -1547,6 +2225,19 @@
 
         if (string.IsNullOrWhiteSpace(currentMember.ContactNumber))
             validationErrors.Add("ContactNumber");
+        else
+        {
+            // Validate contact number is exactly 11 digits
+            var digitsOnly = new string(currentMember.ContactNumber.Where(char.IsDigit).ToArray());
+            if (digitsOnly.Length != 11)
+            {
+                validationErrors.Add("ContactNumber");
+            }
+            else
+            {
+                currentMember.ContactNumber = digitsOnly;
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(currentMember.Email))
             validationErrors.Add("Email");
@@ -1560,6 +2251,19 @@
         if (currentMember.MembershipTypeID <= 0)
             validationErrors.Add("MembershipTypeID");
 
+        if (currentMember.TrainerID.HasValue)
+        {
+            if (selectedTrainerScheduleId <= 0)
+            {
+                validationErrors.Add("TrainerScheduleID");
+            }
+        }
+        else
+        {
+            currentMember.TrainerScheduleID = null;
+            selectedTrainerScheduleId = 0;
+        }
+
         showValidationError = validationErrors.Any();
         return !showValidationError;
     }
@@ -1567,6 +2271,17 @@
     private bool HasError(string fieldName)
     {
         return validationErrors.Contains(fieldName);
+    }
+
+    private string ContactNumberInput
+    {
+        get => currentMember.ContactNumber;
+        set
+        {
+            // Strip non-numeric characters and limit to 11 digits
+            var digits = new string((value ?? string.Empty).Where(char.IsDigit).Take(11).ToArray());
+            currentMember.ContactNumber = digits;
+        }
     }
 
     private async Task SaveMember()
@@ -1584,6 +2299,7 @@
                 var existingMember = await Context.Members.FindAsync(currentMember.MemberID);
                 if (existingMember != null)
                 {
+                    var previousScheduleId = existingMember.TrainerScheduleID;
                     existingMember.FirstName = currentMember.FirstName;
                     existingMember.MiddleInitial = currentMember.MiddleInitial;
                     existingMember.LastName = currentMember.LastName;
@@ -1593,14 +2309,19 @@
                     existingMember.JoinDate = currentMember.JoinDate;
                     existingMember.MembershipTypeID = currentMember.MembershipTypeID;
                     existingMember.TrainerID = currentMember.TrainerID;
+                    existingMember.TrainerScheduleID = currentMember.TrainerScheduleID;
                     
                     // Calculate expiration date based on join date and membership type
                     existingMember.ExpirationDate = CalculateExpirationDate(existingMember.JoinDate, existingMember.MembershipTypeID);
                     
                     UpdateMemberStatus(existingMember);
+                    await UpdateTrainerScheduleAvailability(previousScheduleId, existingMember.TrainerScheduleID);
 
                     await Context.SaveChangesAsync();
-                    await JSRuntime.InvokeVoidAsync("alert", "Member updated successfully!");
+                    await Task.Delay(100); // Small delay to ensure UI is ready
+                    ToastService.ShowSuccess("Updated successfully");
+                    await LoadMembersFromDatabase();
+                    CloseModal();
                 }
             }
             else
@@ -1615,7 +2336,8 @@
                     Address = currentMember.Address,
                     JoinDate = currentMember.JoinDate,
                     MembershipTypeID = currentMember.MembershipTypeID,
-                    TrainerID = currentMember.TrainerID
+                    TrainerID = currentMember.TrainerID,
+                    TrainerScheduleID = currentMember.TrainerScheduleID
                 };
                 
                 // Calculate expiration date based on join date and membership type
@@ -1623,20 +2345,18 @@
                 UpdateMemberStatus(newMember);
 
                 Context.Members.Add(newMember);
+                await UpdateTrainerScheduleAvailability(null, newMember.TrainerScheduleID);
                 await Context.SaveChangesAsync();
 
                 currentMember.MemberID = newMember.MemberID;
                 await GenerateQrCodeForMember();
-                await JSRuntime.InvokeVoidAsync("alert", "Member added successfully! QR code generated.");
-            }
-
-            await LoadMembersFromDatabase();
-            await LoadTrainersFromDatabase();
-
-            if (isEditMode)
-            {
+                await Task.Delay(100); // Small delay to ensure UI is ready
+                ToastService.ShowSuccess("Added successfully");
+                await LoadMembersFromDatabase();
                 CloseModal();
             }
+
+            await LoadTrainersFromDatabase();
         }
         catch (Exception ex)
         {
@@ -1724,11 +2444,15 @@
         {
             MembershipTypeID = 1,
             TrainerID = null,
-            Status = "Active"
+            Status = "Active",
+            TrainerScheduleID = null
         };
         showValidationError = false;
         validationErrors.Clear();
         qrCodeImage = null;
+        selectedTrainerScheduleId = 0;
+        visibleTrainerSchedules = new();
+        isInitializingTrainerSelection = false;
         StateHasChanged();
     }
 
@@ -1796,5 +2520,275 @@
             UpdateMemberStatus(currentMember);
         }
         StateHasChanged();
+    }
+
+    private async Task UpdateTrainerScheduleAvailability(int? previousScheduleId, int? newScheduleId)
+    {
+        if (previousScheduleId.HasValue && previousScheduleId != newScheduleId)
+        {
+            await SetTrainerScheduleAvailability(previousScheduleId.Value, true);
+        }
+
+        if (newScheduleId.HasValue && newScheduleId != previousScheduleId)
+        {
+            await SetTrainerScheduleAvailability(newScheduleId.Value, false);
+        }
+    }
+
+    private async Task SetTrainerScheduleAvailability(int scheduleId, bool isAvailable)
+    {
+        var schedule = await Context.TrainerSchedules.FindAsync(scheduleId);
+        if (schedule != null)
+        {
+            schedule.IsAvailable = isAvailable;
+            Context.TrainerSchedules.Update(schedule);
+        }
+    }
+
+    private IQueryable<int> GetBookedTrainerScheduleIdsQuery()
+    {
+        var memberSchedules = Context.Members
+            .Where(m => !m.IsArchived && m.TrainerScheduleID.HasValue)
+            .Select(m => m.TrainerScheduleID!.Value);
+
+        var walkInSchedules = Context.WalkIns
+            .Where(w => !w.IsArchived && w.TrainerScheduleID.HasValue)
+            .Select(w => w.TrainerScheduleID!.Value);
+
+        return memberSchedules.Union(walkInSchedules);
+    }
+
+    private async Task ReleaseCompletedTrainerSchedulesAsync()
+    {
+        var coordinator = new TrainerScheduleCoordinator(DbContextFactory);
+        await coordinator.ReleaseCompletedScheduleBlocksAsync();
+    }
+
+    // Renew Membership Functions
+    private async void OpenRenewModal(Member member)
+    {
+        memberToRenew = member;
+        renewMembershipTypeId = member.MembershipTypeID > 0 ? member.MembershipTypeID : 0;
+        renewMembershipType = availableMembershipTypes.FirstOrDefault(mt => mt.MembershipTypeID == renewMembershipTypeId);
+        renewPaymentMethod = "Cash";
+        renewPromotionId = 0;
+        selectedRenewPromotion = null;
+        renewDiscountAmount = 0;
+        renewFinalPrice = renewMembershipType?.Price ?? 0;
+        renewError = null;
+        renewErrors.Clear();
+        renewTrainerId = member.TrainerID;
+        renewTrainerScheduleId = member.TrainerScheduleID;
+        await LoadRenewTrainersAsync(renewTrainerId);
+        var includeScheduleId = renewTrainerScheduleId.HasValue ? renewTrainerScheduleId.Value : (int?)null;
+        await LoadTrainerSchedules(includeScheduleId);
+        UpdateRenewVisibleTrainerSchedules();
+        await LoadActivePromotions();
+        showRenewModal = true;
+        CalculateRenewPrice();
+        StateHasChanged();
+    }
+
+    private void CloseRenewModal()
+    {
+        if (isRenewing) return;
+        showRenewModal = false;
+        memberToRenew = null;
+        renewMembershipTypeId = 0;
+        renewMembershipType = null;
+        renewPaymentMethod = "Cash";
+        renewPromotionId = 0;
+        selectedRenewPromotion = null;
+        renewDiscountAmount = 0;
+        renewFinalPrice = 0;
+        renewError = null;
+        renewErrors.Clear();
+        renewTrainerId = null;
+        renewTrainerScheduleId = null;
+        availableRenewTrainers = new();
+        visibleRenewTrainerSchedules = new();
+        StateHasChanged();
+    }
+
+    private void OnRenewMembershipTypeChanged()
+    {
+        renewMembershipType = availableMembershipTypes.FirstOrDefault(mt => mt.MembershipTypeID == renewMembershipTypeId);
+        CalculateRenewPrice();
+    }
+
+    private void OnRenewPromotionChanged()
+    {
+        selectedRenewPromotion = activePromotions.FirstOrDefault(p => p.PromoID == renewPromotionId);
+        CalculateRenewPrice();
+    }
+
+    private void CalculateRenewPrice()
+    {
+        if (renewMembershipType == null)
+        {
+            renewFinalPrice = 0;
+            renewDiscountAmount = 0;
+            return;
+        }
+
+        var originalPrice = renewMembershipType.Price;
+        
+        if (selectedRenewPromotion != null && selectedRenewPromotion.DiscountRate > 0)
+        {
+            renewDiscountAmount = originalPrice * (selectedRenewPromotion.DiscountRate / 100);
+            renewFinalPrice = originalPrice - renewDiscountAmount;
+        }
+        else
+        {
+            renewDiscountAmount = 0;
+            renewFinalPrice = originalPrice;
+        }
+        
+        StateHasChanged();
+    }
+
+    private bool HasRenewError(string fieldName)
+    {
+        return renewErrors.Contains(fieldName);
+    }
+
+    private bool ValidateRenewForm()
+    {
+        renewErrors.Clear();
+        renewError = null;
+
+        if (renewMembershipTypeId <= 0)
+            renewErrors.Add("MembershipTypeID");
+
+        if (string.IsNullOrWhiteSpace(renewPaymentMethod))
+            renewErrors.Add("PaymentMethod");
+
+        if (renewTrainerId.HasValue)
+        {
+            if (!renewTrainerScheduleId.HasValue)
+            {
+                renewErrors.Add("TrainerScheduleID");
+            }
+        }
+        else
+        {
+            renewTrainerScheduleId = null;
+        }
+
+        return !renewErrors.Any();
+    }
+
+    private async Task RenewMembershipAsync()
+    {
+        if (isRenewing || memberToRenew == null)
+            return;
+
+        if (!ValidateRenewForm())
+        {
+            renewError = "Please fill in all required fields.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            isRenewing = true;
+            renewError = null;
+            StateHasChanged();
+
+            // Fetch the member from database
+            var member = await Context.Members
+                .Include(m => m.MembershipType)
+                .FirstOrDefaultAsync(m => m.MemberID == memberToRenew.MemberID);
+
+            if (member == null)
+            {
+                renewError = "Member not found.";
+                isRenewing = false;
+                StateHasChanged();
+                return;
+            }
+
+            var previousScheduleId = member.TrainerScheduleID;
+
+            // Update membership
+            member.MembershipTypeID = renewMembershipTypeId;
+            member.Status = "Active";
+            var newExpirationDate = DateTime.Today.AddDays(renewMembershipType!.DurationInDays);
+            member.ExpirationDate = newExpirationDate;
+            member.TrainerID = renewTrainerId;
+            member.TrainerScheduleID = renewTrainerScheduleId;
+            await UpdateTrainerScheduleAvailability(previousScheduleId, member.TrainerScheduleID);
+            
+            // Mark member as modified
+            Context.Members.Update(member);
+
+            // Create payment record
+            var payment = new PaymentModel
+            {
+                MemberID = member.MemberID,
+                Amount = renewFinalPrice,
+                PaymentDate = DateTime.Now,
+                PaymentType = renewPaymentMethod
+            };
+            Context.Payments.Add(payment);
+
+            // Save promotion usage if selected (check if already used first)
+            if (selectedRenewPromotion != null && renewPromotionId > 0)
+            {
+                // Check if member has already used this promotion
+                var existingPromo = await Context.MemberPromos
+                    .FirstOrDefaultAsync(mp => mp.MemberID == member.MemberID && mp.PromotionID == selectedRenewPromotion.PromoID);
+                
+                if (existingPromo == null)
+                {
+                    // Only add if not already used
+                    var memberPromo = new MemberPromo
+                    {
+                        MemberID = member.MemberID,
+                        PromotionID = selectedRenewPromotion.PromoID,
+                        DateUsed = DateTime.Now
+                    };
+                    Context.MemberPromos.Add(memberPromo);
+                }
+                // If already used, just skip adding it (member can't use same promotion twice)
+            }
+
+            await Context.SaveChangesAsync();
+
+            // Reload data
+            await LoadMembersFromDatabase();
+            await LoadTrainersFromDatabase();
+
+            CloseRenewModal();
+            await JSRuntime.InvokeVoidAsync("alert", 
+                $"Membership renewed successfully for {member.FirstName} {member.LastName}!\n" +
+                $"New expiration date: {newExpirationDate:MM/dd/yyyy}\n" +
+                $"Amount paid: ₱{renewFinalPrice:N2}");
+        }
+        catch (Exception ex)
+        {
+            // Get more detailed error information
+            var errorMessage = ex.Message;
+            if (ex.InnerException != null)
+            {
+                errorMessage += $" | Inner: {ex.InnerException.Message}";
+            }
+            
+            renewError = $"Error renewing membership: {errorMessage}";
+            System.Diagnostics.Debug.WriteLine($"Renewal error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            
+            // Log full exception details for debugging
+            if (ex.InnerException != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Inner exception: {ex.InnerException.Message}");
+            }
+        }
+        finally
+        {
+            isRenewing = false;
+            StateHasChanged();
+        }
     }
 }

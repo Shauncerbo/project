@@ -71,7 +71,7 @@
                             <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditMembershipType(membershipType)" title="Edit">
-                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
+                                        <img src="/Newedit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
                                     <button class="action-btn archive-btn" @onclick="() => ConfirmArchiveMembershipType(membershipType)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Delete" />
@@ -181,7 +181,7 @@
     .members-container {
         padding: 30px;
         background: #ffffff;
-        min-height: 100vh;
+        min-height: 0; /* allow short pages with no scrollbar */
     }
 
     /* Page Header */
@@ -248,7 +248,8 @@
         background: white;
         border-radius: 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: auto; /* only shows if content really overflows */
     }
 
     .members-table {
@@ -355,7 +356,7 @@
 
             .edit-btn:hover .action-icon {
                 filter: brightness(1.15);
-            }
+        }
 
     .archive-btn {
         background: transparent !important;
@@ -368,7 +369,7 @@
 
             .archive-btn:hover .action-icon {
                 filter: brightness(1.15);
-            }
+        }
 
     .action-icon {
         width: 18px;

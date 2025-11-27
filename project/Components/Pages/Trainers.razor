@@ -1,10 +1,14 @@
 ﻿@page "/trainers"
 @layout MainLayout
 @using System.Diagnostics
+@using System.Linq
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
+@inject project.Services.IUserService UserService
+@inject project.Services.IToastService ToastService
 @using project.Models
 @using project.Data
+@using Microsoft.EntityFrameworkCore
 @using Microsoft.EntityFrameworkCore
 
 <div class="members-container">
@@ -73,8 +77,11 @@
                             <td>@trainer.ContactNumber</td>
                             <td>
                                 <div class="action-buttons">
+                                    <button class="action-btn schedule-btn" @onclick="() => OpenScheduleModal(trainer)" title="Manage Schedules">
+                                        <img src="/calendar_icon.svg" class="action-icon" alt="Schedule" />
+                                    </button>
                                     <button class="action-btn edit-btn" @onclick="() => EditTrainer(trainer)" title="Edit">
-                                        <img src="/edit_icon.svg" class="action-icon" alt="Edit" />
+                                        <img src="/Newedit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
                                     <button class="action-btn archive-btn" @onclick="() => ShowArchiveConfirmation(trainer)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
@@ -134,10 +141,14 @@
 
                     <div class="form-group">
                         <label class="required">Contact Number</label>
-                        <input type="tel"
+                        <input type="text"
                                class="form-control @(validationErrors.ContainsKey("ContactNumber") ? "error" : "")"
-                               @bind="currentTrainer.ContactNumber"
-                               placeholder="Enter contact number" />
+                               @bind-value="TrainerContactNumberInput"
+                               @bind-value:event="oninput"
+                               inputmode="numeric"
+                               pattern="[0-9]*"
+                               maxlength="11"
+                               placeholder="09XXXXXXXXX" />
                         @if (validationErrors.ContainsKey("ContactNumber"))
                         {
                             <div class="error-message">@validationErrors["ContactNumber"]</div>
@@ -209,6 +220,117 @@
             </div>
         </div>
     }
+
+    <!-- Schedule Management Modal -->
+    @if (showScheduleModal)
+    {
+        <div class="modal-overlay" @onclick="CloseScheduleModal">
+            <div class="modal-content schedule-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Manage Schedules - @selectedTrainerForSchedule?.FullName</h2>
+                    <button class="close-btn" @onclick="CloseScheduleModal">×</button>
+                </div>
+
+                <div class="modal-body">
+                    @if (!string.IsNullOrWhiteSpace(scheduleError))
+                    {
+                        <div class="general-error-message">@scheduleError</div>
+                    }
+
+                    <!-- Add New Schedule Form -->
+                    <div class="schedule-form-section">
+                        <h3>Add New Schedule</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="required">Day of Week</label>
+                                <div class="select-wrapper">
+                                    <select class="form-control select-dropdown" @bind="newSchedule.DayOfWeek">
+                                        <option value="0">Sunday</option>
+                                        <option value="1">Monday</option>
+                                        <option value="2">Tuesday</option>
+                                        <option value="3">Wednesday</option>
+                                        <option value="4">Thursday</option>
+                                        <option value="5">Friday</option>
+                                        <option value="6">Saturday</option>
+                                    </select>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="required">Start Time</label>
+                                <input type="time" class="form-control" value="@StartTimeString" @onchange="OnStartTimeChanged" />
+                            </div>
+                            <div class="form-group">
+                                <label class="required">End Time</label>
+                                <input type="time" class="form-control" value="@EndTimeString" @onchange="OnEndTimeChanged" />
+                            </div>
+                            <div class="form-group">
+                                <label>Available</label>
+                                <div class="checkbox-wrapper">
+                                    <input type="checkbox" @bind="newSchedule.IsAvailable" />
+                                    <span>Schedule is active</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn btn-primary" @onclick="AddSchedule">Add Schedule</button>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <!-- Existing Schedules List -->
+                    <div class="schedules-list-section">
+                        <h3>Existing Schedules</h3>
+                        @if (trainerSchedules == null || !trainerSchedules.Any())
+                        {
+                            <div class="empty-schedules">
+                                <p>No schedules configured yet. Add a schedule above.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="schedules-table">
+                                <table class="schedule-list-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Day</th>
+                                            <th>Start Time</th>
+                                            <th>End Time</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var schedule in trainerSchedules.OrderBy(s => s.DayOfWeek).ThenBy(s => s.StartTime))
+                                        {
+                                            <tr>
+                                                <td>@GetDayName(schedule.DayOfWeek)</td>
+                                                <td>@FormatTimeWithAmPm(schedule.StartTime)</td>
+                                                <td>@FormatTimeWithAmPm(schedule.EndTime)</td>
+                                                <td>
+                                                    <span class="status-badge @(schedule.IsAvailable ? "status-available" : "status-unavailable")">
+                                                        @(schedule.IsAvailable ? "Available" : "Unavailable")
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <button class="btn-small btn-danger" @onclick="() => DeleteSchedule(schedule)">Archive</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseScheduleModal">Close</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -219,9 +341,80 @@
     private List<Trainer> trainers = new List<Trainer>();
     private List<Trainer> filteredTrainers = new List<Trainer>();
     private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
+    private string TrainerContactNumberInput
+    {
+        get => currentTrainer.ContactNumber;
+        set
+        {
+            var digits = new string((value ?? string.Empty).Where(char.IsDigit).Take(11).ToArray());
+            currentTrainer.ContactNumber = digits;
+        }
+    }
+
     private bool showArchiveConfirmation = false;
     private Trainer? selectedTrainer;
     private bool isLoading = false;
+
+    // Schedule Management
+    private bool showScheduleModal = false;
+    private Trainer? selectedTrainerForSchedule;
+    private List<TrainerSchedule> trainerSchedules = new List<TrainerSchedule>();
+    private TrainerSchedule newSchedule = new TrainerSchedule();
+    private string scheduleError = "";
+
+    // Helper properties for time input display formatting
+    private string StartTimeString
+    {
+        get
+        {
+            var hours = newSchedule.StartTime.Hours.ToString("00");
+            var minutes = newSchedule.StartTime.Minutes.ToString("00");
+            return $"{hours}:{minutes}";
+        }
+    }
+    
+    private string EndTimeString
+    {
+        get
+        {
+            var hours = newSchedule.EndTime.Hours.ToString("00");
+            var minutes = newSchedule.EndTime.Minutes.ToString("00");
+            return $"{hours}:{minutes}";
+        }
+    }
+
+    private void OnStartTimeChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        Console.WriteLine($"[DEBUG] OnStartTimeChanged called with value: {value}");
+        if (!string.IsNullOrWhiteSpace(value) && TimeSpan.TryParse(value, out var parsedTime))
+        {
+            newSchedule.StartTime = parsedTime;
+            Console.WriteLine($"[DEBUG] StartTime updated to: {newSchedule.StartTime} ({newSchedule.StartTime.TotalMinutes} minutes)");
+            StateHasChanged();
+        }
+        else
+        {
+            Console.WriteLine($"[DEBUG] OnStartTimeChanged unable to parse '{value}'");
+        }
+    }
+
+    private void OnEndTimeChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        Console.WriteLine($"[DEBUG] OnEndTimeChanged called with value: {value}");
+        if (!string.IsNullOrWhiteSpace(value) && TimeSpan.TryParse(value, out var parsedTime))
+        {
+            newSchedule.EndTime = parsedTime;
+            Console.WriteLine($"[DEBUG] EndTime updated to: {newSchedule.EndTime} ({newSchedule.EndTime.TotalMinutes} minutes)");
+            StateHasChanged();
+        }
+        else
+        {
+            Console.WriteLine($"[DEBUG] OnEndTimeChanged unable to parse '{value}'");
+        }
+    }
+
 
     protected override async Task OnInitializedAsync()
     {
@@ -319,16 +512,59 @@
                 var trainer = await Context.Trainers.FindAsync(selectedTrainer.TrainerID);
                 if (trainer != null)
                 {
+                    var trainerId = trainer.TrainerID;
+
+                    // 1) Detach trainer from members (do NOT delete members)
+                    var members = await Context.Members
+                        .Where(m => m.TrainerID == trainerId)
+                        .ToListAsync();
+                    foreach (var member in members)
+                    {
+                        member.TrainerID = null;
+                        member.TrainerScheduleID = null;
+                    }
+
+                    // 2) Detach trainer from walk-ins (do NOT delete walk-ins)
+                    var walkins = await Context.WalkIns
+                        .Where(w => w.TrainerID == trainerId)
+                        .ToListAsync();
+                    foreach (var walkin in walkins)
+                    {
+                        walkin.TrainerID = null;
+                        walkin.TrainerScheduleID = null;
+                    }
+
+                    // 3) Remove any trainer schedules
+                    var schedules = await Context.TrainerSchedules
+                        .Where(ts => ts.TrainerID == trainerId)
+                        .ToListAsync();
+                    if (schedules.Any())
+                    {
+                        Context.TrainerSchedules.RemoveRange(schedules);
+                    }
+
+                    // 4) Remove any linked user accounts that reference this trainer
+                    var linkedUsers = await Context.Users
+                        .Where(u => u.TrainerID == trainerId)
+                        .ToListAsync();
+                    if (linkedUsers.Any())
+                    {
+                        Context.Users.RemoveRange(linkedUsers);
+                    }
+
+                    // 5) Finally remove the trainer record itself
                     Context.Trainers.Remove(trainer);
+
                     await Context.SaveChangesAsync();
                     await LoadTrainersFromDatabase();
                     CloseArchiveConfirmation();
-                    await JSRuntime.InvokeVoidAsync("alert", "Trainer archived successfully!");
+                    ToastService.ShowSuccess("Archived successfully");
                 }
             }
             catch (Exception ex)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error archiving trainer: {ex.Message}");
+                var inner = ex.InnerException?.Message ?? "No inner exception";
+                ToastService.ShowError($"Error archiving trainer: {ex.Message}");
             }
         }
     }
@@ -350,6 +586,18 @@
         if (string.IsNullOrWhiteSpace(currentTrainer.ContactNumber))
         {
             validationErrors["ContactNumber"] = "Contact number is required";
+        }
+        else
+        {
+            var digitsOnly = new string(currentTrainer.ContactNumber.Where(char.IsDigit).ToArray());
+            if (digitsOnly.Length != 11)
+            {
+                validationErrors["ContactNumber"] = "Contact number must be 11 digits";
+            }
+            else
+            {
+                currentTrainer.ContactNumber = digitsOnly;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(currentTrainer.Specialty))
@@ -378,15 +626,35 @@
             // FIXED: Use injected Context instead of creating new AppDbContext
             if (isEditMode)
             {
-                Context.Trainers.Update(currentTrainer);
+                var trainer = await Context.Trainers
+                    .FirstOrDefaultAsync(t => t.TrainerID == currentTrainer.TrainerID);
+
+                if (trainer == null)
+                {
+                    validationErrors["General"] = "Trainer not found. Please refresh the page.";
+                    StateHasChanged();
+                    return;
+                }
+
+                trainer.FirstName = currentTrainer.FirstName;
+                trainer.MiddleName = currentTrainer.MiddleName;
+                trainer.LastName = currentTrainer.LastName;
+                trainer.ContactNumber = currentTrainer.ContactNumber;
+                trainer.Specialty = currentTrainer.Specialty;
+
                 await Context.SaveChangesAsync();
-                await JSRuntime.InvokeVoidAsync("alert", "Trainer updated successfully!");
+                ToastService.ShowSuccess("Updated successfully");
             }
             else
             {
+                // Create new trainer
                 Context.Trainers.Add(currentTrainer);
                 await Context.SaveChangesAsync();
-                await JSRuntime.InvokeVoidAsync("alert", "Trainer added successfully!");
+
+                // Automatically create linked user account for this trainer
+                await CreateTrainerUserAccountAsync(currentTrainer);
+
+                ToastService.ShowSuccess("Added successfully");
             }
 
             await LoadTrainersFromDatabase();
@@ -410,6 +678,268 @@
     private string GetSpecialtyClass(string specialty)
     {
         return $"specialty-{specialty.ToLower().Replace(" ", "-")}";
+    }
+
+    /// <summary>
+    /// Automatically creates a User record for a new trainer so that
+    /// the admin can manage the account (set password, etc.) in Settings.
+    /// </summary>
+    private async Task CreateTrainerUserAccountAsync(Trainer trainer)
+    {
+        try
+        {
+            // Avoid duplicate accounts for the same trainer
+            var existingUser = await Context.Users.FirstOrDefaultAsync(u => u.TrainerID == trainer.TrainerID);
+            if (existingUser != null)
+            {
+                return;
+            }
+
+            // Get Trainer role (fall back to RoleID = 0 if not found)
+            var trainerRole = await Context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Trainer");
+            var roleId = trainerRole?.RoleID ?? 0;
+
+            // Generate a simple username based on trainer name (admin can change later)
+            var baseUsername = $"{trainer.FirstName}.{trainer.LastName}".Replace(" ", "").ToLower();
+            var username = baseUsername;
+            int counter = 1;
+            while (await Context.Users.AnyAsync(u => u.Username == username))
+            {
+                username = $"{baseUsername}{counter++}";
+            }
+
+            var user = new User
+            {
+                Username = username,
+                Password = "changeme", // Admin should reset in Account Management
+                FirstName = trainer.FirstName,
+                LastName = trainer.LastName,
+                Email = string.Empty,
+                RoleID = roleId,
+                IsActive = true,
+                TrainerID = trainer.TrainerID
+            };
+
+            // createdByUserId is not tracked currently; pass 0
+            await UserService.CreateUserAsync(user, 0);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error creating trainer user account: {ex.Message}");
+        }
+    }
+
+    // Schedule Management Methods
+    private async Task OpenScheduleModal(Trainer trainer)
+    {
+        selectedTrainerForSchedule = trainer;
+        newSchedule = new TrainerSchedule
+        {
+            TrainerID = trainer.TrainerID,
+            DayOfWeek = 1, // Default to Monday
+            StartTime = new TimeSpan(9, 0, 0), // 9:00 AM
+            EndTime = new TimeSpan(11, 0, 0), // 11:00 AM
+            IsAvailable = true
+        };
+        scheduleError = "";
+        await LoadTrainerSchedules(trainer.TrainerID);
+        showScheduleModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseScheduleModal()
+    {
+        showScheduleModal = false;
+        selectedTrainerForSchedule = null;
+        trainerSchedules = new List<TrainerSchedule>();
+        newSchedule = new TrainerSchedule();
+        scheduleError = "";
+        StateHasChanged();
+    }
+
+    private async Task LoadTrainerSchedules(int trainerId)
+    {
+        try
+        {
+            trainerSchedules = await Context.TrainerSchedules
+                .Where(ts => ts.TrainerID == trainerId)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            scheduleError = $"Error loading schedules: {ex.Message}";
+        }
+    }
+
+    private async Task AddSchedule()
+    {
+        scheduleError = "";
+
+        // Debug: Log the current newSchedule values
+        Console.WriteLine($"[DEBUG] AddSchedule called - New Schedule: Day={newSchedule.DayOfWeek}, Start={newSchedule.StartTime} ({FormatTimeWithAmPm(newSchedule.StartTime)}), End={newSchedule.EndTime} ({FormatTimeWithAmPm(newSchedule.EndTime)})");
+
+        // Validation
+        if (selectedTrainerForSchedule == null)
+        {
+            scheduleError = "No trainer selected.";
+            StateHasChanged();
+            return;
+        }
+
+        // Validate that end time is after start time
+        if (newSchedule.EndTime <= newSchedule.StartTime)
+        {
+            scheduleError = $"End time ({FormatTimeWithAmPm(newSchedule.EndTime)}) must be after start time ({FormatTimeWithAmPm(newSchedule.StartTime)}). Please check your time entries. Note: If you meant PM, make sure the time picker shows PM, not AM.";
+            StateHasChanged();
+            return;
+        }
+
+        // Check for overlapping schedules - only flag if times actually overlap on the same day
+        // A trainer can have multiple schedules on the same day as long as times don't overlap
+        // Two time ranges overlap if they share any common time period
+        var sameDaySchedules = trainerSchedules
+            .Where(s => s.DayOfWeek == newSchedule.DayOfWeek && s.IsAvailable)
+            .ToList();
+        
+        Console.WriteLine($"[DEBUG] Found {sameDaySchedules.Count} existing schedules on {GetDayName(newSchedule.DayOfWeek)}");
+        Console.WriteLine($"[DEBUG] New schedule: {GetDayName(newSchedule.DayOfWeek)} {FormatTimeWithAmPm(newSchedule.StartTime)} - {FormatTimeWithAmPm(newSchedule.EndTime)} ({newSchedule.StartTime.TotalMinutes} - {newSchedule.EndTime.TotalMinutes} minutes)");
+
+        // Check for overlapping schedules - only flag if times actually overlap on the same day
+        // A trainer can have multiple schedules on the same day as long as times don't overlap
+        var hasOverlap = false;
+        TrainerSchedule? conflictingSchedule = null;
+
+        foreach (var existingSchedule in sameDaySchedules)
+        {
+            // Skip invalid existing schedules
+            if (existingSchedule.EndTime <= existingSchedule.StartTime)
+            {
+                Console.WriteLine($"[DEBUG] Skipping invalid schedule: {FormatTimeWithAmPm(existingSchedule.StartTime)} - {FormatTimeWithAmPm(existingSchedule.EndTime)}");
+                continue;
+            }
+            
+            var newStartMinutes = newSchedule.StartTime.TotalMinutes;
+            var newEndMinutes = newSchedule.EndTime.TotalMinutes;
+            var existingStartMinutes = existingSchedule.StartTime.TotalMinutes;
+            var existingEndMinutes = existingSchedule.EndTime.TotalMinutes;
+            
+            // Two time ranges overlap if they share any common time period
+            // Overlap formula: newStart < existingEnd AND newEnd > existingStart
+            // This means:
+            // - New schedule starts before existing schedule ends, AND
+            // - New schedule ends after existing schedule starts
+            // Examples:
+            // - 9am-11am (540-660) and 10am-12pm (600-720): overlap (600-660 is common) ✓
+            // - 9am-11am (540-660) and 12pm-1pm (720-780): NO overlap (720 is NOT < 660) ✓
+            // - 9am-11am (540-660) and 8am-10am (480-600): overlap (540-600 is common) ✓
+            
+            // Check for overlap: ranges overlap if newStart < existingEnd AND newEnd > existingStart
+            bool overlaps = (newStartMinutes < existingEndMinutes) && (newEndMinutes > existingStartMinutes);
+            
+            Console.WriteLine($"[DEBUG] Comparing: New ({FormatTimeWithAmPm(newSchedule.StartTime)} - {FormatTimeWithAmPm(newSchedule.EndTime)}, {newStartMinutes}-{newEndMinutes} min)");
+            Console.WriteLine($"[DEBUG]          vs Existing ({FormatTimeWithAmPm(existingSchedule.StartTime)} - {FormatTimeWithAmPm(existingSchedule.EndTime)}, {existingStartMinutes}-{existingEndMinutes} min)");
+            Console.WriteLine($"[DEBUG]   Condition 1: {newStartMinutes} < {existingEndMinutes} = {newStartMinutes < existingEndMinutes}");
+            Console.WriteLine($"[DEBUG]   Condition 2: {newEndMinutes} > {existingStartMinutes} = {newEndMinutes > existingStartMinutes}");
+            Console.WriteLine($"[DEBUG]   RESULT: overlaps = {overlaps}");
+            
+            if (overlaps)
+            {
+                hasOverlap = true;
+                conflictingSchedule = existingSchedule;
+                Console.WriteLine($"[DEBUG] *** OVERLAP DETECTED! Breaking loop. ***");
+                break;
+            }
+            else
+            {
+                Console.WriteLine($"[DEBUG] No overlap - schedules can coexist on same day.");
+            }
+        }
+
+        if (hasOverlap && conflictingSchedule != null)
+        {
+            scheduleError = $"This schedule ({FormatTimeWithAmPm(newSchedule.StartTime)} - {FormatTimeWithAmPm(newSchedule.EndTime)}) overlaps with an existing schedule ({GetDayName(conflictingSchedule.DayOfWeek)} {FormatTimeWithAmPm(conflictingSchedule.StartTime)} - {FormatTimeWithAmPm(conflictingSchedule.EndTime)}). Please choose a different time.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            newSchedule.TrainerID = selectedTrainerForSchedule.TrainerID;
+            Context.TrainerSchedules.Add(newSchedule);
+            await Context.SaveChangesAsync();
+
+            // Reset form
+            newSchedule = new TrainerSchedule
+            {
+                TrainerID = selectedTrainerForSchedule.TrainerID,
+                DayOfWeek = 1,
+                StartTime = new TimeSpan(9, 0, 0),
+                EndTime = new TimeSpan(11, 0, 0),
+                IsAvailable = true
+            };
+
+            await LoadTrainerSchedules(selectedTrainerForSchedule.TrainerID);
+            ToastService.ShowSuccess("Added successfully");
+        }
+        catch (Exception ex)
+        {
+            scheduleError = $"Error adding schedule: {ex.Message}";
+            ToastService.ShowError($"Error adding schedule: {ex.Message}");
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task DeleteSchedule(TrainerSchedule schedule)
+    {
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Delete schedule: {GetDayName(schedule.DayOfWeek)} {FormatTimeWithAmPm(schedule.StartTime)} - {FormatTimeWithAmPm(schedule.EndTime)}?");
+
+        if (!confirm)
+            return;
+
+        try
+        {
+            var scheduleToDelete = await Context.TrainerSchedules.FindAsync(schedule.TrainerScheduleID);
+            if (scheduleToDelete != null)
+            {
+                Context.TrainerSchedules.Remove(scheduleToDelete);
+                await Context.SaveChangesAsync();
+                await LoadTrainerSchedules(selectedTrainerForSchedule!.TrainerID);
+                ToastService.ShowSuccess("Archived successfully");
+            }
+        }
+        catch (Exception ex)
+        {
+            scheduleError = $"Error deleting schedule: {ex.Message}";
+            ToastService.ShowError($"Error deleting schedule: {ex.Message}");
+            StateHasChanged();
+        }
+    }
+
+    private string GetDayName(byte dayOfWeek)
+    {
+        return dayOfWeek switch
+        {
+            0 => "Sunday",
+            1 => "Monday",
+            2 => "Tuesday",
+            3 => "Wednesday",
+            4 => "Thursday",
+            5 => "Friday",
+            6 => "Saturday",
+            _ => "Unknown"
+        };
+    }
+
+    private string FormatTimeWithAmPm(TimeSpan time)
+    {
+        var hours = time.Hours;
+        var minutes = time.Minutes;
+        var period = hours >= 12 ? "PM" : "AM";
+        var displayHours = hours % 12;
+        if (displayHours == 0) displayHours = 12; // 12:00 should show as 12, not 0
+        return $"{displayHours:00}:{minutes:00} {period}";
     }
 }
 
@@ -439,7 +969,7 @@
     .members-container {
         padding: 30px;
         background: #ffffff;
-        min-height: 100vh;
+        min-height: 0; /* let content height control scroll, no forced page scroll */
     }
 
     /* Page Header */
@@ -506,7 +1036,8 @@
         background: white;
         border-radius: 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: auto; /* will only show if table itself grows taller than viewport */
     }
 
     .members-table {
@@ -651,6 +1182,20 @@
         }
 
             .archive-btn:hover .action-icon {
+                filter: brightness(1.15);
+            }
+
+    .schedule-btn {
+        background: transparent !important;
+        color: #333;
+    }
+
+        .schedule-btn:hover {
+            background: transparent !important;
+            transform: scale(1.1);
+        }
+
+            .schedule-btn:hover .action-icon {
                 filter: brightness(1.15);
             }
 
@@ -1007,5 +1552,192 @@
         .confirmation-content h3 {
             font-size: 20px;
         }
+    }
+
+    /* Schedule Management Modal Styles */
+    .schedule-modal {
+        max-width: 800px;
+    }
+
+    .schedule-form-section {
+        margin-bottom: 30px;
+    }
+
+    .schedule-form-section h3 {
+        font-size: 18px;
+        color: #234060;
+        margin: 0 0 15px 0;
+        font-weight: 600;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        margin-bottom: 15px;
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+        color: #333;
+        font-size: 13px;
+    }
+
+    .form-group label.required::after {
+        content: " *";
+        color: #e74c3c;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #234060;
+        box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
+    }
+
+    .select-wrapper {
+        position: relative;
+    }
+
+    .select-dropdown {
+        appearance: none;
+        padding-right: 35px;
+    }
+
+    .dropdown-arrow {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        color: #777;
+        font-size: 12px;
+    }
+
+    .checkbox-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .checkbox-wrapper input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+    }
+
+    .form-actions {
+        margin-top: 15px;
+    }
+
+    .divider {
+        height: 1px;
+        background: #e0e0e0;
+        margin: 25px 0;
+    }
+
+    .schedules-list-section h3 {
+        font-size: 18px;
+        color: #234060;
+        margin: 0 0 15px 0;
+        font-weight: 600;
+    }
+
+    .empty-schedules {
+        text-align: center;
+        padding: 30px;
+        color: #999;
+    }
+
+    .schedules-table {
+        overflow-x: auto;
+    }
+
+    .schedule-list-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .schedule-list-table thead {
+        background: #f8f9fa;
+    }
+
+    .schedule-list-table th {
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 13px;
+        color: #333;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .schedule-list-table td {
+        padding: 12px;
+        border-bottom: 1px solid #f0f0f0;
+        color: #333;
+    }
+
+    .schedule-list-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .status-badge {
+        padding: 0;
+        border-radius: 0;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        background: transparent;
+        color: inherit;
+    }
+
+    .status-available {
+        color: #2e7d32;
+    }
+
+    .status-unavailable {
+        color: #c62828;
+    }
+
+    .btn-small {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    .btn-small.btn-danger {
+        background: #e74c3c;
+        color: white;
+    }
+
+    .btn-small.btn-danger:hover {
+        background: #c0392b;
+    }
+
+    .general-error-message {
+        background: #ffeaea;
+        color: #e74c3c;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        font-size: 14px;
+        font-weight: 500;
     }
 </style>

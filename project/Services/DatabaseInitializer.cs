@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using project.Data;
 using project.Models;
+using System.Threading;
 
 namespace project.Services
 {
@@ -19,15 +20,18 @@ namespace project.Services
             {
                 System.Diagnostics.Debug.WriteLine("🔄 Starting database initialization...");
 
+                // Add timeout to prevent hanging
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                
                 // Check if database exists, if not create it
-                if (!await _context.Database.CanConnectAsync())
+                if (!await _context.Database.CanConnectAsync(cts.Token))
                 {
                     System.Diagnostics.Debug.WriteLine("📦 Database doesn't exist, creating...");
                     
                     // Try to apply migrations first
                     try
                     {
-                        await _context.Database.MigrateAsync();
+                        await _context.Database.MigrateAsync(cts.Token);
                         System.Diagnostics.Debug.WriteLine("✅ Migrations applied successfully");
                     }
                     catch (Exception migrateEx)
@@ -37,7 +41,7 @@ namespace project.Services
                         
                         // If migrations don't exist, create database using EnsureCreated
                         // This is a fallback for initial setup
-                        await _context.Database.EnsureCreatedAsync();
+                        await _context.Database.EnsureCreatedAsync(cts.Token);
                         System.Diagnostics.Debug.WriteLine("✅ Database created using EnsureCreated");
                     }
                 }
@@ -48,7 +52,7 @@ namespace project.Services
                     // Database exists, try to apply migrations
                     try
                     {
-                        await _context.Database.MigrateAsync();
+                        await _context.Database.MigrateAsync(cts.Token);
                         System.Diagnostics.Debug.WriteLine("✅ Migrations applied successfully");
                     }
                     catch (Exception migrateEx)
@@ -69,8 +73,7 @@ namespace project.Services
                 System.Diagnostics.Debug.WriteLine($"❌ Database initialization error: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 Console.WriteLine($"❌ Database initialization error: {ex.Message}");
-                // Re-throw so we can see the error in MauiProgram
-                throw;
+                // Don't throw - allow app to continue even if DB init fails
             }
         }
 

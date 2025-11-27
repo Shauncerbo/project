@@ -4,9 +4,11 @@
 @using System.Linq
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
+@inject IDbContextFactory<AppDbContext> DbContextFactory
 @using project.Models
 @using project.Data
 @using Microsoft.EntityFrameworkCore
+@using project.Services
 @using TrainerScheduleModel = project.Models.TrainerSchedule
 
 <div class="members-container">
@@ -273,7 +275,7 @@
     .members-container {
         padding: 30px;
         background: #ffffff;
-        min-height: 100vh;
+        min-height: 0; /* no extra height when data is short */
     }
 
     /* Page Header */
@@ -371,7 +373,8 @@
         background: white;
         border-radius: 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: auto; /* only appears if content really overflows */
     }
 
     .members-table {
@@ -851,6 +854,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await ReleaseCompletedTrainerSchedulesAsync();
         await LoadTrainersFromDatabase();
         await LoadTrainerSchedules();
         await LoadWalkinsFromDatabase();
@@ -885,9 +889,16 @@
     {
         try
         {
-            // Load all trainers (same as Payment page) - trainers can be assigned to multiple members/walk-ins
+            var bookedScheduleIdsQuery = GetBookedTrainerScheduleIdsQuery();
+
+            var availableTrainerIdsQuery = Context.TrainerSchedules
+                .Where(ts => ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID))
+                .Select(ts => ts.TrainerID)
+                .Distinct();
+
             availableTrainers = await Context.Trainers
                 .AsNoTracking()
+                .Where(t => availableTrainerIdsQuery.Contains(t.TrainerID))
                 .OrderBy(t => t.LastName)
                 .ThenBy(t => t.FirstName)
                 .ToListAsync();
@@ -916,17 +927,20 @@
 
     private async Task LoadTrainerSchedules(int? includeScheduleId = null)
     {
+        var bookedScheduleIdsQuery = GetBookedTrainerScheduleIdsQuery();
         IQueryable<TrainerSchedule> query = Context.TrainerSchedules
             .AsNoTracking()
             .Include(ts => ts.Trainer);
 
         if (includeScheduleId.HasValue)
         {
-            query = query.Where(ts => ts.IsAvailable || ts.TrainerScheduleID == includeScheduleId.Value);
+            query = query.Where(ts =>
+                ts.TrainerScheduleID == includeScheduleId.Value ||
+                (ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID)));
         }
         else
         {
-            query = query.Where(ts => ts.IsAvailable);
+            query = query.Where(ts => ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID));
         }
 
         trainerSchedules = await query
@@ -1073,8 +1087,10 @@
             var walkinToArchive = await Context.WalkIns.FindAsync(selectedWalkin.WalkInID);
             if (walkinToArchive != null)
             {
+                var previousScheduleId = walkinToArchive.TrainerScheduleID;
                 walkinToArchive.IsArchived = true;
                 Context.WalkIns.Update(walkinToArchive);
+                await UpdateTrainerScheduleAvailability(previousScheduleId, null);
                 await Context.SaveChangesAsync();
                 await LoadWalkinsFromDatabase();
                 await LoadTrainersFromDatabase();
@@ -1153,6 +1169,7 @@
                 var existingWalkin = await Context.WalkIns.FindAsync(currentWalkin.WalkInID);
             if (existingWalkin != null)
             {
+                    var previousScheduleId = existingWalkin.TrainerScheduleID;
                     existingWalkin.FirstName = currentWalkin.FirstName;
                     existingWalkin.MiddleName = currentWalkin.MiddleName;
                     existingWalkin.LastName = currentWalkin.LastName;
@@ -1161,13 +1178,14 @@
                 existingWalkin.PaymentMethod = currentWalkin.PaymentMethod;
                 existingWalkin.TrainerID = currentWalkin.TrainerID;
                 existingWalkin.TrainerScheduleID = currentWalkin.TrainerScheduleID;
-                existingWalkin.TrainerScheduleID = currentWalkin.TrainerScheduleID;
+                    await UpdateTrainerScheduleAvailability(previousScheduleId, existingWalkin.TrainerScheduleID);
                     Context.WalkIns.Update(existingWalkin);
             }
         }
         else
         {
                 Context.WalkIns.Add(currentWalkin);
+                await UpdateTrainerScheduleAvailability(null, currentWalkin.TrainerScheduleID);
         }
 
             await Context.SaveChangesAsync();
@@ -1182,6 +1200,48 @@
             validationErrors["General"] = $"Error saving walk-in: {ex.Message}";
             StateHasChanged();
         }
+    }
+
+    private async Task UpdateTrainerScheduleAvailability(int? previousScheduleId, int? newScheduleId)
+    {
+        if (previousScheduleId.HasValue && previousScheduleId != newScheduleId)
+        {
+            await SetTrainerScheduleAvailability(previousScheduleId.Value, true);
+        }
+
+        if (newScheduleId.HasValue && newScheduleId != previousScheduleId)
+        {
+            await SetTrainerScheduleAvailability(newScheduleId.Value, false);
+        }
+    }
+
+    private async Task SetTrainerScheduleAvailability(int scheduleId, bool isAvailable)
+    {
+        var schedule = await Context.TrainerSchedules.FindAsync(scheduleId);
+        if (schedule != null)
+        {
+            schedule.IsAvailable = isAvailable;
+            Context.TrainerSchedules.Update(schedule);
+        }
+    }
+
+    private IQueryable<int> GetBookedTrainerScheduleIdsQuery()
+    {
+        var memberSchedules = Context.Members
+            .Where(m => !m.IsArchived && m.TrainerScheduleID.HasValue)
+            .Select(m => m.TrainerScheduleID!.Value);
+
+        var walkInSchedules = Context.WalkIns
+            .Where(w => !w.IsArchived && w.TrainerScheduleID.HasValue)
+            .Select(w => w.TrainerScheduleID!.Value);
+
+        return memberSchedules.Union(walkInSchedules);
+    }
+
+    private async Task ReleaseCompletedTrainerSchedulesAsync()
+    {
+        var coordinator = new TrainerScheduleCoordinator(DbContextFactory);
+        await coordinator.ReleaseCompletedScheduleBlocksAsync();
     }
 
     private void CloseModal()

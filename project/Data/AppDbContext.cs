@@ -30,6 +30,7 @@ namespace project.Data
         public DbSet<WalkIn> WalkIns { get; set; }
         public DbSet<MemberPromo> MemberPromos { get; set; }
         public DbSet<TrainerSchedule> TrainerSchedules { get; set; }
+        public DbSet<AuditLog> AuditLogs { get; set; }
 
         // ✅ ADD OnModelCreating for relationships
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -39,8 +40,15 @@ namespace project.Data
                 .HasKey(mt => new { mt.MemberID, mt.TrainerID });
 
             // Configure composite key for MemberPromo  
-            modelBuilder.Entity<MemberPromo>()
-                .HasKey(mp => new { mp.MemberID, mp.PromotionID });
+            modelBuilder.Entity<MemberPromo>(entity =>
+            {
+                entity.HasKey(mp => new { mp.MemberID, mp.PromotionID });
+                // Configure Id as database-generated (IDENTITY column)
+                // This tells EF not to insert values for Id - the database will auto-generate it
+                entity.Property(mp => mp.Id)
+                    .ValueGeneratedOnAdd()
+                    .HasColumnName("Id");
+            });
             
             // Configure User entity - ignore columns that don't exist in database
             modelBuilder.Entity<User>(entity =>
@@ -50,6 +58,18 @@ namespace project.Data
                 entity.Ignore(u => u.LastName);
                 entity.Ignore(u => u.Email);
                 entity.Ignore(u => u.LastLogin);
+                
+                // TrainerID exists in database - map it but don't create relationship
+                // Just map the column, no foreign key relationship
+                entity.Property(u => u.TrainerID).IsRequired(false);
+                
+                // Configure IsActive as nullable to match database
+                entity.Property(u => u.IsActive).IsRequired(false);
+                
+                // Configure DateTime columns - make them nullable if database allows NULL
+                entity.Property(u => u.CreatedAt).IsRequired(false);
+                entity.Property(u => u.UpdatedAt).IsRequired(false);
+                entity.Property(u => u.LastPasswordChange).IsRequired(false);
             });
         }
     }

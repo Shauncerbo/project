@@ -1,0 +1,194 @@
+@using project.Services
+@inject IToastService ToastService
+@implements IDisposable
+
+<!-- Toast Notification Component - Always Rendered -->
+<div class="toast-container @ToastService.Type" style="@GetToastStyle()">
+    <div class="toast-content">
+        <div class="toast-icon">
+            @if (ToastService.Type == "success")
+            {
+                <span>✓</span>
+            }
+            else if (ToastService.Type == "error")
+            {
+                <span>✗</span>
+            }
+            else if (ToastService.Type == "warning")
+            {
+                <span>⚠</span>
+            }
+            else
+            {
+                <span>ℹ</span>
+            }
+        </div>
+        <div class="toast-message">@ToastService.Message</div>
+    </div>
+</div>
+
+<style>
+    .toast-container {
+        position: fixed !important;
+        top: 80px !important;
+        right: 30px !important;
+        z-index: 999999 !important;
+        min-width: 300px;
+        max-width: 500px;
+        padding: 20px 30px;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+        animation: toastSlideIn 0.3s ease-out;
+        backdrop-filter: blur(10px);
+        pointer-events: auto;
+        transition: opacity 0.3s ease;
+    }
+
+    .toast-container.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+        color: white !important;
+    }
+
+    .toast-container.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+        color: white !important;
+    }
+
+    .toast-container.warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+        color: white !important;
+    }
+
+    .toast-container.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+        color: white !important;
+    }
+
+    .toast-content {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .toast-icon {
+        font-size: 24px;
+        font-weight: bold;
+        flex-shrink: 0;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+    }
+
+    .toast-message {
+        font-size: 16px;
+        font-weight: 500;
+        line-height: 1.5;
+        flex: 1;
+    }
+
+    @@keyframes toastSlideIn {
+        from {
+            opacity: 0;
+            transform: translateX(100%);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+</style>
+
+@code {
+    private System.Threading.Timer? autoHideTimer;
+    private System.Threading.Timer? pollTimer;
+    private bool isDisposed = false;
+
+    protected override void OnInitialized()
+    {
+        System.Diagnostics.Debug.WriteLine("[ToastNotification] OnInitialized - Component created");
+        ToastService.OnShow += HandleToastShow;
+        
+        // Poll the service state every 100ms to ensure we catch updates
+        pollTimer = new System.Threading.Timer(_ =>
+        {
+            if (!isDisposed)
+            {
+                InvokeAsync(() =>
+                {
+                    StateHasChanged();
+                });
+            }
+        }, null, 100, 100);
+        
+        System.Diagnostics.Debug.WriteLine($"[ToastNotification] Initial state - IsVisible={ToastService.IsVisible}, Message={ToastService.Message}");
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ToastNotification] OnAfterRender firstRender - IsVisible={ToastService.IsVisible}, Message={ToastService.Message}, Type={ToastService.Type}");
+        }
+    }
+
+    private string GetToastStyle()
+    {
+        if (ToastService.IsVisible)
+        {
+            return "display: block !important; visibility: visible !important; opacity: 1 !important;";
+        }
+        else
+        {
+            return "display: none !important; opacity: 0 !important;";
+        }
+    }
+
+    private void HandleToastShow(string type, string message)
+    {
+        System.Diagnostics.Debug.WriteLine($"[ToastNotification] HandleToastShow RECEIVED: type={type}, message={message}");
+        System.Diagnostics.Debug.WriteLine($"[ToastNotification] Service state - IsVisible={ToastService.IsVisible}, Type={ToastService.Type}, Message={ToastService.Message}");
+        
+        if (isDisposed) return;
+
+        InvokeAsync(() =>
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"[ToastNotification] Calling StateHasChanged - IsVisible={ToastService.IsVisible}, Type={ToastService.Type}, Message={ToastService.Message}");
+                StateHasChanged();
+
+                // Auto-hide after 3 seconds
+                autoHideTimer?.Dispose();
+                autoHideTimer = new System.Threading.Timer(_ =>
+                {
+                    if (!isDisposed)
+                    {
+                        InvokeAsync(() =>
+                        {
+                            System.Diagnostics.Debug.WriteLine("[ToastNotification] Auto-hiding toast");
+                            ToastService.Hide();
+                            StateHasChanged();
+                        });
+                    }
+                }, null, 3000, Timeout.Infinite);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ToastNotification] ERROR: {ex.Message}\n{ex.StackTrace}");
+            }
+        });
+    }
+
+    public void Dispose()
+    {
+        System.Diagnostics.Debug.WriteLine("[ToastNotification] Dispose called");
+        isDisposed = true;
+        ToastService.OnShow -= HandleToastShow;
+        autoHideTimer?.Dispose();
+        pollTimer?.Dispose();
+    }
+}
