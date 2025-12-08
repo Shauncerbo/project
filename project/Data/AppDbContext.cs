@@ -6,7 +6,7 @@ namespace project.Data
 {
     public class AppDbContext : DbContext
     {
-        // Constructor for Dependency Injection (GOOD)
+        // Constructor for Dependency Injection (must use DbContextOptions<AppDbContext>)
         public AppDbContext(DbContextOptions<AppDbContext> options)
             : base(options)
         {
@@ -31,6 +31,7 @@ namespace project.Data
         public DbSet<MemberPromo> MemberPromos { get; set; }
         public DbSet<TrainerSchedule> TrainerSchedules { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
+        public DbSet<RolePermission> RolePermissions { get; set; }
 
         // ✅ ADD OnModelCreating for relationships
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -48,6 +49,33 @@ namespace project.Data
                 entity.Property(mp => mp.Id)
                     .ValueGeneratedOnAdd()
                     .HasColumnName("Id");
+            });
+            
+            // Configure RolePermission - map columns to match actual database schema
+            modelBuilder.Entity<RolePermission>(entity =>
+            {
+                entity.Property(rp => rp.Id)
+                    .HasColumnName("Id")
+                    .ValueGeneratedOnAdd();
+                
+                entity.Property(rp => rp.RoleID)
+                    .HasColumnName("RoleID");
+                
+                entity.Property(rp => rp.FeatureName)
+                    .HasColumnName("FeatureName")
+                    .HasMaxLength(255);
+                
+                entity.Property(rp => rp.CanView)
+                    .HasColumnName("CanView");
+                
+                entity.Property(rp => rp.CanAdd)
+                    .HasColumnName("CanAdd");
+                
+                entity.Property(rp => rp.CanEdit)
+                    .HasColumnName("CanEdit");
+                
+                entity.Property(rp => rp.CanDelete)
+                    .HasColumnName("CanDelete");
             });
             
             // Configure User entity - ignore columns that don't exist in database
@@ -70,6 +98,46 @@ namespace project.Data
                 entity.Property(u => u.CreatedAt).IsRequired(false);
                 entity.Property(u => u.UpdatedAt).IsRequired(false);
                 entity.Property(u => u.LastPasswordChange).IsRequired(false);
+            });
+            
+            // Configure WalkIn entity - map PayMongo columns
+            modelBuilder.Entity<WalkIn>(entity =>
+            {
+                // Map PayMongo payment fields
+                entity.Property(w => w.PayMongoPaymentId)
+                    .HasColumnName("PayMongoPaymentId")
+                    .HasMaxLength(255)
+                    .IsRequired(false);
+                
+                entity.Property(w => w.PayMongoStatus)
+                    .HasColumnName("PayMongoStatus")
+                    .HasMaxLength(50)
+                    .IsRequired(false);
+                
+                entity.Property(w => w.IsOnlinePayment)
+                    .HasColumnName("IsOnlinePayment")
+                    .IsRequired(false)
+                    .HasDefaultValue(false);
+            });
+            
+            // Configure Payment entity - map PayMongo columns
+            modelBuilder.Entity<Payment>(entity =>
+            {
+                // Map PayMongo payment fields
+                entity.Property(p => p.PayMongoPaymentId)
+                    .HasColumnName("PayMongoPaymentId")
+                    .HasMaxLength(255)
+                    .IsRequired(false);
+                
+                entity.Property(p => p.PayMongoStatus)
+                    .HasColumnName("PayMongoStatus")
+                    .HasMaxLength(50)
+                    .IsRequired(false);
+                
+                entity.Property(p => p.IsOnlinePayment)
+                    .HasColumnName("IsOnlinePayment")
+                    .IsRequired(false)
+                    .HasDefaultValue(false);
             });
         }
     }

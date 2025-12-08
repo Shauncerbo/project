@@ -1,0 +1,304 @@
+@page "/system-settings/paymongo"
+@layout MainLayout
+@using System.Threading.Tasks
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@inject project.Services.IAuthService AuthService
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Maui.Storage
+
+<div class="settings-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">PayMongo Configuration</h1>
+        <p class="page-subtitle">Configure your PayMongo API key for online payment processing.</p>
+    </div>
+
+    <div class="account-management-card">
+        @if (!string.IsNullOrEmpty(payMongoConfigError))
+        {
+            <div class="account-error">@payMongoConfigError</div>
+        }
+
+        <div class="paymongo-config-section">
+            <div class="form-group">
+                <label>PayMongo Secret Key</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="@(showPayMongoKey ? "text" : "password")" 
+                           class="form-control" 
+                           @bind="payMongoSecretKey" 
+                           @bind:event="oninput"
+                           placeholder="Enter your PayMongo Secret Key"
+                           style="flex: 1;" />
+                    <button class="btn-secondary" @onclick="TogglePayMongoKeyVisibility" type="button">
+                        @(showPayMongoKey ? "Hide" : "Show")
+                    </button>
+                </div>
+                <p style="font-size: 12px; color: #666; margin-top: 5px;">
+                    Get your API key from <a href="https://dashboard.paymongo.com" target="_blank" style="color: #234060;">PayMongo Dashboard</a>
+                </p>
+            </div>
+
+            <div class="form-group">
+                <button class="btn-primary" @onclick="SavePayMongoConfig" disabled="@isSavingPayMongo">
+                    @(isSavingPayMongo ? "Saving..." : "Save API Key")
+                </button>
+                @if (!string.IsNullOrEmpty(payMongoConfigSuccess))
+                {
+                    <span style="color: #27ae60; margin-left: 10px; font-weight: 600;">@payMongoConfigSuccess</span>
+                }
+            </div>
+
+            @if (hasPayMongoKey)
+            {
+                <div class="paymongo-status">
+                    <span style="color: #27ae60; font-weight: 600;">✓ PayMongo API key is configured</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .settings-container {
+        padding: 30px;
+        background: white;
+    }
+
+    .page-header {
+        margin-bottom: 30px;
+    }
+
+    .page-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #234060;
+        margin: 0 0 8px 0;
+    }
+
+    .page-subtitle {
+        color: #666;
+        font-size: 14px;
+        margin: 0;
+    }
+
+    .account-management-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        padding: 25px;
+        margin-bottom: 20px;
+    }
+
+    .account-error {
+        background: #fdecea;
+        color: #b0382f;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+
+    .paymongo-config-section {
+        margin-top: 20px;
+    }
+
+    .paymongo-config-section .form-group {
+        margin-bottom: 20px;
+    }
+
+    .paymongo-config-section .form-group label {
+        display: block;
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 8px;
+        color: #333;
+    }
+
+    .paymongo-config-section .form-control {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
+    }
+
+    .paymongo-status {
+        margin-top: 15px;
+        padding: 12px;
+        background: #e6f6ed;
+        border-radius: 8px;
+        border: 1px solid #c3e6cb;
+    }
+
+    .paymongo-config-section a {
+        color: #234060;
+        text-decoration: none;
+    }
+
+    .paymongo-config-section a:hover {
+        text-decoration: underline;
+    }
+
+    .btn-primary {
+        background: #234060;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover {
+        background: #1a3450;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #f1f3f7;
+        color: #234060;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-secondary:hover {
+        background: #e0e4e8;
+    }
+</style>
+
+@code {
+    private string payMongoSecretKey = "";
+    private bool showPayMongoKey = false;
+    private bool isSavingPayMongo = false;
+    private string payMongoConfigError = "";
+    private string payMongoConfigSuccess = "";
+    private bool hasPayMongoKey = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPayMongoConfig();
+    }
+
+    private async Task LoadPayMongoConfig()
+    {
+        try
+        {
+            var apiKey = await SecureStorage.Default.GetAsync("paymongo_secret_key");
+            hasPayMongoKey = !string.IsNullOrEmpty(apiKey);
+            if (hasPayMongoKey)
+            {
+                payMongoSecretKey = apiKey.Length > 8 ? apiKey.Substring(0, 8) + "..." : "••••••••";
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading PayMongo config: {ex.Message}");
+        }
+    }
+
+    private void TogglePayMongoKeyVisibility()
+    {
+        showPayMongoKey = !showPayMongoKey;
+        if (!showPayMongoKey && hasPayMongoKey)
+        {
+            var apiKey = SecureStorage.Default.GetAsync("paymongo_secret_key").GetAwaiter().GetResult();
+            if (!string.IsNullOrEmpty(apiKey))
+            {
+                payMongoSecretKey = apiKey.Length > 8 ? apiKey.Substring(0, 8) + "..." : "••••••••";
+            }
+        }
+        else if (showPayMongoKey && hasPayMongoKey)
+        {
+            var apiKey = SecureStorage.Default.GetAsync("paymongo_secret_key").GetAwaiter().GetResult();
+            payMongoSecretKey = apiKey ?? "";
+        }
+    }
+
+    private async Task SavePayMongoConfig()
+    {
+        if (isSavingPayMongo)
+            return;
+
+        payMongoConfigError = "";
+        payMongoConfigSuccess = "";
+
+        if (string.IsNullOrWhiteSpace(payMongoSecretKey))
+        {
+            payMongoConfigError = "Please enter your PayMongo Secret Key.";
+            return;
+        }
+
+        if (payMongoSecretKey.Contains("...") || payMongoSecretKey == "••••••••")
+        {
+            payMongoConfigError = "Please enter a new API key. The current key is masked.";
+            return;
+        }
+
+        isSavingPayMongo = true;
+
+        try
+        {
+            await SecureStorage.Default.SetAsync("paymongo_secret_key", payMongoSecretKey.Trim());
+            hasPayMongoKey = true;
+            payMongoConfigSuccess = "PayMongo API key saved successfully!";
+            await LogAuditAction("PayMongo API Key Updated", "Settings", null, "PayMongo", "PayMongo API key was updated in settings");
+            
+            var maskedKey = payMongoSecretKey.Length > 8 ? payMongoSecretKey.Substring(0, 8) + "..." : "••••••••";
+            payMongoSecretKey = maskedKey;
+            showPayMongoKey = false;
+        }
+        catch (Exception ex)
+        {
+            payMongoConfigError = $"Error saving API key: {ex.Message}";
+            await LogAuditAction("PayMongo API Key Update Failed", "Settings", null, "PayMongo", $"Failed to update PayMongo API key: {ex.Message}", "Failed", ex.Message);
+        }
+        finally
+        {
+            isSavingPayMongo = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
+            int? userId = null;
+            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
+            {
+                userId = parsedUserId;
+            }
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
+    }
+}
+

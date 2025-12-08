@@ -30,7 +30,7 @@
         <div class="col-md-6">
             <!-- Native Scanner Option -->
             <div class="card mb-3">
-                <div class="card-header bg-info text-white">
+                <div class="card-header bg-navy text-white">
                     <h5 class="mb-0">
                         <i class="fas fa-mobile-alt me-2"></i>Native Camera Scanner
                     </h5>
@@ -38,7 +38,7 @@
                 <div class="card-body">
                     
                     <div class="d-grid gap-2">
-                        <button class="btn btn-info btn-lg" @onclick="OpenNativeScanner" disabled="@isLoading">
+                        <button class="btn btn-navy btn-lg" @onclick="OpenNativeScanner" disabled="@isLoading">
                             <i class="fas fa-camera me-2"></i>Open Native Scanner
                         </button>
                         <button class="btn btn-outline-secondary" @onclick="RefreshAttendance" disabled="@isLoading">
@@ -62,19 +62,19 @@
                     <div class="row text-center">
                         <div class="col">
                             <div class="stat-card">
-                                <h4 class="text-primary">@currentCount</h4>
+                                <h4 class="stat-number-black">@currentCount</h4>
                                 <small class="text-muted">Currently In</small>
                             </div>
                         </div>
                         <div class="col">
                             <div class="stat-card">
-                                <h4 class="text-success">@todayTotal</h4>
+                                <h4 class="stat-number-black">@todayTotal</h4>
                                 <small class="text-muted">Today Total</small>
                             </div>
                         </div>
                         <div class="col">
                             <div class="stat-card">
-                                <h4 class="text-info">@scanCount</h4>
+                                <h4 class="stat-number-black">@scanCount</h4>
                                 <small class="text-muted">Scans Today</small>
                             </div>
                         </div>
@@ -91,7 +91,7 @@
                         <i class="fas fa-list me-2"></i>Today's Member Verifications
                     </h5>
                     <div>
-                        <button class="btn btn-sm btn-outline-primary me-2" @onclick="RefreshAttendance"
+                        <button class="btn btn-sm btn-outline-navy me-2" @onclick="RefreshAttendance"
                                 disabled="@isLoading" title="Refresh Data">
                             <i class="fas fa-sync-alt"></i>
                         </button>
@@ -164,7 +164,7 @@
     <div class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="background-color: rgba(0,0,0,0.5); z-index: 9999;">
         <div class="bg-white rounded p-4 shadow-lg">
             <div class="d-flex align-items-center">
-                <div class="spinner-border text-primary me-3" role="status">
+                <div class="spinner-border text-navy me-3" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
                 <div>
@@ -189,7 +189,7 @@
         border-radius: 15px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         margin-bottom: 30px;
-        border-left: 5px solid #007bff;
+        border-left: 5px solid #234060;
     }
 
     .page-title {
@@ -197,7 +197,7 @@
         font-weight: 700;
         margin: 0;
         color: #234060;
-        background: linear-gradient(45deg, #007bff, #0056b3);
+        background: linear-gradient(45deg, #234060, #1a3450);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
@@ -215,6 +215,39 @@
         .stat-card h4 {
             font-weight: 700;
             margin-bottom: 5px;
+        }
+
+    .stat-number-black {
+        color: #000000 !important;
+        font-weight: 700;
+    }
+
+    /* Navy blue button and header styles */
+    .bg-navy {
+        background-color: #234060 !important;
+    }
+
+    .btn-navy {
+        background-color: #234060;
+        border-color: #234060;
+        color: white;
+    }
+
+        .btn-navy:hover {
+            background-color: #1a3450;
+            border-color: #1a3450;
+            color: white;
+        }
+
+    .btn-outline-navy {
+        color: #234060;
+        border-color: #234060;
+    }
+
+        .btn-outline-navy:hover {
+            background-color: #234060;
+            border-color: #234060;
+            color: white;
         }
 
     .member-name {
@@ -326,6 +359,10 @@
         padding: 8px 14px;
         border-radius: 999px;
         box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .text-navy {
+        color: #234060 !important;
     }
 </style>
 

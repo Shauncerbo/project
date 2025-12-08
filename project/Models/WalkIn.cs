@@ -16,5 +16,10 @@ namespace project.Models
         public virtual Trainer? Trainer { get; set; }
         public virtual TrainerSchedule? TrainerSchedule { get; set; }
         public bool IsArchived { get; set; } = false;
+        
+        // PayMongo payment fields
+        public string? PayMongoPaymentId { get; set; }
+        public string? PayMongoStatus { get; set; }
+        public bool? IsOnlinePayment { get; set; } = false;
     }
 }

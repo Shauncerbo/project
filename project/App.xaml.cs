@@ -9,6 +9,25 @@ public partial class App : Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        return new Window(new NavigationPage(new MainPage())) { Title = "project" };
+        var window = new Window(new NavigationPage(new MainPage())) 
+        { 
+            Title = "project" 
+        };
+
+#if WINDOWS
+        // Set window size (width x height)
+        window.Width = 1520.8;
+        window.Height = 2825.9;
+        
+        // Optional: Center the window on screen
+        window.X = -1; // -1 means center horizontally
+        window.Y = -1; // -1 means center vertically
+        
+        // Optional: Set minimum window size
+        window.MinimumWidth = 800;
+        window.MinimumHeight = 600;
+#endif
+
+        return window;
     }
 }

@@ -1,0 +1,421 @@
+@page "/audit-logs"
+@layout MainLayout
+@using System.Diagnostics
+@using System.Linq
+@using System.Collections.Generic
+@using System.Threading.Tasks
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
+
+<div class="audit-logs-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Audit Logs</h1>
+        <p class="page-subtitle">View system activity and changes</p>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="filters-card">
+        <div class="section-header">
+            <h2>Filters</h2>
+        </div>
+        <div class="audit-filters">
+            <select @bind="auditLogFilter" @bind:after="OnAuditFilterChanged" class="filter-select">
+                <option value="all">All Actions</option>
+                <option value="User">Account Actions</option>
+                <option value="Member">Member Actions</option>
+                <option value="Promotion">Promotion Actions</option>
+                <option value="MembershipType">Membership Type Actions</option>
+            </select>
+            <input type="date" @bind="auditLogStartDate" class="date-filter-input" />
+            <span>to</span>
+            <input type="date" @bind="auditLogEndDate" class="date-filter-input" />
+            <button class="btn-filter-set" @onclick="ApplyDateFilter">Set</button>
+            <button class="btn-filter-clear" @onclick="ClearDateFilter">Clear</button>
+        </div>
+    </div>
+
+    <!-- Audit Logs Table -->
+    <div class="table-card">
+        @if (isLoading)
+        {
+            <div class="loading-overlay">
+                <div class="loading-spinner">Loading audit logs...</div>
+            </div>
+        }
+        else if (auditLogs == null || !auditLogs.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-icon"></div>
+                <h3>No Audit Logs</h3>
+                <p>There are no audit logs to display.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-container">
+                <table class="audit-table">
+                    <thead>
+                        <tr>
+                            <th>TIMESTAMP</th>
+                            <th>ACTION</th>
+                            <th>ENTITY NAME</th>
+                            <th>PERFORMED BY</th>
+                            <th>DESCRIPTION</th>
+                            <th>STATUS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var log in auditLogs)
+                        {
+                            <tr>
+                                <td>@log.Timestamp.ToString("MM/dd/yyyy HH:mm:ss")</td>
+                                <td>@log.Action</td>
+                                <td class="entity-name-cell">@(string.IsNullOrEmpty(log.EntityName) ? "-" : log.EntityName)</td>
+                                <td>@log.PerformedBy</td>
+                                <td class="description-cell">@(string.IsNullOrEmpty(log.Description) ? "-" : log.Description)</td>
+                                <td>
+                                    <span class="status-badge @(log.Status == "Success" ? "status-success" : "status-error")">
+                                        @log.Status
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .audit-logs-container {
+        padding: 30px;
+        background: #ffffff;
+        min-height: calc(100vh - 80px);
+    }
+
+    .page-header {
+        background: white;
+        padding: 25px 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+
+    .page-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin: 0 0 8px 0;
+        color: #234060;
+    }
+
+    .page-subtitle {
+        font-size: 14px;
+        color: #666;
+        margin: 0;
+    }
+
+    .filters-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 25px;
+        margin-bottom: 20px;
+    }
+
+    .section-header {
+        margin-bottom: 15px;
+    }
+
+    .section-header h2 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+        margin: 0;
+    }
+
+    .audit-filters {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .filter-select {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .date-filter-input {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .btn-filter-set {
+        padding: 8px 20px;
+        background: #234060;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-filter-set:hover {
+        background: #1a3450;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(35, 64, 96, 0.3);
+    }
+
+    .btn-filter-clear {
+        padding: 8px 20px;
+        background: #f5f5f5;
+        color: #666;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-filter-clear:hover {
+        background: #e8e8e8;
+        border-color: #bbb;
+        transform: translateY(-1px);
+    }
+
+    .table-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 25px;
+        min-height: 400px;
+        position: relative;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.9);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+        border-radius: 10px;
+    }
+
+    .loading-spinner {
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #999;
+    }
+
+    .empty-icon {
+        font-size: 64px;
+        margin-bottom: 16px;
+        display: block;
+    }
+
+    .empty-state h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #666;
+        margin: 0 0 8px 0;
+    }
+
+    .empty-state p {
+        font-size: 14px;
+        color: #999;
+        margin: 0;
+    }
+
+    .table-container {
+        overflow-x: auto;
+    }
+
+    .audit-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .audit-table thead {
+        background: #234060;
+        color: white;
+    }
+
+    .audit-table th {
+        padding: 14px 16px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #1a3450;
+    }
+
+    .audit-table td {
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        color: #333;
+        vertical-align: middle;
+    }
+
+    .entity-name-cell {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    .description-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+        white-space: normal;
+        font-size: 13px;
+    }
+
+    .audit-table tbody tr {
+        transition: background 0.2s;
+    }
+
+    .audit-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 0;
+        border-radius: 0;
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: none;
+        background: transparent !important;
+        border: none !important;
+    }
+
+    .status-success {
+        background: transparent !important;
+        color: #333 !important;
+    }
+
+    .status-error {
+        background: transparent !important;
+        color: #333 !important;
+    }
+
+    @@media (max-width: 768px) {
+        .audit-filters {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .filter-select,
+        .date-filter-input {
+            width: 100%;
+        }
+    }
+</style>
+
+@code {
+    private bool isLoading = false;
+    private List<AuditLog> auditLogs = new List<AuditLog>();
+    private string auditLogFilter = "all";
+    private DateTime? auditLogStartDate = DateTime.Today.AddDays(-30);
+    private DateTime? auditLogEndDate = DateTime.Today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAuditLogs();
+    }
+
+    private async Task OnAuditFilterChanged()
+    {
+        await LoadAuditLogs();
+        StateHasChanged();
+    }
+
+    private async Task ApplyDateFilter()
+    {
+        await LoadAuditLogs();
+        StateHasChanged();
+    }
+
+    private async Task ClearDateFilter()
+    {
+        auditLogStartDate = DateTime.Today.AddDays(-30);
+        auditLogEndDate = DateTime.Today;
+        await LoadAuditLogs();
+        StateHasChanged();
+    }
+
+    private async Task LoadAuditLogs()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var query = Context.AuditLogs.AsQueryable();
+
+            // Filter by entity type
+            if (auditLogFilter != "all")
+            {
+                query = query.Where(log => log.EntityType == auditLogFilter);
+            }
+
+            // Filter by date range
+            if (auditLogStartDate.HasValue)
+            {
+                var startDate = auditLogStartDate.Value.Date; // Start of the selected day
+                query = query.Where(log => log.Timestamp >= startDate);
+            }
+
+            if (auditLogEndDate.HasValue)
+            {
+                var endDate = auditLogEndDate.Value.Date.AddDays(1); // Start of the next day (to include entire end date)
+                query = query.Where(log => log.Timestamp < endDate);
+            }
+
+            auditLogs = await query
+                .OrderByDescending(log => log.Timestamp)
+                .Take(500) // Limit to last 500 logs for performance
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            // If AuditLogs table doesn't exist yet, just set empty list
+            auditLogs = new List<AuditLog>();
+            System.Diagnostics.Debug.WriteLine($"Error loading audit logs: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}
+
+

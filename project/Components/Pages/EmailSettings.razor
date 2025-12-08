@@ -1,0 +1,504 @@
+@page "/system-settings/email"
+@layout MainLayout
+@using System.Threading.Tasks
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@inject project.Services.IAuthService AuthService
+@inject project.Services.IEmailService EmailService
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Maui.Storage
+
+<div class="settings-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Email Notification Settings</h1>
+        <p class="page-subtitle">Configure Gmail to send membership expiration reminders to members.</p>
+    </div>
+
+    <div class="account-management-card">
+        @if (!string.IsNullOrEmpty(gmailConfigError))
+        {
+            <div class="account-error">@gmailConfigError</div>
+        }
+
+        <div class="paymongo-config-section">
+            <div class="form-group">
+                <label>Gmail Address</label>
+                <input type="email" 
+                       class="form-control" 
+                       @bind="gmailAddress" 
+                       @bind:event="oninput"
+                       placeholder="your-email@gmail.com"
+                       style="width: 100%;" />
+                <p style="font-size: 12px; color: #666; margin-top: 5px;">
+                    The Gmail address that will send notifications
+                </p>
+            </div>
+
+            <div class="form-group">
+                <label>Gmail App Password</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="@(showGmailPassword ? "text" : "password")" 
+                           class="form-control" 
+                           @bind="gmailAppPassword" 
+                           @bind:event="oninput"
+                           placeholder="Enter your Gmail App Password"
+                           style="flex: 1;" />
+                    <button class="btn-secondary" @onclick="ToggleGmailPasswordVisibility" type="button">
+                        @(showGmailPassword ? "Hide" : "Show")
+                    </button>
+                </div>
+                <p style="font-size: 12px; color: #666; margin-top: 5px;">
+                    <strong>Important:</strong> You need to create an App Password, not your regular Gmail password.
+                    <br />
+                    1. Enable 2-Step Verification in your Google Account
+                    <br />
+                    2. Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color: #234060;">Google App Passwords</a>
+                    <br />
+                    3. Generate a new app password for "Mail"
+                    <br />
+                    4. Copy and paste the 16-character password here
+                </p>
+            </div>
+
+            <div class="form-group">
+                <button class="btn-primary" @onclick="SaveGmailConfig" disabled="@isSavingGmail">
+                    @(isSavingGmail ? "Saving..." : "Save Gmail Configuration")
+                </button>
+                <button class="btn-secondary" @onclick="TestGmailConfig" disabled="@isTestingGmail || !hasGmailConfig" style="margin-left: 10px;">
+                    @(isTestingGmail ? "Testing..." : "Test Email")
+                </button>
+                @if (!string.IsNullOrEmpty(gmailConfigSuccess))
+                {
+                    <span style="color: #27ae60; margin-left: 10px; font-weight: 600;">@gmailConfigSuccess</span>
+                }
+            </div>
+
+            @if (hasGmailConfig)
+            {
+                <div class="paymongo-status">
+                    <span style="color: #27ae60; font-weight: 600;">✓ Gmail is configured for email notifications</span>
+                    <p style="font-size: 12px; color: #666; margin-top: 5px; margin-bottom: 10px;">
+                        <strong>Automatic Notifications:</strong> The system automatically sends email reminders to members when their membership is about to expire.
+                        <br />
+                        • Reminders are sent at <strong>7 days</strong>, <strong>3 days</strong>, and <strong>1 day</strong> before expiration
+                        <br />
+                        • Checks run daily at <strong>9:00 AM</strong> and also on app startup
+                        <br />
+                        • No manual action required - fully automatic!
+                    </p>
+                    <button class="btn-secondary" @onclick="SendTestExpirationNotifications" disabled="@isSendingTestNotifications" style="margin-top: 10px;">
+                        @(isSendingTestNotifications ? "Sending..." : "🔔 Send Test Notifications Now")
+                    </button>
+                    @if (!string.IsNullOrEmpty(testNotificationResult))
+                    {
+                        <p style="font-size: 12px; color: @(testNotificationResult.Contains("successfully") ? "#27ae60" : "#e74c3c"); margin-top: 8px; font-weight: 600;">
+                            @testNotificationResult
+                        </p>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .settings-container {
+        padding: 30px;
+        background: white;
+    }
+
+    .page-header {
+        margin-bottom: 30px;
+    }
+
+    .page-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #234060;
+        margin: 0 0 8px 0;
+    }
+
+    .page-subtitle {
+        color: #666;
+        font-size: 14px;
+        margin: 0;
+    }
+
+    .account-management-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        padding: 25px;
+        margin-bottom: 20px;
+    }
+
+    .account-error {
+        background: #fdecea;
+        color: #b0382f;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+
+    .paymongo-config-section {
+        margin-top: 20px;
+    }
+
+    .paymongo-config-section .form-group {
+        margin-bottom: 20px;
+    }
+
+    .paymongo-config-section .form-group label {
+        display: block;
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 8px;
+        color: #333;
+    }
+
+    .paymongo-config-section .form-control {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+
+    .paymongo-status {
+        margin-top: 15px;
+        padding: 12px;
+        background: #e6f6ed;
+        border-radius: 8px;
+        border: 1px solid #c3e6cb;
+    }
+
+    .paymongo-config-section a {
+        color: #234060;
+        text-decoration: none;
+    }
+
+    .paymongo-config-section a:hover {
+        text-decoration: underline;
+    }
+
+    .btn-primary {
+        background: #234060;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover {
+        background: #1a3450;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #f1f3f7;
+        color: #234060;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-secondary:hover {
+        background: #e0e4e8;
+    }
+</style>
+
+@code {
+    private string gmailAddress = "";
+    private string gmailAppPassword = "";
+    private bool showGmailPassword = false;
+    private bool isSavingGmail = false;
+    private bool isTestingGmail = false;
+    private bool isSendingTestNotifications = false;
+    private string gmailConfigError = "";
+    private string gmailConfigSuccess = "";
+    private string testNotificationResult = "";
+    private bool hasGmailConfig = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGmailConfig();
+    }
+
+    private async Task LoadGmailConfig()
+    {
+        try
+        {
+            var email = await SecureStorage.Default.GetAsync("gmail_address");
+            var password = await SecureStorage.Default.GetAsync("gmail_app_password");
+            
+            hasGmailConfig = !string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(password);
+            if (hasGmailConfig)
+            {
+                gmailAddress = email ?? "";
+                gmailAppPassword = !string.IsNullOrEmpty(password) && password.Length > 4 
+                    ? password.Substring(0, 4) + "••••••••" 
+                    : "••••••••";
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading Gmail config: {ex.Message}");
+        }
+    }
+
+    private void ToggleGmailPasswordVisibility()
+    {
+        showGmailPassword = !showGmailPassword;
+        if (!showGmailPassword && hasGmailConfig)
+        {
+            var password = SecureStorage.Default.GetAsync("gmail_app_password").GetAwaiter().GetResult();
+            if (!string.IsNullOrEmpty(password))
+            {
+                gmailAppPassword = password.Length > 4 ? password.Substring(0, 4) + "••••••••" : "••••••••";
+            }
+        }
+        else if (showGmailPassword && hasGmailConfig)
+        {
+            var password = SecureStorage.Default.GetAsync("gmail_app_password").GetAwaiter().GetResult();
+            gmailAppPassword = password ?? "";
+        }
+    }
+
+    private async Task SaveGmailConfig()
+    {
+        if (isSavingGmail)
+            return;
+
+        gmailConfigError = "";
+        gmailConfigSuccess = "";
+
+        if (string.IsNullOrWhiteSpace(gmailAddress))
+        {
+            gmailConfigError = "Please enter your Gmail address.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(gmailAppPassword))
+        {
+            gmailConfigError = "Please enter your Gmail App Password.";
+            return;
+        }
+
+        if (!gmailAddress.Contains("@") || !gmailAddress.Contains("."))
+        {
+            gmailConfigError = "Please enter a valid email address.";
+            return;
+        }
+
+        if (gmailAppPassword.Contains("••••"))
+        {
+            gmailConfigError = "Please enter a new App Password. The current password is masked.";
+            return;
+        }
+
+        isSavingGmail = true;
+
+        try
+        {
+            await SecureStorage.Default.SetAsync("gmail_address", gmailAddress.Trim());
+            await SecureStorage.Default.SetAsync("gmail_app_password", gmailAppPassword.Trim());
+            hasGmailConfig = true;
+            gmailConfigSuccess = "Gmail configuration saved successfully!";
+            await LogAuditAction("Gmail Configuration Updated", "Settings", null, "Email", "Gmail email configuration was updated in settings");
+            
+            var maskedPassword = gmailAppPassword.Length > 4 
+                ? gmailAppPassword.Substring(0, 4) + "••••••••" 
+                : "••••••••";
+            gmailAppPassword = maskedPassword;
+            showGmailPassword = false;
+        }
+        catch (Exception ex)
+        {
+            gmailConfigError = $"Error saving Gmail configuration: {ex.Message}";
+            await LogAuditAction("Gmail Configuration Update Failed", "Settings", null, "Email", $"Failed to update Gmail configuration: {ex.Message}", "Failed", ex.Message);
+        }
+        finally
+        {
+            isSavingGmail = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TestGmailConfig()
+    {
+        if (isTestingGmail || !hasGmailConfig)
+            return;
+
+        isTestingGmail = true;
+        gmailConfigError = "";
+        gmailConfigSuccess = "";
+
+        try
+        {
+            var testResult = await EmailService.TestEmailConfigurationAsync();
+            
+            if (testResult)
+            {
+                gmailConfigSuccess = "Test email sent successfully! Check your inbox.";
+                await LogAuditAction("Gmail Test Email Sent", "Settings", null, "Email", "Test email was sent successfully");
+            }
+            else
+            {
+                gmailConfigError = "Failed to send test email. Please check your Gmail configuration and App Password.";
+            }
+        }
+        catch (Exception ex)
+        {
+            gmailConfigError = $"Error testing email: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Error testing Gmail: {ex.Message}");
+        }
+        finally
+        {
+            isTestingGmail = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendTestExpirationNotifications()
+    {
+        if (isSendingTestNotifications || !hasGmailConfig)
+            return;
+
+        isSendingTestNotifications = true;
+        testNotificationResult = "";
+
+        try
+        {
+            var today = DateTime.Today;
+            var sevenDaysFromNow = today.AddDays(7);
+
+            var expiringMembers = await Context.Members
+                .Include(m => m.MembershipType)
+                .Where(m => !m.IsArchived &&
+                           m.Status == "Active" &&
+                           m.ExpirationDate.HasValue &&
+                           m.ExpirationDate >= today &&
+                           m.ExpirationDate <= sevenDaysFromNow &&
+                           !string.IsNullOrEmpty(m.Email))
+                .ToListAsync();
+
+            if (!expiringMembers.Any())
+            {
+                testNotificationResult = "No members found with memberships expiring within 7 days.";
+                return;
+            }
+
+            int sent = 0;
+            int failed = 0;
+
+            foreach (var member in expiringMembers)
+            {
+                if (member.ExpirationDate.HasValue)
+                {
+                    var daysUntilExpiration = (member.ExpirationDate.Value.Date - today).Days;
+                    
+                    if (daysUntilExpiration >= 1 && daysUntilExpiration <= 7)
+                    {
+                        try
+                        {
+                            var emailSent = await EmailService.SendExpirationReminderAsync(member, daysUntilExpiration);
+                            
+                            if (emailSent)
+                            {
+                                var notification = new project.Models.Notification
+                                {
+                                    MemberID = member.MemberID,
+                                    Message = $"Membership expires in {daysUntilExpiration} day{(daysUntilExpiration > 1 ? "s" : "")}",
+                                    DateSent = DateTime.Now
+                                };
+                                Context.Notifications.Add(notification);
+                                sent++;
+                            }
+                            else
+                            {
+                                failed++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error sending test notification: {ex.Message}");
+                            failed++;
+                        }
+                    }
+                }
+            }
+
+            await Context.SaveChangesAsync();
+
+            if (sent > 0)
+            {
+                testNotificationResult = $"✅ Successfully sent {sent} test notification(s)! {failed} failed.";
+                await LogAuditAction("Test Expiration Notifications Sent", "Settings", null, "Email", $"Sent {sent} test expiration notifications");
+            }
+            else if (failed > 0)
+            {
+                testNotificationResult = $"❌ Failed to send {failed} notification(s). Please check Gmail configuration.";
+            }
+            else
+            {
+                testNotificationResult = "No notifications were sent. Check if members have valid email addresses and expiration dates.";
+            }
+        }
+        catch (Exception ex)
+        {
+            testNotificationResult = $"Error: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Error sending test notifications: {ex.Message}");
+        }
+        finally
+        {
+            isSendingTestNotifications = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
+            int? userId = null;
+            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
+            {
+                userId = parsedUserId;
+            }
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
+    }
+}
+

@@ -3,15 +3,21 @@
 @using System.Diagnostics
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
+@inject project.Services.IToastService ToastService
 @using project.Data
 @using project.Models
 @using Microsoft.EntityFrameworkCore
 
 <div class="members-container">
-    <!-- Page Header -->
+    <!-- Page Header - title only (search/add moved below like other tables) -->
     <div class="page-header">
         <h1 class="page-title">Membership Type Management</h1>
-        <div class="header-actions">
+    </div>
+
+    <!-- Membership Types Data Table -->
+    <div class="table-container">
+        <div class="table-toolbar">
+            <span class="table-title">Membership Types</span>
             <input type="text"
                    class="search-bar"
                    placeholder="Search membership types..."
@@ -20,10 +26,6 @@
                    @onkeyup="HandleSearch" />
             <button class="add-member-btn" @onclick="OpenAddModal">+ Create Membership Type</button>
         </div>
-    </div>
-
-    <!-- Membership Types Data Table -->
-    <div class="table-container">
         <table class="members-table">
             <thead>
                 <tr>
@@ -189,7 +191,7 @@
         background: white;
         padding: 25px 30px;
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start; /* only title now */
         align-items: center;
         margin: 0 0 30px 0;
         border-radius: 10px;
@@ -201,12 +203,6 @@
         font-weight: 600;
         margin: 0;
         color: #333;
-    }
-
-    .header-actions {
-        display: flex;
-        gap: 15px;
-        align-items: center;
     }
 
     .search-bar {
@@ -252,13 +248,39 @@
         overflow-y: auto; /* only shows if content really overflows */
     }
 
+    /* Toolbar under header, like other pages */
+    .table-toolbar {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px 8px 16px;
+        margin-bottom: 12px; /* add space between toolbar and table */
+        gap: 10px;
+    }
+
+    .table-toolbar .table-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .table-toolbar .search-bar {
+        margin-left: auto;
+        max-width: 260px;
+    }
+
+    .table-toolbar .add-member-btn {
+        margin-left: 8px;
+        white-space: nowrap;
+    }
+
     .members-table {
         width: 100%;
         border-collapse: collapse;
     }
 
         .members-table thead {
-            background: #f8f9fa;
+            background: #234060; /* navy header like other tables */
+            color: white;
         }
 
         .members-table th {
@@ -266,10 +288,10 @@
             text-align: left;
             font-weight: 600;
             font-size: 13px;
-            color: #666;
+            color: white;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid #1a3450;
         }
 
         .members-table td {
@@ -616,13 +638,14 @@
         try
         {
             membershipTypes = await Context.MembershipTypes
+                .AsNoTracking()
                 .Where(mt => mt.IsArchived == false)
                 .ToListAsync();
             filteredMembershipTypes = membershipTypes;
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading membership types: {ex.Message}");
+            ToastService.ShowError($"Error loading membership types: {ex.Message}");
         }
         finally
         {
@@ -707,7 +730,19 @@
         {
             if (isEditMode)
             {
-                Context.MembershipTypes.Update(currentMembershipType);
+                // Load the existing entity so we only have ONE tracked instance
+                var existing = await Context.MembershipTypes
+                    .FirstOrDefaultAsync(mt => mt.MembershipTypeID == currentMembershipType.MembershipTypeID);
+
+                if (existing == null)
+                {
+                    ToastService.ShowError("Membership type not found. Please refresh the page and try again.");
+                    return;
+                }
+
+                existing.TypeName = currentMembershipType.TypeName;
+                existing.Price = currentMembershipType.Price;
+                existing.DurationInDays = currentMembershipType.DurationInDays;
             }
             else
             {
@@ -717,11 +752,11 @@
             await Context.SaveChangesAsync();
             await LoadMembershipTypesFromDatabase();
             CloseModal();
-            await JSRuntime.InvokeVoidAsync("alert", $"Membership type {(isEditMode ? "updated" : "created")} successfully!");
+            ToastService.ShowSuccess(isEditMode ? "Updated successfully" : "Added successfully");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving membership type: {ex.Message}");
+            ToastService.ShowError($"Error saving membership type: {ex.Message}");
         }
     }
 
@@ -746,16 +781,25 @@
 
         try
         {
-            selectedMembershipType.IsArchived = true;
-            Context.MembershipTypes.Update(selectedMembershipType);
+            // Always operate on an entity loaded from the current context
+            var existing = await Context.MembershipTypes
+                .FirstOrDefaultAsync(mt => mt.MembershipTypeID == selectedMembershipType.MembershipTypeID);
+
+            if (existing == null)
+            {
+                ToastService.ShowError("Membership type not found. Please refresh the page and try again.");
+                return;
+            }
+
+            existing.IsArchived = true;
             await Context.SaveChangesAsync();
             await LoadMembershipTypesFromDatabase();
             CloseArchiveConfirmation();
-            await JSRuntime.InvokeVoidAsync("alert", "Membership type archived successfully!");
+            ToastService.ShowSuccess("Archived successfully");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error archiving membership type: {ex.Message}");
+            ToastService.ShowError($"Error archiving membership type: {ex.Message}");
         }
     }
 

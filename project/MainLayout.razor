@@ -2,10 +2,9 @@
 @using project.Services
 @using project.Components
 @using Microsoft.AspNetCore.Components.Routing
-@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Web
 @inject NavigationManager NavigationManager
 @inject IAuthService AuthService
-@inject IJSRuntime JSRuntime
 
 <div class="dashboard-container">
     <!-- Top bar only visible on small screens -->
@@ -106,8 +105,8 @@
                         <ul>
                             <li>
                                 <NavLink href="/payment" class="nav-link" activeClass="active">
-                                    <img src="/payment_icon.svg" class="sidebar-icon" alt="Membership Payments" />
-                                    Membership Payments
+                                    <img src="/payment_icon.svg" class="sidebar-icon" alt="Payments" />
+                                    Payments
                                 </NavLink>
                             </li>
                         </ul>
@@ -130,30 +129,77 @@
                     </div>
                 }
 
-                <!-- MANAGEMENT GROUP -->
-                @if (ShowNavItem("MembershipType") || ShowNavItem("Reports"))
+                <!-- REPORTS GROUP -->
+                @if (ShowNavItem("Reports"))
                 {
                     <div class="sidebar-group">
-                        <div class="sidebar-group-title">MANAGEMENT</div>
+                        <div class="sidebar-group-title">REPORTS</div>
+                        <ul>
+                            <li>
+                                <NavLink href="/reports/financial" class="nav-link" activeClass="active">
+                                    <img src="/report_icon.svg" class="sidebar-icon" alt="Financial Reports" />
+                                    Financial Reports
+                                </NavLink>
+                            </li>
+                            <li>
+                                <NavLink href="/reports/membership" class="nav-link" activeClass="active">
+                                    <img src="/report_icon.svg" class="sidebar-icon" alt="Members Report" />
+                                    Members Report
+                                </NavLink>
+                            </li>
+                        </ul>
+                    </div>
+                }
+
+                <!-- ADMINISTRATION GROUP -->
+                @if (IsAdmin())
+                {
+                    <div class="sidebar-group">
+                        <div class="sidebar-group-title">ADMINISTRATION</div>
+                        <ul>
+                            <li>
+                                <NavLink href="/administration" class="nav-link" activeClass="active" Match="NavLinkMatch.All">
+                                    <img src="/settings_icon.svg" class="sidebar-icon" alt="User Accounts" />
+                                    User Accounts
+                                </NavLink>
+                            </li>
+                            <li>
+                                <NavLink href="/administration/archived" class="nav-link" activeClass="active" Match="NavLinkMatch.All">
+                                    <img src="/archived_icon.svg" class="sidebar-icon" alt="Archived Users" />
+                                    Archived Users
+                                </NavLink>
+                            </li>
+                        </ul>
+                    </div>
+                }
+
+                <!-- CONFIGURATION GROUP -->
+                @if (IsAdmin())
+                {
+                    <div class="sidebar-group">
+                        <div class="sidebar-group-title">CONFIGURATION</div>
                         <ul>
                             @if (ShowNavItem("MembershipType"))
                             {
                                 <li>
                                     <NavLink href="/membershiptype" class="nav-link" activeClass="active">
-                                        <img src="/Membership_icon.svg" class="sidebar-icon" alt="Membership" />
-                                        Membership
+                                        <img src="/Membership_icon.svg" class="sidebar-icon" alt="Plans & Pricing" />
+                                        Plans & Pricing
                                     </NavLink>
                                 </li>
                             }
-                            @if (ShowNavItem("Reports"))
-                            {
-                                <li>
-                                    <NavLink href="/reports" class="nav-link" activeClass="active">
-                                        <img src="/report_icon.svg" class="sidebar-icon" alt="Reports" />
-                                        Reports
-                                    </NavLink>
-                                </li>
-                            }
+                            <li>
+                                <NavLink href="/system-settings/paymongo" class="nav-link" activeClass="active">
+                                    <img src="/payment_icon.svg" class="sidebar-icon" alt="PayMongo Settings" />
+                                    PayMongo Settings
+                                </NavLink>
+                            </li>
+                            <li>
+                                <NavLink href="/system-settings/email" class="nav-link" activeClass="active">
+                                    <img src="/settings_icon.svg" class="sidebar-icon" alt="Email Settings" />
+                                    Email Settings
+                                </NavLink>
+                            </li>
                         </ul>
                     </div>
                 }
@@ -167,21 +213,29 @@
                             @if (IsAdmin())
                             {
                                 <li>
+                                    <NavLink href="/audit-logs" class="nav-link" activeClass="active">
+                                        <img src="/Audit_logs.svg" class="sidebar-icon" alt="Audit Logs" />
+                                        Audit Logs
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink href="/sync-database" class="nav-link" activeClass="active">
+                                        <img src="/database_icon.svg" class="sidebar-icon" alt="Database Sync" />
+                                        Database Sync
+                                    </NavLink>
+                                </li>
+                                <li>
                                     <NavLink href="/settings" class="nav-link" activeClass="active">
-                                        <img src="/settings_icon.svg" class="sidebar-icon" alt="Settings" />
-                                        Settings
+                                        <img src="/settings_icon.svg" class="sidebar-icon" alt="System Archive" />
+                                        System Archive
                                     </NavLink>
                                 </li>
                             }
-                            <li class="logout-item">
-                                <a href="#"
-                                   id="logout-btn"
-                                   class="nav-link"
-                                   @onclick="DoLogout"
-                                   @onclick:preventDefault="true">
+                            <li class="logout-item" @onclick="HandleLogoutClick" @onclick:preventDefault>
+                                <NavLink href="/logout" class="nav-link">
                                     <img src="/logout_icon.svg" class="sidebar-icon" alt="Logout" />
                                     Logout
-                                </a>
+                                </NavLink>
                             </li>
                         </ul>
                     </div>
@@ -200,6 +254,32 @@
     <!-- Toast Notification - Always rendered -->
     <ToastNotification />
 </div>
+
+<!-- Logout Confirmation Modal -->
+@if (showLogoutConfirmation)
+{
+    <div class="modal-overlay" @onclick="CloseLogoutConfirmation">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h2>Logout</h2>
+                <button class="close-btn" @onclick="CloseLogoutConfirmation">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="confirmation-content text-only">
+                    <h3>Confirm Logout</h3>
+                    <p>Are you sure you want to logout?</p>
+                    <p class="confirmation-warning">You will need to login again to access the system.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" @onclick="CloseLogoutConfirmation">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmLogout">
+                    Yes, Logout
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 <style>
     /* === MAIN LAYOUT === */
@@ -307,7 +387,9 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        overflow-y: hidden;        /* no scroll; everything fits in viewport */
+        /* Allow vertical scroll only when content is taller than the available height.
+           On tall windows there will be no scrollbar; on short windows users can scroll. */
+        overflow-y: auto;
         overflow-x: hidden;
         min-height: 0;
         box-sizing: border-box;
@@ -337,6 +419,9 @@
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: rgba(255,255,255,0.7);
+        display: flex;
+        align-items: center;
+        gap: 6px;
     }
 
             .sidebar-nav ul::-webkit-scrollbar {
@@ -394,7 +479,7 @@
         color: #eee;
         text-decoration: none;
         border-left: 4px solid transparent;
-        font-size: 0.95rem;
+        font-size: 0.9rem;
         font-weight: 500;
         transition: background 0.17s, color 0.17s;
         width: 100%;
@@ -412,10 +497,11 @@
             font-weight: 500;
         }
 
+
     .sidebar-icon {
-        width: 22px;
-        height: 22px;
-        margin-right: 14px;
+        width: 20px;
+        height: 20px;
+        margin-right: 12px;
         filter: brightness(0) invert(1);
         flex-shrink: 0;
         display: block;
@@ -483,49 +569,199 @@
             padding: 20px;
         }
     }
+
+    /* Logout Confirmation Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+    }
+
+    .confirmation-modal {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 500px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        animation: fadeIn 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+        font-size: 22px;
+        color: #333;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 32px;
+        color: #999;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        transition: color 0.2s;
+    }
+
+    .close-btn:hover {
+        color: #333;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .modal-footer {
+        padding: 20px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 24px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .confirmation-warning {
+        color: #e74c3c !important;
+        font-weight: 600;
+        background: #ffeaa7;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 15px !important;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-cancel {
+        background: #f1f3f7;
+        color: #234060;
+    }
+
+    .btn-cancel:hover {
+        background: #e0e4e8;
+    }
+
+    .btn-primary {
+        background: #234060;
+        color: white;
+    }
+
+    .btn-primary:hover:not([disabled]) {
+        background: #1a3450;
+        transform: translateY(-1px);
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 
 @code {
     private bool isSidebarOpen = false;
     private bool hideSidebar = false;
     private string currentUserRole = "";
+    private bool showLogoutConfirmation = false;
 
     protected override async Task OnInitializedAsync()
     {
-        // Get user role for role-based navigation
+        // Ensure only authenticated users can stay on pages that use this layout.
+        // If not authenticated, immediately redirect to the login page.
         if (await AuthService.IsUserAuthenticated())
         {
             currentUserRole = await AuthService.GetCurrentUserRole();
         }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
+        else
         {
-            try
-            {
-                var objRef = DotNetObjectReference.Create(this);
-                await JSRuntime.InvokeVoidAsync("setupLogoutButton", objRef);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"JS setup error: {ex.Message}");
-            }
+            NavigationManager.NavigateTo("/login", forceLoad: false);
         }
     }
 
-    [JSInvokable]
-    public async Task HandleLogoutFromJS()
-    {
-        System.Diagnostics.Debug.WriteLine("*** JavaScript click detected! Calling DoLogout ***");
-        Console.WriteLine("*** JavaScript click detected! Calling DoLogout ***");
-        await DoLogout();
-    }
 
     private bool ShowNavItem(string feature)
     {
-        return currentUserRole?.ToLower() == "admin";
+        if (string.IsNullOrEmpty(currentUserRole))
+        {
+            return false;
+        }
+
+        var role = currentUserRole.ToLowerInvariant();
+
+        // Admin can see everything
+        if (role == "admin")
+        {
+            return true;
+        }
+
+        // Staff: limited navigation
+        // Allowed: Dashboard (handled separately), Members, Trainers, Walkins,
+        // Member Verification (Attendance), Membership Payments, and Logout (always visible).
+        if (role == "staff")
+        {
+            switch (feature)
+            {
+                case "Members":
+                case "Trainers":
+                case "Walkins":
+                case "Attendance":
+                case "Payments":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        // Trainers and other roles do not use these admin/staff menus
+        return false;
     }
 
     private bool IsAdmin()
@@ -533,6 +769,35 @@
 
     private bool IsTrainer()
         => string.Equals(currentUserRole, "trainer", StringComparison.OrdinalIgnoreCase);
+
+    private void HandleLogoutClick()
+    {
+        ShowLogoutConfirmation();
+    }
+
+    private void ShowLogoutConfirmation()
+    {
+        showLogoutConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseLogoutConfirmation()
+    {
+        showLogoutConfirmation = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmLogout()
+    {
+        showLogoutConfirmation = false;
+        StateHasChanged();
+        
+        System.Diagnostics.Debug.WriteLine("DoLogout called!");
+        Console.WriteLine("DoLogout called!");
+        await AuthService.LogoutAsync();
+        currentUserRole = "";
+        NavigationManager.NavigateTo("/login", true);
+    }
 
     private async Task DoLogout()
     {

@@ -5,6 +5,8 @@
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
 @inject IDbContextFactory<AppDbContext> DbContextFactory
+@inject IToastService ToastService
+@inject IPayMongoService PayMongoService
 @using project.Models
 @using project.Data
 @using Microsoft.EntityFrameworkCore
@@ -20,10 +22,15 @@
         </div>
     }
 
-    <!-- Page Header - No gaps with sidebar and top -->
+    <!-- Page Header - title only (search/add moved below like Members table) -->
     <div class="page-header">
         <h1 class="page-title">Walk-in Customers</h1>
-        <div class="header-actions">
+    </div>
+
+    <!-- Walk-ins Data Table -->
+    <div class="table-container">
+        <div class="table-toolbar">
+            <span class="table-title">Walk-in Customers</span>
             <input type="text"
                    class="search-bar"
                    placeholder="Search walk-ins..."
@@ -32,10 +39,6 @@
                    @onkeyup="HandleSearch" />
             <button class="add-member-btn" @onclick="OpenAddWalkinModal">+ Add Walk-in</button>
         </div>
-    </div>
-
-    <!-- Walk-ins Data Table -->
-    <div class="table-container">
         <table class="members-table">
             <thead>
                 <tr>
@@ -109,7 +112,7 @@
     <!-- Add/Edit Walk-in Modal -->
     @if (showWalkinModal)
     {
-        <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal-overlay" @onclick="CloseModal" @onfocusin="OnModalFocus">
             <div class="modal-content" @onclick:stopPropagation="true">
                 <div class="modal-header">
                     <h2>@(isEditMode ? "Edit Walk-in" : "Add Walk-in Customer")</h2>
@@ -117,43 +120,43 @@
                 </div>
 
                 <div class="modal-body">
-                    <!-- First Name -->
-                    <div class="form-group">
-                        <label class="required">First Name</label>
-                        <input type="text"
-                               class="form-control @(validationErrors.ContainsKey("FirstName") ? "error" : "")"
-                               @bind="currentWalkin.FirstName"
-                               placeholder="Enter first name" />
-                        @if (validationErrors.ContainsKey("FirstName"))
-                        {
-                            <div class="error-message">@validationErrors["FirstName"]</div>
-                        }
-                    </div>
+                    <!-- Name Fields - 3 columns like Member modal -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">First Name</label>
+                            <input type="text"
+                                   class="form-control @(validationErrors.ContainsKey("FirstName") ? "error" : "")"
+                                   @bind="currentWalkin.FirstName"
+                                   placeholder="Enter first name" />
+                            @if (validationErrors.ContainsKey("FirstName"))
+                            {
+                                <div class="error-message">@validationErrors["FirstName"]</div>
+                            }
+                        </div>
 
-                    <!-- Middle Name -->
-                    <div class="form-group">
-                        <label>Middle Name</label>
-                        <input type="text"
-                               class="form-control @(validationErrors.ContainsKey("MiddleName") ? "error" : "")"
-                               @bind="currentWalkin.MiddleName"
-                               placeholder="Enter middle name (optional)" />
-                        @if (validationErrors.ContainsKey("MiddleName"))
-                        {
-                            <div class="error-message">@validationErrors["MiddleName"]</div>
-                        }
-                    </div>
+                        <div class="form-group">
+                            <label>Middle Name</label>
+                            <input type="text"
+                                   class="form-control @(validationErrors.ContainsKey("MiddleName") ? "error" : "")"
+                                   @bind="currentWalkin.MiddleName"
+                                   placeholder="Enter middle name (optional)" />
+                            @if (validationErrors.ContainsKey("MiddleName"))
+                            {
+                                <div class="error-message">@validationErrors["MiddleName"]</div>
+                            }
+                        </div>
 
-                    <!-- Last Name -->
-                    <div class="form-group">
-                        <label class="required">Last Name</label>
-                        <input type="text"
-                               class="form-control @(validationErrors.ContainsKey("LastName") ? "error" : "")"
-                               @bind="currentWalkin.LastName"
-                               placeholder="Enter last name" />
-                        @if (validationErrors.ContainsKey("LastName"))
-                        {
-                            <div class="error-message">@validationErrors["LastName"]</div>
-                        }
+                        <div class="form-group">
+                            <label class="required">Last Name</label>
+                            <input type="text"
+                                   class="form-control @(validationErrors.ContainsKey("LastName") ? "error" : "")"
+                                   @bind="currentWalkin.LastName"
+                                   placeholder="Enter last name" />
+                            @if (validationErrors.ContainsKey("LastName"))
+                            {
+                                <div class="error-message">@validationErrors["LastName"]</div>
+                            }
+                        </div>
                     </div>
 
                     <!-- Visit Date -->
@@ -187,15 +190,21 @@
                     <div class="form-group">
                         <label class="required">Payment Method</label>
                         <div class="select-wrapper">
-                            <select class="form-control select-dropdown @(validationErrors.ContainsKey("PaymentMethod") ? "error" : "")" @bind="currentWalkin.PaymentMethod">
+                            <select class="form-control select-dropdown @(validationErrors.ContainsKey("PaymentMethod") ? "error" : "")" @bind="currentWalkin.PaymentMethod" @bind:after="OnPaymentMethodChanged">
                                 <option value="Cash">Cash</option>
-                                <option value="Ewallet">Ewallet</option>
+                                <option value="PayMongo">Pay Online (PayMongo)</option>
                             </select>
                             <span class="dropdown-arrow">▼</span>
                         </div>
                         @if (validationErrors.ContainsKey("PaymentMethod"))
                         {
                             <div class="error-message">@validationErrors["PaymentMethod"]</div>
+                        }
+                        @if (currentWalkin.PaymentMethod == "PayMongo")
+                        {
+                            <div class="paymongo-info">
+                                <p><strong>Online Payment:</strong> Customer will be redirected to PayMongo to complete payment via GCash, PayMaya, Credit Card, or other methods.</p>
+                            </div>
                         }
                     </div>
 
@@ -261,9 +270,33 @@
                 </div>
 
                 <div class="modal-footer">
-                    <button class="btn btn-cancel" @onclick="CloseModal">Cancel</button>
-                    <button class="btn btn-save" @onclick="SaveWalkin" @onclick:preventDefault="true">
-                        @(isEditMode ? "Update" : "Add") Walk-in
+                    <button class="btn btn-cancel" @onclick="CloseModal" disabled="@(isProcessingPayment || isVerifyingPayment)">Cancel</button>
+                    @if (showVerifyPaymentButton && !string.IsNullOrEmpty(pendingPaymentIntentId))
+                    {
+                        <button class="btn btn-verify" @onclick="VerifyAndSavePayment" disabled="@(isProcessingPayment || isVerifyingPayment)">
+                            @if (isVerifyingPayment)
+                            {
+                                <span>Verifying Payment...</span>
+                            }
+                            else
+                            {
+                                <span>Verify Payment</span>
+                            }
+                        </button>
+                    }
+                    <button class="btn btn-save" @onclick="SaveWalkin" @onclick:preventDefault="true" disabled="@(isProcessingPayment || isVerifyingPayment || showVerifyPaymentButton)">
+                        @if (isProcessingPayment)
+                        {
+                            <span>Processing Payment...</span>
+                        }
+                        else if (currentWalkin.PaymentMethod == "PayMongo" && !isEditMode && !showVerifyPaymentButton)
+                        {
+                            <span>Proceed to Payment</span>
+                        }
+                        else
+                        {
+                            <span>@(isEditMode ? "Update" : "Add") Walk-in</span>
+                        }
                     </button>
                 </div>
             </div>
@@ -283,7 +316,7 @@
         background: white;
         padding: 25px 30px;
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start; /* only title now */
         align-items: center;
         margin: 0 0 30px 0;
         border-radius: 10px;
@@ -295,12 +328,6 @@
         font-weight: 600;
         margin: 0;
         color: #333;
-    }
-
-    .header-actions {
-        display: flex;
-        gap: 15px;
-        align-items: center;
     }
 
     .search-bar {
@@ -377,6 +404,31 @@
         overflow-y: auto; /* only appears if content really overflows */
     }
 
+    /* Toolbar under header, like Members/Trainers */
+    .table-toolbar {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px 8px 16px;
+        margin-bottom: 4px;
+        gap: 10px;
+    }
+
+    .table-toolbar .table-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .table-toolbar .search-bar {
+        margin-left: auto;
+        max-width: 260px;
+    }
+
+    .table-toolbar .add-member-btn {
+        margin-left: 8px;
+        white-space: nowrap;
+    }
+
     .members-table {
         width: 100%;
         border-collapse: collapse;
@@ -421,7 +473,7 @@
         width: 36px;
         height: 36px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         display: flex;
         align-items: center;
@@ -432,7 +484,7 @@
 
     /* Payment Amount Styling */
     .amount-cell {
-        font-weight: 600;
+        font-weight: normal;
     }
 
     .trainer-info {
@@ -442,7 +494,7 @@
     }
 
     .trainer-name {
-        font-weight: 600;
+        font-weight: normal;
         color: #333;
         font-size: 13px;
     }
@@ -570,12 +622,14 @@
     }
 
     .modal-content {
+        width: 95%;
+        max-width: 900px;
         background: white;
-        border-radius: 12px;
-        width: 90%;
-        max-width: 500px;
-        max-height: 90vh;
-        overflow-y: auto;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        max-height: 95vh;
+        overflow: hidden;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
     }
 
@@ -612,6 +666,19 @@
 
     .modal-body {
         padding: 24px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .form-row {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .form-row .form-group {
+        flex: 1;
+        min-width: 0;
     }
 
     .form-group {
@@ -748,9 +815,49 @@
             box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
         }
 
+    .btn-verify {
+        background: #2196F3;
+        color: white;
+    }
+
+        .btn-verify:hover {
+            background: #1976D2;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+        }
+
+        .btn-verify:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
     .required::after {
         content: " *";
         color: #e74c3c;
+    }
+
+    .paymongo-info {
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 6px;
+        padding: 12px;
+        margin-top: 8px;
+    }
+
+    .paymongo-info p {
+        margin: 0;
+        font-size: 13px;
+        color: #1976d2;
+        line-height: 1.4;
+    }
+
+    .paymongo-info strong {
+        color: #1565c0;
+    }
+
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
     }
 
     /* Loading Overlay */
@@ -851,6 +958,13 @@
     private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
     private bool isLoading = false;
     private bool isInitializingTrainerSelection = false;
+    private bool isProcessingPayment = false;
+    private bool isVerifyingPayment = false;
+    private string? payMongoCheckoutUrl = null;
+    private string? pendingPaymentIntentId = null;
+    private string? pendingPaymentLinkId = null;
+    private bool showVerifyPaymentButton = false;
+    private System.Threading.Timer? paymentCheckTimer = null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -867,7 +981,9 @@
 
         try
         {
+            // Use AsNoTracking for read-only query to avoid tracking issues
             walkins = await Context.WalkIns
+                .AsNoTracking()
                 .Where(w => w.IsArchived == false)
                 .Include(w => w.Trainer)
                 .Include(w => w.TrainerSchedule)
@@ -877,6 +993,11 @@
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error loading walk-ins: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            // Show error to user
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading walk-ins: {ex.Message}");
+            walkins = new List<WalkIn>(); // Initialize empty list to prevent null reference
+            filteredWalkins = new List<WalkIn>();
         }
         finally
         {
@@ -889,35 +1010,12 @@
     {
         try
         {
-            var bookedScheduleIdsQuery = GetBookedTrainerScheduleIdsQuery();
-
-            var availableTrainerIdsQuery = Context.TrainerSchedules
-                .Where(ts => ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID))
-                .Select(ts => ts.TrainerID)
-                .Distinct();
-
+            // Show ALL trainers in the dropdown (like Members page), sorted by name
             availableTrainers = await Context.Trainers
                 .AsNoTracking()
-                .Where(t => availableTrainerIdsQuery.Contains(t.TrainerID))
                 .OrderBy(t => t.LastName)
                 .ThenBy(t => t.FirstName)
                 .ToListAsync();
-
-            // If editing and trainer is already selected, ensure it's in the list
-            if (includeTrainerId.HasValue && !availableTrainers.Any(t => t.TrainerID == includeTrainerId.Value))
-            {
-                var currentTrainer = await Context.Trainers
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
-                if (currentTrainer != null)
-                {
-                    availableTrainers.Add(currentTrainer);
-                    availableTrainers = availableTrainers
-                        .OrderBy(t => t.LastName)
-                        .ThenBy(t => t.FirstName)
-                        .ToList();
-                }
-            }
         }
         catch (Exception ex)
         {
@@ -973,9 +1071,9 @@
         if (walkin == null) return "";
         
         var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(walkin.FirstName)) parts.Add(walkin.FirstName);
-        if (!string.IsNullOrWhiteSpace(walkin.MiddleName)) parts.Add(walkin.MiddleName);
-        if (!string.IsNullOrWhiteSpace(walkin.LastName)) parts.Add(walkin.LastName);
+        if (!string.IsNullOrWhiteSpace(walkin.FirstName)) parts.Add(CapitalizeName(walkin.FirstName));
+        if (!string.IsNullOrWhiteSpace(walkin.MiddleName)) parts.Add(CapitalizeName(walkin.MiddleName));
+        if (!string.IsNullOrWhiteSpace(walkin.LastName)) parts.Add(CapitalizeName(walkin.LastName));
         
         return string.Join(" ", parts);
     }
@@ -1022,11 +1120,19 @@
             VisitDate = DateTime.Now,
             PaymentMethod = "Cash",
             TrainerID = null,
-            TrainerScheduleID = null
+            TrainerScheduleID = null,
+            IsOnlinePayment = false,
+            PayMongoPaymentId = null,
+            PayMongoStatus = null
         };
         selectedTrainerScheduleId = 0;
         visibleSchedules = new();
         validationErrors.Clear();
+        isProcessingPayment = false;
+        isVerifyingPayment = false;
+        payMongoCheckoutUrl = null;
+        showVerifyPaymentButton = false;
+        pendingPaymentIntentId = null;
         showWalkinModal = true;
         await LoadTrainersFromDatabase(null);
         await LoadTrainerSchedules();
@@ -1152,6 +1258,20 @@
         }
     }
 
+    // Helper method to capitalize first letter of each name
+    private string CapitalizeName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return name;
+        
+        name = name.Trim();
+        if (name.Length == 0)
+            return name;
+        
+        // Capitalize first letter, lowercase the rest
+        return char.ToUpper(name[0]) + (name.Length > 1 ? name.Substring(1).ToLower() : "");
+    }
+
     private async Task SaveWalkin()
     {
         ValidateWalkin();
@@ -1162,43 +1282,161 @@
             return;
         }
 
+        // If PayMongo payment, process payment first
+        if (currentWalkin.PaymentMethod == "PayMongo" && !isEditMode)
+        {
+            await ProcessPayMongoPayment();
+            return;
+        }
+
+        // Capitalize names before saving
+        currentWalkin.FirstName = CapitalizeName(currentWalkin.FirstName);
+        if (!string.IsNullOrWhiteSpace(currentWalkin.MiddleName))
+        {
+            currentWalkin.MiddleName = CapitalizeName(currentWalkin.MiddleName);
+        }
+        currentWalkin.LastName = CapitalizeName(currentWalkin.LastName);
+
         try
         {
-        if (isEditMode)
-        {
-                var existingWalkin = await Context.WalkIns.FindAsync(currentWalkin.WalkInID);
-            if (existingWalkin != null)
+            if (isEditMode)
             {
+                var existingWalkin = await Context.WalkIns.FindAsync(currentWalkin.WalkInID);
+                if (existingWalkin != null)
+                {
                     var previousScheduleId = existingWalkin.TrainerScheduleID;
                     existingWalkin.FirstName = currentWalkin.FirstName;
                     existingWalkin.MiddleName = currentWalkin.MiddleName;
                     existingWalkin.LastName = currentWalkin.LastName;
-                existingWalkin.VisitDate = currentWalkin.VisitDate;
-                existingWalkin.PaymentAmount = currentWalkin.PaymentAmount;
-                existingWalkin.PaymentMethod = currentWalkin.PaymentMethod;
-                existingWalkin.TrainerID = currentWalkin.TrainerID;
-                existingWalkin.TrainerScheduleID = currentWalkin.TrainerScheduleID;
+                    existingWalkin.VisitDate = currentWalkin.VisitDate;
+                    existingWalkin.PaymentAmount = currentWalkin.PaymentAmount;
+                    existingWalkin.PaymentMethod = currentWalkin.PaymentMethod;
+                    existingWalkin.TrainerID = currentWalkin.TrainerID;
+                    existingWalkin.TrainerScheduleID = currentWalkin.TrainerScheduleID;
                     await UpdateTrainerScheduleAvailability(previousScheduleId, existingWalkin.TrainerScheduleID);
                     Context.WalkIns.Update(existingWalkin);
+                }
             }
-        }
-        else
-        {
+            else
+            {
                 Context.WalkIns.Add(currentWalkin);
                 await UpdateTrainerScheduleAvailability(null, currentWalkin.TrainerScheduleID);
-        }
+            }
 
             await Context.SaveChangesAsync();
             await LoadWalkinsFromDatabase();
             await LoadTrainersFromDatabase();
             await LoadTrainerSchedules();
-        CloseModal();
+
+            // Show toast notification depending on mode
+            if (isEditMode)
+            {
+                ToastService.ShowSuccess("Updated successfully");
+            }
+            else
+            {
+                ToastService.ShowSuccess("Added successfully");
+            }
+
+            CloseModal();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error saving walk-in: {ex.Message}");
             validationErrors["General"] = $"Error saving walk-in: {ex.Message}";
+            ToastService.ShowError($"Error saving walk-in: {ex.Message}");
             StateHasChanged();
+        }
+    }
+
+    private async Task ProcessPayMongoPayment()
+    {
+        isProcessingPayment = true;
+        StateHasChanged();
+
+        try
+        {
+            // Capitalize names before creating payment
+            currentWalkin.FirstName = CapitalizeName(currentWalkin.FirstName);
+            if (!string.IsNullOrWhiteSpace(currentWalkin.MiddleName))
+            {
+                currentWalkin.MiddleName = CapitalizeName(currentWalkin.MiddleName);
+            }
+            currentWalkin.LastName = CapitalizeName(currentWalkin.LastName);
+
+            var customerName = $"{currentWalkin.FirstName} {currentWalkin.LastName}".Trim();
+            var description = $"Walk-in payment for {customerName} - {currentWalkin.VisitDate:MMM dd, yyyy}";
+            var referenceId = $"WALKIN-{DateTime.Now:yyyyMMddHHmmss}";
+
+            var paymentResponse = await PayMongoService.CreatePaymentLinkAsync(
+                currentWalkin.PaymentAmount,
+                description,
+                referenceId
+            );
+
+            if (!paymentResponse.Success)
+            {
+                validationErrors["General"] = $"Failed to create payment link: {paymentResponse.Message}";
+                ToastService.ShowError($"Payment error: {paymentResponse.Message}");
+                isProcessingPayment = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Store payment info temporarily (DO NOT save to database yet)
+            currentWalkin.PayMongoPaymentId = paymentResponse.PaymentIntentId;
+            currentWalkin.PayMongoStatus = "pending";
+            currentWalkin.IsOnlinePayment = true;
+            payMongoCheckoutUrl = paymentResponse.CheckoutUrl;
+            pendingPaymentIntentId = paymentResponse.PaymentIntentId;
+            pendingPaymentLinkId = paymentResponse.PaymentLinkId; // Store link ID for status checking
+            showVerifyPaymentButton = true;
+
+            // Open PayMongo checkout in new window/tab
+            await JSRuntime.InvokeVoidAsync("window.open", payMongoCheckoutUrl, "_blank");
+
+            ToastService.ShowInfo("Payment page opened. After completing payment, return here - it will verify automatically.");
+            
+            // Start automatic payment checking (every 2 seconds for faster detection)
+            StartAutoPaymentVerification();
+            
+            // Also set up focus event to check immediately when user returns
+            await SetupFocusCheck();
+            
+            // Check immediately after a short delay (in case payment was already completed)
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                await InvokeAsync(async () => await CheckPaymentStatusAutomatically());
+            });
+            
+            // Keep modal open so user can verify payment
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error processing PayMongo payment: {ex.Message}");
+            validationErrors["General"] = $"Error processing payment: {ex.Message}";
+            ToastService.ShowError($"Payment error: {ex.Message}");
+        }
+        finally
+        {
+            isProcessingPayment = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnPaymentMethodChanged()
+    {
+        if (currentWalkin.PaymentMethod != "PayMongo")
+        {
+            currentWalkin.PayMongoPaymentId = null;
+            currentWalkin.PayMongoStatus = null;
+            currentWalkin.IsOnlinePayment = false;
+            // Reset payment verification state
+            showVerifyPaymentButton = false;
+            pendingPaymentIntentId = null;
+            payMongoCheckoutUrl = null;
         }
     }
 
@@ -1244,6 +1482,189 @@
         await coordinator.ReleaseCompletedScheduleBlocksAsync();
     }
 
+    private async Task VerifyAndSavePayment()
+    {
+        if (string.IsNullOrEmpty(pendingPaymentIntentId))
+        {
+            ToastService.ShowError("No payment to verify.");
+            return;
+        }
+
+        isVerifyingPayment = true;
+        StateHasChanged();
+
+        try
+        {
+            // Check payment status with PayMongo - try link ID first, then intent ID
+            var paymentIdToCheck = !string.IsNullOrEmpty(pendingPaymentLinkId) ? pendingPaymentLinkId : pendingPaymentIntentId;
+            var paymentStatus = await PayMongoService.CheckPaymentStatusAsync(paymentIdToCheck ?? "");
+
+            // Check if payment is completed (PayMongo uses various status values)
+            var statusLower = paymentStatus.Status?.ToLower() ?? "";
+            var isPaid = statusLower == "succeeded" || 
+                        statusLower == "paid" ||
+                        statusLower == "paid_off" ||
+                        statusLower == "paidoff";
+            
+            System.Diagnostics.Debug.WriteLine($"Manual verify - Payment status: {paymentStatus.Status}, IsPaid: {isPaid}");
+
+            if (isPaid)
+            {
+                // Payment confirmed - now save to database
+                currentWalkin.PayMongoStatus = "paid";
+                currentWalkin.PayMongoPaymentId = pendingPaymentIntentId;
+                currentWalkin.IsOnlinePayment = true;
+
+                // Capitalize names before saving
+                currentWalkin.FirstName = CapitalizeName(currentWalkin.FirstName);
+                if (!string.IsNullOrWhiteSpace(currentWalkin.MiddleName))
+                {
+                    currentWalkin.MiddleName = CapitalizeName(currentWalkin.MiddleName);
+                }
+                currentWalkin.LastName = CapitalizeName(currentWalkin.LastName);
+
+                // Save walk-in to database
+                Context.WalkIns.Add(currentWalkin);
+                await UpdateTrainerScheduleAvailability(null, currentWalkin.TrainerScheduleID);
+                await Context.SaveChangesAsync();
+
+                ToastService.ShowSuccess("Payment verified! Walk-in saved successfully.");
+                
+                // Stop auto-verification timer
+                paymentCheckTimer?.Dispose();
+                paymentCheckTimer = null;
+                
+                // Reset payment verification state
+                showVerifyPaymentButton = false;
+                pendingPaymentIntentId = null;
+                payMongoCheckoutUrl = null;
+
+                // Close modal and reload
+                CloseModal();
+                await LoadWalkinsFromDatabase();
+            }
+            else
+            {
+                // Payment not completed
+                var statusMessage = paymentStatus.Status?.ToLower() ?? "unknown";
+                if (statusMessage == "pending" || statusMessage == "awaiting_payment_method")
+                {
+                    ToastService.ShowWarning("Payment is still pending. Please complete the payment first, then verify again.");
+                }
+                else
+                {
+                    ToastService.ShowError($"Payment not completed. Status: {paymentStatus.Status ?? "Unknown"}. Please complete the payment or cancel.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error verifying payment: {ex.Message}");
+            ToastService.ShowError($"Error verifying payment: {ex.Message}");
+        }
+        finally
+        {
+            isVerifyingPayment = false;
+            StateHasChanged();
+        }
+    }
+
+    private void StartAutoPaymentVerification()
+    {
+        // Stop any existing timer
+        paymentCheckTimer?.Dispose();
+        
+        // Start checking payment status every 2 seconds for faster detection
+        paymentCheckTimer = new System.Threading.Timer(async _ =>
+        {
+            await CheckPaymentStatusAutomatically();
+        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+    }
+
+    private async Task CheckPaymentStatusAutomatically()
+    {
+        if (string.IsNullOrEmpty(pendingPaymentIntentId) || !showVerifyPaymentButton || isVerifyingPayment || !showWalkinModal)
+            return;
+
+        try
+        {
+            // Check payment status - try link ID first, then intent ID
+            var paymentIdToCheck = !string.IsNullOrEmpty(pendingPaymentLinkId) ? pendingPaymentLinkId : pendingPaymentIntentId;
+            var paymentStatus = await PayMongoService.CheckPaymentStatusAsync(paymentIdToCheck ?? "");
+            System.Diagnostics.Debug.WriteLine($"Auto-check payment status (ID: {paymentIdToCheck}): {paymentStatus.Status}");
+            
+            // PayMongo uses various status values - check for all possible "paid" statuses
+            var statusLower = paymentStatus.Status?.ToLower() ?? "";
+            var isPaid = statusLower == "succeeded" || 
+                        statusLower == "paid" ||
+                        statusLower == "paid_off" ||
+                        statusLower == "paidoff";
+
+            if (isPaid)
+            {
+                System.Diagnostics.Debug.WriteLine("Payment detected as paid, auto-verifying...");
+                // Automatically verify and save
+                await InvokeAsync(async () =>
+                {
+                    await VerifyAndSavePayment();
+                });
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"Payment status: {paymentStatus.Status} - not yet paid");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Auto-check payment error: {ex.Message}");
+        }
+    }
+
+    private async Task SetupFocusCheck()
+    {
+        // Set up JavaScript to check payment when window regains focus
+        await JSRuntime.InvokeVoidAsync("eval", @"
+            (function() {
+                // Remove existing listener if any
+                if (window.paymongoFocusHandler) {
+                    window.removeEventListener('focus', window.paymongoFocusHandler);
+                    window.removeEventListener('visibilitychange', window.paymongoVisibilityHandler);
+                }
+                
+                // Create new handler
+                window.paymongoFocusHandler = function() {
+                    // Small delay to ensure page is ready
+                    setTimeout(function() {
+                        // Trigger payment check by dispatching a custom event
+                        window.dispatchEvent(new Event('checkPaymentStatus'));
+                    }, 500);
+                };
+                
+                window.paymongoVisibilityHandler = function() {
+                    if (!document.hidden) {
+                        window.paymongoFocusHandler();
+                    }
+                };
+                
+                window.addEventListener('focus', window.paymongoFocusHandler);
+                window.addEventListener('visibilitychange', window.paymongoVisibilityHandler);
+            })();
+        ");
+        
+        // Also check immediately when setting up
+        await Task.Delay(1000);
+        await CheckPaymentStatusAutomatically();
+    }
+
+    private async Task OnModalFocus()
+    {
+        // When modal regains focus, check payment status immediately
+        if (showVerifyPaymentButton && !string.IsNullOrEmpty(pendingPaymentIntentId))
+        {
+            await CheckPaymentStatusAutomatically();
+        }
+    }
+
     private void CloseModal()
     {
         showWalkinModal = false;
@@ -1251,6 +1672,16 @@
         validationErrors.Clear();
         selectedTrainerScheduleId = 0;
         visibleSchedules = new();
+        // Reset payment verification state
+        showVerifyPaymentButton = false;
+        pendingPaymentIntentId = null;
+        pendingPaymentLinkId = null;
+        payMongoCheckoutUrl = null;
+        isProcessingPayment = false;
+        isVerifyingPayment = false;
+        // Stop auto-verification timer
+        paymentCheckTimer?.Dispose();
+        paymentCheckTimer = null;
         StateHasChanged();
     }
 }

@@ -9,6 +9,8 @@
 @inject IDbContextFactory<AppDbContext> DbContextFactory
 @inject IMemberService MemberService
 @inject IToastService ToastService
+@inject IAuthService AuthService
+@inject IPayMongoService PayMongoService
 @using project.Data
 @using project.Models
 @using project.Services
@@ -27,7 +29,7 @@
 
     <!-- Page Header -->
     <div class="page-header">
-        <h1 class="page-title">Manage Members</h1>
+        <h1 class="page-title">Members</h1>
     </div>
 
     <!-- Members Data Table -->
@@ -49,7 +51,7 @@
                     <th>EMAIL</th>
                     <th>JOIN DATE</th>
                     <th>EXPIRATION DATE</th>
-                    <th>PAYMENT METHOD</th>
+                    <th>MEMBERSHIP TYPE</th>
                     <th>TRAINER</th>
                     <th>ACTIONS</th>
                 </tr>
@@ -75,7 +77,7 @@
                             <td>
                                 <div class="member-info">
                                     <div class="member-avatar">@GetInitials(member.FirstName, member.LastName)</div>
-                                    <span>@member.FirstName @member.LastName</span>
+                                    <span>@GetDisplayName(member.FirstName, member.MiddleInitial, member.LastName)</span>
                                 </div>
                             </td>
                             <td>@member.ContactNumber</td>
@@ -95,10 +97,11 @@
                             </td>
                             <td>
                                 @{
-                                    var latestPayment = member.Payments?.OrderByDescending(p => p.PaymentDate).FirstOrDefault();
-                                    var paymentMethod = latestPayment?.PaymentType ?? "N/A";
+                                    var membershipName = member.MembershipType != null
+                                        ? member.MembershipType.TypeName
+                                        : "N/A";
                                 }
-                                <span class="payment-method-text">@paymentMethod</span>
+                                <span class="payment-method-text">@membershipName</span>
                             </td>
                             <td>
                                 @if (member.TrainerID.HasValue && member.Trainer != null)
@@ -138,7 +141,7 @@
     </div>
 
     <!-- Expired/Inactive Members Section -->
-    @if (expiredInactiveMembers != null && expiredInactiveMembers.Any())
+    @if (expiredInactiveMembers != null)
     {
         <div class="expired-section">
             <div class="section-header">
@@ -165,45 +168,63 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var member in expiredInactiveMembers)
+                        @if (!expiredInactiveMembers.Any())
                         {
                             <tr>
-                                <td>
-                                    <div class="member-info">
-                                        <div class="member-avatar">@GetInitials(member.FirstName, member.LastName)</div>
-                                        <span>@member.FirstName @member.LastName</span>
+                                <td colspan="6" class="no-data">
+                                    <div class="no-data-content">
+                                        <span class="no-data-icon">👥</span>
+                                        <p>@(string.IsNullOrWhiteSpace(expiredSearchQuery) ? "No expired/inactive members found" : "No expired/inactive members match your search")</p>
+                                        @if (!string.IsNullOrWhiteSpace(expiredSearchQuery))
+                                        {
+                                            <p class="no-data-sub">Try a different search term or clear the search</p>
+                                        }
                                     </div>
                                 </td>
-                                <td>@member.ContactNumber</td>
-                                <td>@member.Email</td>
-                                <td>
-                                    @if (member.ExpirationDate.HasValue)
-                                    {
-                                        <span class="expiration-expired">
-                                            @member.ExpirationDate.Value.ToString("MM/dd/yyyy")
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted">N/A</span>
-                                    }
-                                </td>
-                                <td>
-                                    @if (member.MembershipType != null)
-                                    {
-                                        <span>@member.MembershipType.TypeName</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted">N/A</span>
-                                    }
-                                </td>
-                                <td>
-                                    <button class="renew-btn" @onclick="() => OpenRenewModal(member)" title="Renew Membership">
-                                        Renew
-                                    </button>
-                                </td>
                             </tr>
+                        }
+                        else
+                        {
+                            @foreach (var member in expiredInactiveMembers)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="member-info">
+                                            <div class="member-avatar">@GetInitials(member.FirstName, member.LastName)</div>
+                                            <span>@GetDisplayName(member.FirstName, member.MiddleInitial, member.LastName)</span>
+                                        </div>
+                                    </td>
+                                    <td>@member.ContactNumber</td>
+                                    <td>@member.Email</td>
+                                    <td>
+                                        @if (member.ExpirationDate.HasValue)
+                                        {
+                                            <span class="expiration-expired">
+                                                @member.ExpirationDate.Value.ToString("MM/dd/yyyy")
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">N/A</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (member.MembershipType != null)
+                                        {
+                                            <span>@member.MembershipType.TypeName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">N/A</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <button class="renew-btn" @onclick="() => OpenRenewModal(member)" title="Renew Membership">
+                                            Renew
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
                         }
                     </tbody>
                 </table>
@@ -214,10 +235,10 @@
     <!-- Renew Membership Modal -->
     @if (showRenewModal)
     {
-        <div class="modal-overlay" @onclick="CloseRenewModal">
+            <div class="modal-overlay" @onclick="() => { showRenewModal = false; ResetRenewModalState(); }">
             <div class="modal-content" @onclick:stopPropagation="true">
                 <div class="modal-header">
-                    <h2>Renew Membership - @(memberToRenew?.FirstName) @(memberToRenew?.LastName)</h2>
+                    <h2>Renew Membership - @(memberToRenew != null ? GetDisplayName(memberToRenew.FirstName, memberToRenew.MiddleInitial, memberToRenew.LastName) : "")</h2>
                     <button class="close-btn" @onclick="CloseRenewModal">×</button>
                 </div>
 
@@ -254,15 +275,21 @@
                             <div class="form-group">
                                 <label class="required">Payment Method</label>
                                 <div class="select-wrapper">
-                                    <select class="form-control select-dropdown @(HasRenewError("PaymentMethod") ? "error" : "")" @bind="renewPaymentMethod">
+                                    <select class="form-control select-dropdown @(HasRenewError("PaymentMethod") ? "error" : "")" @bind="renewPaymentMethod" @bind:after="OnRenewPaymentMethodChanged">
                                         <option value="Cash">Cash</option>
-                                        <option value="Ewallet">Ewallet</option>
+                                        <option value="PayMongo">Pay Online (PayMongo)</option>
                                     </select>
                                     <span class="dropdown-arrow">▼</span>
                                 </div>
                                 @if (HasRenewError("PaymentMethod"))
                                 {
                                     <div class="field-error">Payment method is required</div>
+                                }
+                                @if (renewPaymentMethod == "PayMongo")
+                                {
+                                    <div class="paymongo-info">
+                                        <p><strong>Online Payment:</strong> Customer will be redirected to PayMongo to complete payment via GCash, PayMaya, Credit Card, or other methods.</p>
+                                    </div>
                                 }
                             </div>
                             <div class="form-group">
@@ -364,9 +391,37 @@
                 </div>
 
                 <div class="modal-footer">
-                    <button class="btn btn-cancel" @onclick="CloseRenewModal">Cancel</button>
-                    <button class="btn btn-primary" disabled="@isRenewing" @onclick="RenewMembershipAsync">
-                        @(isRenewing ? "Processing..." : "Renew Membership")
+                    <button class="btn btn-cancel" @onclick="ResetRenewModalState" disabled="@(isRenewing || isVerifyingRenewalPayment)">Cancel</button>
+                    @if (showVerifyRenewalPaymentButton && !string.IsNullOrEmpty(pendingRenewalPaymentIntentId))
+                    {
+                        <button class="btn btn-verify" @onclick="VerifyAndSaveRenewalPayment" disabled="@(isRenewing || isVerifyingRenewalPayment)">
+                            @if (isVerifyingRenewalPayment)
+                            {
+                                <span>Verifying Payment...</span>
+                            }
+                            else
+                            {
+                                <span>Verify Payment</span>
+                            }
+                        </button>
+                    }
+                    <button class="btn btn-primary" disabled="@(isRenewing || isVerifyingRenewalPayment || showVerifyRenewalPaymentButton)" @onclick="RenewMembershipAsync">
+                        @if (isProcessingRenewalPayment)
+                        {
+                            <span>Processing Payment...</span>
+                        }
+                        else if (renewPaymentMethod == "PayMongo" && !showVerifyRenewalPaymentButton)
+                        {
+                            <span>Proceed to Payment</span>
+                        }
+                        else if (isRenewing)
+                        {
+                            <span>Processing...</span>
+                        }
+                        else
+                        {
+                            <span>Renew Membership</span>
+                        }
                     </button>
                 </div>
             </div>
@@ -396,7 +451,11 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label class="required">First Name</label>
-                            <input type="text" class="form-control @(HasError("FirstName") ? "error" : "")" @bind="currentMember.FirstName" placeholder="Enter first name" />
+                            <input type="text"
+                                   class="form-control @(HasError("FirstName") ? "error" : "")"
+                                   @bind="currentMember.FirstName"
+                                   placeholder="Enter first name"
+                                   disabled="@lockIdentityFields" />
                             @if (HasError("FirstName"))
                             {
                                 <div class="field-error">First name is required</div>
@@ -404,11 +463,20 @@
                         </div>
                         <div class="form-group">
                             <label>Middle Initial</label>
-                            <input type="text" class="form-control" @bind="currentMember.MiddleInitial" placeholder="Enter middle initial" maxlength="10" />
+                            <input type="text"
+                                   class="form-control"
+                                   @bind="currentMember.MiddleInitial"
+                                   placeholder="Enter middle initial"
+                                   maxlength="10"
+                                   disabled="@lockIdentityFields" />
                         </div>
                         <div class="form-group">
                             <label class="required">Last Name</label>
-                            <input type="text" class="form-control @(HasError("LastName") ? "error" : "")" @bind="currentMember.LastName" placeholder="Enter last name" />
+                            <input type="text"
+                                   class="form-control @(HasError("LastName") ? "error" : "")"
+                                   @bind="currentMember.LastName"
+                                   placeholder="Enter last name"
+                                   disabled="@lockIdentityFields" />
                             @if (HasError("LastName"))
                             {
                                 <div class="field-error">Last name is required</div>
@@ -460,7 +528,12 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label class="required">Join Date</label>
-                            <input type="date" class="form-control @(HasError("JoinDate") ? "error" : "")" @bind="currentMember.JoinDate" @bind:after="OnJoinDateChanged" format="yyyy-MM-dd" />
+                            <input type="date"
+                                   class="form-control @(HasError("JoinDate") ? "error" : "")"
+                                   @bind="currentMember.JoinDate"
+                                   @bind:after="OnJoinDateChanged"
+                                   format="yyyy-MM-dd"
+                                   disabled="@lockIdentityFields" />
                             @if (HasError("JoinDate"))
                             {
                                 <div class="field-error">Join date is required</div>
@@ -488,7 +561,7 @@
                         @if (currentMember.MembershipTypeID > 0 && currentMember.JoinDate != DateTime.MinValue && currentMember.ExpirationDate.HasValue)
                         {
                             <div class="expiration-preview">
-                                <small style="color: #5cb85c; font-weight: 500;">📅 Expiration: @currentMember.ExpirationDate.Value.ToString("MM/dd/yyyy")</small>
+                                <small style="color: #e74c3c; font-weight: 500;"> Expiration: @currentMember.ExpirationDate.Value.ToString("MM/dd/yyyy")</small>
                             </div>
                         }
                     </div>
@@ -605,7 +678,7 @@
     <div class="modal-body">
         <div class="confirmation-content text-only">
             <h3>Archive Member</h3>
-            <p>You are about to archive <strong>@selectedMember?.FirstName @selectedMember?.LastName</strong>.</p>
+            <p>You are about to archive <strong>@(selectedMember != null ? GetDisplayName(selectedMember.FirstName, selectedMember.MiddleInitial, selectedMember.LastName) : "")</strong>.</p>
             <p class="confirmation-warning">This will remove the member from the active list. Continue?</p>
         </div>
     </div>
@@ -819,19 +892,19 @@
                  background: #f8f9fa;
              }
 
-     .member-info {
-         display: flex;
-         align-items: center;
-         gap: 10px;
-     }
+    .member-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
 
         .member-info span {
-            font-weight: 600;
+            font-weight: normal;
             color: #1f2b3d;
             white-space: nowrap;
             display: inline-flex;
             align-items: center;
-     }
+        }
 
      .member-avatar {
          width: 36px;
@@ -1128,13 +1201,13 @@
         color: #f39c12;
      }
 
-     .expiration-preview {
-         margin-top: 8px;
-         padding: 6px 10px;
-         background: #f0f9ff;
-         border-radius: 6px;
-         border-left: 3px solid #5cb85c;
-     }
+    .expiration-preview {
+        margin-top: 8px;
+        padding: 6px 10px;
+        background: #fff4f4;
+        border-radius: 6px;
+        border-left: 3px solid #e74c3c;
+    }
 
      /* Status Badge Styling */
      .status-badge {
@@ -1449,9 +1522,9 @@
          margin: 0;
      }
 
-    .expired-table {
+     .expired-table {
         margin-top: 0; /* align header gap with active members table */
-    }
+     }
 
      .expired-table tbody tr {
          background: #fff5f5;
@@ -1544,6 +1617,41 @@
          border-radius: 8px;
          color: #856404;
          margin-bottom: 15px;
+     }
+
+     .paymongo-info {
+         background: #e3f2fd;
+         border: 1px solid #90caf9;
+         border-radius: 6px;
+         padding: 12px;
+         margin-top: 8px;
+     }
+
+     .paymongo-info p {
+         margin: 0;
+         font-size: 13px;
+         color: #1976d2;
+         line-height: 1.4;
+     }
+
+     .paymongo-info strong {
+         color: #1565c0;
+     }
+
+     .btn-verify {
+         background: #2196F3;
+         color: white;
+     }
+
+     .btn-verify:hover {
+         background: #1976D2;
+         transform: translateY(-1px);
+         box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+     }
+
+     .btn-verify:disabled {
+         opacity: 0.6;
+         cursor: not-allowed;
      }
 
     .info-box {
@@ -1668,6 +1776,7 @@
 </style>
 
 @code {
+    private string currentUserRole = "";
     private string searchQuery = "";
     private string expiredSearchQuery = "";
     private bool showModal = false;
@@ -1690,6 +1799,7 @@
     private List<TrainerSchedule> trainerSchedules = new();
     private List<TrainerSchedule> visibleTrainerSchedules = new();
     private List<TrainerSchedule> visibleRenewTrainerSchedules = new();
+    private bool lockIdentityFields => isEditMode && (currentUserRole == "admin" || currentUserRole == "staff");
     private int selectedTrainerScheduleId = 0;
     private bool isInitializingTrainerSelection = false;
     // Renew modal trainer selection
@@ -1716,9 +1826,21 @@
     private bool isRenewing = false;
     private string? renewError;
     private List<string> renewErrors = new List<string>();
+    
+    // PayMongo payment variables for renewal
+    private bool isProcessingRenewalPayment = false;
+    private bool isVerifyingRenewalPayment = false;
+    private string? renewalPayMongoCheckoutUrl = null;
+    private string? pendingRenewalPaymentIntentId = null;
+    private string? pendingRenewalPaymentLinkId = null;
+    private bool showVerifyRenewalPaymentButton = false;
+    private System.Threading.Timer? renewalPaymentCheckTimer = null;
 
     protected override async Task OnInitializedAsync()
     {
+        // Get current user role for edit permissions
+        currentUserRole = (await AuthService.GetCurrentUserRole())?.ToLower() ?? "";
+
         await ReleaseCompletedTrainerSchedulesAsync();
         await LoadMembersFromDatabase();
         await LoadTrainersFromDatabase();
@@ -1773,32 +1895,42 @@
     {
         var bookedScheduleIdsQuery = GetBookedTrainerScheduleIdsQuery();
 
-        var availableTrainerIdsQuery = Context.TrainerSchedules
+        // Get IDs of trainers that currently have at least one available schedule
+        var availableTrainerIds = await Context.TrainerSchedules
             .Where(ts => ts.IsAvailable && !bookedScheduleIdsQuery.Contains(ts.TrainerScheduleID))
             .Select(ts => ts.TrainerID)
-            .Distinct();
+            .Distinct()
+            .ToListAsync();
 
-        var trainersList = await Context.Trainers
-                .AsNoTracking()
-            .Where(t => availableTrainerIdsQuery.Contains(t.TrainerID))
-                .OrderBy(t => t.LastName)
-                .ThenBy(t => t.FirstName)
-                .ToListAsync();
+        IQueryable<Trainer> trainersQuery = Context.Trainers.AsNoTracking();
 
+        // If there are trainers with available schedules, show only them.
+        // If there are none, fall back to showing ALL trainers so the dropdown is never empty.
+        if (availableTrainerIds.Any())
+        {
+            trainersQuery = trainersQuery.Where(t => availableTrainerIds.Contains(t.TrainerID));
+        }
+
+        var trainersList = await trainersQuery
+            .OrderBy(t => t.LastName)
+            .ThenBy(t => t.FirstName)
+            .ToListAsync();
+
+        // When editing a member, ensure their current trainer is always in the list
         if (includeTrainerId.HasValue && !trainersList.Any(t => t.TrainerID == includeTrainerId.Value))
+        {
+            var currentTrainer = await Context.Trainers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
+            if (currentTrainer != null)
             {
-                var currentTrainer = await Context.Trainers
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(t => t.TrainerID == includeTrainerId.Value);
-                if (currentTrainer != null)
-                {
                 trainersList.Add(currentTrainer);
                 trainersList = trainersList
-                        .OrderBy(t => t.LastName)
-                        .ThenBy(t => t.FirstName)
-                        .ToList();
-                }
+                    .OrderBy(t => t.LastName)
+                    .ThenBy(t => t.FirstName)
+                    .ToList();
             }
+        }
 
         return trainersList;
     }
@@ -1970,34 +2102,72 @@
         return $"{firstName?.FirstOrDefault()}{lastName?.FirstOrDefault()}".ToUpper();
     }
 
+    // Helper method to format name for display with proper capitalization
+    private string GetDisplayName(string firstName, string middleInitial, string lastName)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(firstName))
+            parts.Add(CapitalizeName(firstName));
+        if (!string.IsNullOrWhiteSpace(middleInitial))
+            parts.Add(CapitalizeName(middleInitial));
+        if (!string.IsNullOrWhiteSpace(lastName))
+            parts.Add(CapitalizeName(lastName));
+        
+        return string.Join(" ", parts);
+    }
+
     private void HandleSearch()
     {
         var today = DateTime.Today;
-        var allMembers = members;
-
-        if (!string.IsNullOrWhiteSpace(searchQuery))
-        {
-            allMembers = members.Where(m =>
-                m.FirstName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                m.LastName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                m.Email.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                m.ContactNumber.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                m.Address.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                (m.Trainer != null && m.Trainer.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
-            ).ToList();
-        }
-
-        // Separate active and expired/inactive members
-        filteredMembers = allMembers.Where(m => 
+        
+        // First, get only ACTIVE members (not expired) for the active table search
+        var activeMembersOnly = members.Where(m => 
             m.Status == "Active" && 
             (m.ExpirationDate == null || m.ExpirationDate.Value.Date > today)
         ).ToList();
 
-        expiredInactiveMembers = allMembers.Where(m => 
-            m.Status == "Inactive" || 
-            (m.ExpirationDate.HasValue && m.ExpirationDate.Value.Date <= today)
-        ).OrderByDescending(m => m.ExpirationDate ?? DateTime.MinValue)
-        .ToList();
+        // Apply search filter ONLY to active members
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            var query = searchQuery.Trim();
+            filteredMembers = activeMembersOnly.Where(m =>
+            {
+                // Check individual name parts
+                var matchesFirstName = m.FirstName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesLastName = m.LastName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesMiddleInitial = !string.IsNullOrEmpty(m.MiddleInitial) && 
+                                         m.MiddleInitial.Contains(query, StringComparison.OrdinalIgnoreCase);
+                
+                // Check full display name (FirstName + MiddleInitial + LastName)
+                var fullDisplayName = GetDisplayName(m.FirstName, m.MiddleInitial, m.LastName);
+                var matchesFullName = fullDisplayName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                
+                // Check other fields
+                var matchesEmail = m.Email.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesContact = m.ContactNumber.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesAddress = m.Address.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesTrainer = m.Trainer != null && m.Trainer.FullName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                
+                return matchesFirstName || matchesLastName || matchesMiddleInitial || matchesFullName ||
+                       matchesEmail || matchesContact || matchesAddress || matchesTrainer;
+            }).ToList();
+        }
+        else
+        {
+            // If no search query, show all active members
+            filteredMembers = activeMembersOnly;
+        }
+
+        // Keep expired/inactive members separate (don't change them during active search)
+        // Only update if expired search query is being used
+        if (string.IsNullOrWhiteSpace(expiredSearchQuery))
+        {
+            expiredInactiveMembers = members.Where(m => 
+                m.Status == "Inactive" || 
+                (m.ExpirationDate.HasValue && m.ExpirationDate.Value.Date <= today)
+            ).OrderByDescending(m => m.ExpirationDate ?? DateTime.MinValue)
+            .ToList();
+        }
     }
 
     private void FilterExpiredMembers()
@@ -2011,18 +2181,31 @@
         {
             var query = expiredSearchQuery.Trim();
             baseQuery = baseQuery.Where(m =>
-                m.FirstName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                m.LastName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                m.Email.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                m.ContactNumber.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                m.Address.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                (m.Trainer != null && m.Trainer.FullName.Contains(query, StringComparison.OrdinalIgnoreCase))
-            );
+            {
+                // Check individual name parts
+                var matchesFirstName = m.FirstName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesLastName = m.LastName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesMiddleInitial = !string.IsNullOrEmpty(m.MiddleInitial) && 
+                                         m.MiddleInitial.Contains(query, StringComparison.OrdinalIgnoreCase);
+                
+                // Check full display name (FirstName + MiddleInitial + LastName)
+                var fullDisplayName = GetDisplayName(m.FirstName, m.MiddleInitial, m.LastName);
+                var matchesFullName = fullDisplayName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                
+                // Check other fields
+                var matchesEmail = m.Email.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesContact = m.ContactNumber.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesAddress = m.Address.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var matchesTrainer = m.Trainer != null && m.Trainer.FullName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                
+                return matchesFirstName || matchesLastName || matchesMiddleInitial || matchesFullName ||
+                       matchesEmail || matchesContact || matchesAddress || matchesTrainer;
+            });
         }
 
         expiredInactiveMembers = baseQuery
             .OrderByDescending(m => m.ExpirationDate ?? DateTime.MinValue)
-            .ToList();
+        .ToList();
     }
 
     private void OnTrainerSelectionChanged()
@@ -2204,7 +2387,8 @@
                 await LoadMembersFromDatabase();
                 await LoadTrainersFromDatabase();
                 CloseArchiveConfirmation();
-                ToastService.ShowSuccess("Archived successfully");
+                // Use warning type for destructive-but-successful actions (red background with check)
+                ToastService.ShowWarning("Archived successfully");
             }
             catch (Exception ex)
             {
@@ -2284,6 +2468,20 @@
         }
     }
 
+    // Helper method to capitalize first letter of each name
+    private string CapitalizeName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return name;
+        
+        name = name.Trim();
+        if (name.Length == 0)
+            return name;
+        
+        // Capitalize first letter, lowercase the rest
+        return char.ToUpper(name[0]) + (name.Length > 1 ? name.Substring(1).ToLower() : "");
+    }
+
     private async Task SaveMember()
     {
         if (!ValidateForm())
@@ -2292,6 +2490,14 @@
             return;
         }
 
+        // Capitalize names before saving
+        currentMember.FirstName = CapitalizeName(currentMember.FirstName);
+        if (!string.IsNullOrWhiteSpace(currentMember.MiddleInitial))
+        {
+            currentMember.MiddleInitial = CapitalizeName(currentMember.MiddleInitial);
+        }
+        currentMember.LastName = CapitalizeName(currentMember.LastName);
+
         try
         {
             if (isEditMode)
@@ -2299,6 +2505,25 @@
                 var existingMember = await Context.Members.FindAsync(currentMember.MemberID);
                 if (existingMember != null)
                 {
+                    // Check if anything actually changed; if not, do nothing
+                    bool hasChanges =
+                        existingMember.FirstName != currentMember.FirstName ||
+                        existingMember.MiddleInitial != currentMember.MiddleInitial ||
+                        existingMember.LastName != currentMember.LastName ||
+                        existingMember.ContactNumber != currentMember.ContactNumber ||
+                        existingMember.Email != currentMember.Email ||
+                        existingMember.Address != currentMember.Address ||
+                        existingMember.JoinDate != currentMember.JoinDate ||
+                        existingMember.MembershipTypeID != currentMember.MembershipTypeID ||
+                        existingMember.TrainerID != currentMember.TrainerID ||
+                        existingMember.TrainerScheduleID != currentMember.TrainerScheduleID;
+
+                    if (!hasChanges)
+                    {
+                        ToastService.ShowInfo("No changes to update.");
+                        return;
+                    }
+
                     var previousScheduleId = existingMember.TrainerScheduleID;
                     existingMember.FirstName = currentMember.FirstName;
                     existingMember.MiddleInitial = currentMember.MiddleInitial;
@@ -2622,6 +2847,48 @@
         CalculateRenewPrice();
     }
 
+    private void OnRenewPaymentMethodChanged()
+    {
+        if (renewPaymentMethod != "PayMongo")
+        {
+            // Reset PayMongo state when switching away
+            showVerifyRenewalPaymentButton = false;
+            pendingRenewalPaymentIntentId = null;
+            pendingRenewalPaymentLinkId = null;
+            renewalPayMongoCheckoutUrl = null;
+        }
+    }
+
+    private void ResetRenewModalState()
+    {
+        showRenewModal = false;
+        memberToRenew = null;
+        renewMembershipTypeId = 0;
+        renewMembershipType = null;
+        renewPaymentMethod = "Cash";
+        renewPromotionId = 0;
+        selectedRenewPromotion = null;
+        renewDiscountAmount = 0;
+        renewFinalPrice = 0;
+        renewError = null;
+        renewErrors.Clear();
+        renewTrainerId = null;
+        renewTrainerScheduleId = null;
+        availableRenewTrainers = new();
+        visibleRenewTrainerSchedules = new();
+        // Reset PayMongo payment state
+        showVerifyRenewalPaymentButton = false;
+        pendingRenewalPaymentIntentId = null;
+        pendingRenewalPaymentLinkId = null;
+        renewalPayMongoCheckoutUrl = null;
+        isProcessingRenewalPayment = false;
+        isVerifyingRenewalPayment = false;
+        // Stop auto-verification timer
+        renewalPaymentCheckTimer?.Dispose();
+        renewalPaymentCheckTimer = null;
+        StateHasChanged();
+    }
+
     private void CalculateRenewPrice()
     {
         if (renewMembershipType == null)
@@ -2690,6 +2957,13 @@
             return;
         }
 
+        // If PayMongo payment, process payment first
+        if (renewPaymentMethod == "PayMongo")
+        {
+            await ProcessRenewalPayMongoPayment();
+            return;
+        }
+
         try
         {
             isRenewing = true;
@@ -2729,7 +3003,8 @@
                 MemberID = member.MemberID,
                 Amount = renewFinalPrice,
                 PaymentDate = DateTime.Now,
-                PaymentType = renewPaymentMethod
+                PaymentType = renewPaymentMethod,
+                IsOnlinePayment = false
             };
             Context.Payments.Add(payment);
 
@@ -2761,10 +3036,13 @@
             await LoadTrainersFromDatabase();
 
             CloseRenewModal();
-            await JSRuntime.InvokeVoidAsync("alert", 
-                $"Membership renewed successfully for {member.FirstName} {member.LastName}!\n" +
-                $"New expiration date: {newExpirationDate:MM/dd/yyyy}\n" +
-                $"Amount paid: ₱{renewFinalPrice:N2}");
+
+            // Use toast notification instead of browser alert for successful renewal
+            var renewedMessage =
+                $"Membership renewed for {member.FirstName} {member.LastName}. " +
+                $"New expiration: {newExpirationDate:MM/dd/yyyy}. " +
+                $"Amount paid: ₱{renewFinalPrice:N2}.";
+            ToastService.ShowSuccess(renewedMessage);
         }
         catch (Exception ex)
         {
@@ -2788,6 +3066,311 @@
         finally
         {
             isRenewing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ProcessRenewalPayMongoPayment()
+    {
+        if (memberToRenew == null)
+            return;
+
+        isProcessingRenewalPayment = true;
+        isRenewing = true;
+        StateHasChanged();
+
+        try
+        {
+            var memberName = $"{memberToRenew.FirstName} {memberToRenew.LastName}".Trim();
+            var description = $"Membership renewal for {memberName} - {renewMembershipType?.TypeName ?? "Membership"}";
+            var referenceId = $"RENEWAL-{memberToRenew.MemberID}-{DateTime.Now:yyyyMMddHHmmss}";
+
+            var paymentResponse = await PayMongoService.CreatePaymentLinkAsync(
+                renewFinalPrice,
+                description,
+                referenceId
+            );
+
+            if (!paymentResponse.Success)
+            {
+                renewError = $"Failed to create payment link: {paymentResponse.Message}";
+                ToastService.ShowError($"Payment error: {paymentResponse.Message}");
+                isProcessingRenewalPayment = false;
+                isRenewing = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Store payment info temporarily (DO NOT save to database yet)
+            pendingRenewalPaymentIntentId = paymentResponse.PaymentIntentId;
+            pendingRenewalPaymentLinkId = paymentResponse.PaymentLinkId;
+            renewalPayMongoCheckoutUrl = paymentResponse.CheckoutUrl;
+            showVerifyRenewalPaymentButton = true;
+
+            // Open PayMongo checkout in new window/tab
+            await JSRuntime.InvokeVoidAsync("window.open", renewalPayMongoCheckoutUrl, "_blank");
+
+            ToastService.ShowInfo("Payment page opened. After completing payment, return here - it will verify automatically.");
+            
+            // Start automatic payment checking (every 2 seconds)
+            StartRenewalAutoPaymentVerification();
+            
+            // Also set up focus event to check immediately when user returns
+            await SetupRenewalFocusCheck();
+            
+            // Check immediately after a short delay
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                await InvokeAsync(async () => await CheckRenewalPaymentStatusAutomatically());
+            });
+            
+            // Keep modal open so user can verify payment
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error processing renewal PayMongo payment: {ex.Message}");
+            renewError = $"Error processing payment: {ex.Message}";
+            ToastService.ShowError($"Payment error: {ex.Message}");
+        }
+        finally
+        {
+            isProcessingRenewalPayment = false;
+            isRenewing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void StartRenewalAutoPaymentVerification()
+    {
+        // Stop any existing timer
+        renewalPaymentCheckTimer?.Dispose();
+        
+        // Start checking payment status every 2 seconds
+        renewalPaymentCheckTimer = new System.Threading.Timer(async _ =>
+        {
+            await CheckRenewalPaymentStatusAutomatically();
+        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+    }
+
+    private async Task CheckRenewalPaymentStatusAutomatically()
+    {
+        if (string.IsNullOrEmpty(pendingRenewalPaymentIntentId) || !showVerifyRenewalPaymentButton || isVerifyingRenewalPayment || !showRenewModal)
+            return;
+
+        try
+        {
+            // Check payment status - try link ID first, then intent ID
+            var paymentIdToCheck = !string.IsNullOrEmpty(pendingRenewalPaymentLinkId) ? pendingRenewalPaymentLinkId : pendingRenewalPaymentIntentId;
+            var paymentStatus = await PayMongoService.CheckPaymentStatusAsync(paymentIdToCheck ?? "");
+            System.Diagnostics.Debug.WriteLine($"Auto-check renewal payment status (ID: {paymentIdToCheck}): {paymentStatus.Status}");
+            
+            // PayMongo uses various status values - check for all possible "paid" statuses
+            var statusLower = paymentStatus.Status?.ToLower() ?? "";
+            var isPaid = statusLower == "succeeded" || 
+                        statusLower == "paid" ||
+                        statusLower == "paid_off" ||
+                        statusLower == "paidoff";
+
+            if (isPaid)
+            {
+                System.Diagnostics.Debug.WriteLine("Renewal payment detected as paid, auto-verifying...");
+                // Automatically verify and save
+                await InvokeAsync(async () =>
+                {
+                    await VerifyAndSaveRenewalPayment();
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Auto-check renewal payment error: {ex.Message}");
+        }
+    }
+
+    private async Task SetupRenewalFocusCheck()
+    {
+        // Set up JavaScript to check payment when window regains focus
+        await JSRuntime.InvokeVoidAsync("eval", @"
+            (function() {
+                if (window.paymongoRenewalAutoVerifySetup) return;
+                window.paymongoRenewalAutoVerifySetup = true;
+                
+                window.addEventListener('focus', function() {
+                    setTimeout(function() {
+                        window.dispatchEvent(new Event('checkRenewalPaymentStatus'));
+                    }, 500);
+                });
+                
+                window.addEventListener('visibilitychange', function() {
+                    if (!document.hidden) {
+                        setTimeout(function() {
+                            window.dispatchEvent(new Event('checkRenewalPaymentStatus'));
+                        }, 500);
+                    }
+                });
+            })();
+        ");
+        
+        // Also check immediately when setting up
+        await Task.Delay(1000);
+        await CheckRenewalPaymentStatusAutomatically();
+    }
+
+    private async Task VerifyAndSaveRenewalPayment()
+    {
+        if (string.IsNullOrEmpty(pendingRenewalPaymentIntentId) || memberToRenew == null)
+        {
+            ToastService.ShowError("No payment to verify.");
+            return;
+        }
+
+        isVerifyingRenewalPayment = true;
+        StateHasChanged();
+
+        try
+        {
+            // Check payment status with PayMongo - try link ID first, then intent ID
+            var paymentIdToCheck = !string.IsNullOrEmpty(pendingRenewalPaymentLinkId) ? pendingRenewalPaymentLinkId : pendingRenewalPaymentIntentId;
+            var paymentStatus = await PayMongoService.CheckPaymentStatusAsync(paymentIdToCheck ?? "");
+
+            // Check if payment is completed
+            var statusLower = paymentStatus.Status?.ToLower() ?? "";
+            var isPaid = statusLower == "succeeded" || 
+                        statusLower == "paid" ||
+                        statusLower == "paid_off" ||
+                        statusLower == "paidoff";
+            
+            System.Diagnostics.Debug.WriteLine($"Manual verify renewal - Payment status: {paymentStatus.Status}, IsPaid: {isPaid}");
+
+            if (isPaid)
+            {
+                // Payment confirmed - now save to database
+                var member = await Context.Members
+                    .Include(m => m.MembershipType)
+                    .FirstOrDefaultAsync(m => m.MemberID == memberToRenew.MemberID);
+
+                if (member == null)
+                {
+                    renewError = "Member not found.";
+                    isVerifyingRenewalPayment = false;
+                    StateHasChanged();
+                    return;
+                }
+
+                var previousScheduleId = member.TrainerScheduleID;
+
+                // Update membership
+                member.MembershipTypeID = renewMembershipTypeId;
+                member.Status = "Active";
+                var newExpirationDate = DateTime.Today.AddDays(renewMembershipType!.DurationInDays);
+                member.ExpirationDate = newExpirationDate;
+                member.TrainerID = renewTrainerId;
+                member.TrainerScheduleID = renewTrainerScheduleId;
+                await UpdateTrainerScheduleAvailability(previousScheduleId, member.TrainerScheduleID);
+                
+                Context.Members.Update(member);
+
+                // Create payment record with PayMongo info
+                var payment = new PaymentModel
+                {
+                    MemberID = member.MemberID,
+                    Amount = renewFinalPrice,
+                    PaymentDate = DateTime.Now,
+                    PaymentType = "PayMongo",
+                    PayMongoPaymentId = pendingRenewalPaymentIntentId,
+                    PayMongoStatus = "paid",
+                    IsOnlinePayment = true
+                };
+                Context.Payments.Add(payment);
+
+                // Save promotion usage if selected
+                if (selectedRenewPromotion != null && renewPromotionId > 0)
+                {
+                    var existingPromo = await Context.MemberPromos
+                        .FirstOrDefaultAsync(mp => mp.MemberID == member.MemberID && mp.PromotionID == selectedRenewPromotion.PromoID);
+                    
+                    if (existingPromo == null)
+                    {
+                        var memberPromo = new MemberPromo
+                        {
+                            MemberID = member.MemberID,
+                            PromotionID = selectedRenewPromotion.PromoID,
+                            DateUsed = DateTime.Now
+                        };
+                        Context.MemberPromos.Add(memberPromo);
+                    }
+                }
+
+                await Context.SaveChangesAsync();
+
+                ToastService.ShowSuccess("Payment verified! Membership renewed successfully.");
+                
+                // Stop auto-verification timer
+                renewalPaymentCheckTimer?.Dispose();
+                renewalPaymentCheckTimer = null;
+                
+                // Reset payment verification state
+                showVerifyRenewalPaymentButton = false;
+                pendingRenewalPaymentIntentId = null;
+                pendingRenewalPaymentLinkId = null;
+                renewalPayMongoCheckoutUrl = null;
+
+                // Reload data
+                await LoadMembersFromDatabase();
+                await LoadTrainersFromDatabase();
+
+                // Close modal
+                showRenewModal = false;
+                memberToRenew = null;
+                renewMembershipTypeId = 0;
+                renewMembershipType = null;
+                renewPaymentMethod = "Cash";
+                renewPromotionId = 0;
+                selectedRenewPromotion = null;
+                renewDiscountAmount = 0;
+                renewFinalPrice = 0;
+                renewError = null;
+                renewErrors.Clear();
+                renewTrainerId = null;
+                renewTrainerScheduleId = null;
+                availableRenewTrainers = new();
+                visibleRenewTrainerSchedules = new();
+                // Reset PayMongo payment state
+                showVerifyRenewalPaymentButton = false;
+                pendingRenewalPaymentIntentId = null;
+                pendingRenewalPaymentLinkId = null;
+                renewalPayMongoCheckoutUrl = null;
+                isProcessingRenewalPayment = false;
+                isVerifyingRenewalPayment = false;
+                // Stop auto-verification timer
+                renewalPaymentCheckTimer?.Dispose();
+                renewalPaymentCheckTimer = null;
+                StateHasChanged();
+            }
+            else
+            {
+                // Payment not completed
+                var statusMessage = paymentStatus.Status?.ToLower() ?? "unknown";
+                if (statusMessage == "pending" || statusMessage == "awaiting_payment_method")
+                {
+                    ToastService.ShowWarning("Payment is still pending. Please complete the payment first, then verify again.");
+                }
+                else
+                {
+                    ToastService.ShowError($"Payment not completed. Status: {paymentStatus.Status ?? "Unknown"}. Please complete the payment or cancel.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error verifying renewal payment: {ex.Message}");
+            ToastService.ShowError($"Error verifying payment: {ex.Message}");
+        }
+        finally
+        {
+            isVerifyingRenewalPayment = false;
             StateHasChanged();
         }
     }

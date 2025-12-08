@@ -3,12 +3,19 @@
 @using project.Data
 @using project.Models
 @using Microsoft.EntityFrameworkCore
+@using project.Services
+@inject IToastService ToastService
 
 <div class="members-container">
-    <!-- Page Header - No gaps with sidebar and top -->
+    <!-- Page Header - title only (search/add moved below like Members table) -->
     <div class="page-header">
         <h1 class="page-title">Promotions Management</h1>
-        <div class="header-actions">
+    </div>
+
+    <!-- Promotions Data Table -->
+    <div class="table-container">
+        <div class="table-toolbar">
+            <span class="table-title">Promotions</span>
             <input type="text"
                    class="search-bar"
                    placeholder="Search promotions..."
@@ -17,10 +24,6 @@
                    @onkeyup="HandleSearch" />
             <button class="add-member-btn" @onclick="OpenAddPromoModal">+ Create Promotion</button>
         </div>
-    </div>
-
-    <!-- Promotions Data Table -->
-    <div class="table-container">
         <table class="members-table">
             <thead>
                 <tr>
@@ -58,7 +61,7 @@
                                 <div class="promo-description">@promo.Description</div>
                             </td>
                             <td class="discount-cell">
-                                <span class="discount-rate">@promo.DiscountRate.ToString("P0")</span>
+                                <span class="discount-rate">@promo.DiscountRate.ToString("F0")%</span>
                             </td>
                             <td>@promo.StartDate.ToString("MMM dd, yyyy")</td>
                             <td>@promo.EndDate.ToString("MMM dd, yyyy")</td>
@@ -72,7 +75,7 @@
                                     <button class="action-btn edit-btn" @onclick="() => EditPromotion(promo)" title="Edit">
                                         <img src="/Newedit_icon.svg" class="action-icon" alt="Edit" />
                                     </button>
-                                    <button class="action-btn archive-btn" @onclick="() => ArchivePromotion(promo)" title="Archive">
+                                    <button class="action-btn archive-btn" @onclick="() => ShowArchiveConfirmation(promo)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </div>
@@ -183,6 +186,33 @@
             </div>
         </div>
     }
+
+    @if (showArchiveConfirmation)
+    {
+        <div class="modal-overlay" @onclick="CloseArchiveConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Archive Promotion</h2>
+                    <button class="close-btn" @onclick="CloseArchiveConfirmation">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Archive Promotion</h3>
+                        <p>You are about to archive <strong>@selectedPromotion?.PromoName</strong>.</p>
+                        <div class="confirmation-warning-box">
+                            This will remove the promotion from the active list but keep it in history.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseArchiveConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmArchivePromotion">Yes, Archive</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 <style>
@@ -197,7 +227,7 @@
         background: white;
         padding: 25px 30px;
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start; /* only title now */
         align-items: center;
         margin: 0 0 30px 0;
         border-radius: 10px;
@@ -209,12 +239,6 @@
         font-weight: 600;
         margin: 0;
         color: #333;
-    }
-
-    .header-actions {
-        display: flex;
-        gap: 15px;
-        align-items: center;
     }
 
     .search-bar {
@@ -260,6 +284,31 @@
         overflow-y: auto; /* scrollbar only if content is taller than viewport */
     }
 
+    /* Toolbar under header, like Members/Trainers */
+    .table-toolbar {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px 8px 16px;
+        margin-bottom: 4px;
+        gap: 10px;
+    }
+
+    .table-toolbar .table-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .table-toolbar .search-bar {
+        margin-left: auto;
+        max-width: 260px;
+    }
+
+    .table-toolbar .add-member-btn {
+        margin-left: 8px;
+        white-space: nowrap;
+    }
+
     .members-table {
         width: 100%;
         border-collapse: collapse;
@@ -295,7 +344,7 @@
             }
 
     .promo-name {
-        font-weight: 600;
+        font-weight: normal;
         color: #333;
         font-size: 14px;
     }
@@ -309,7 +358,7 @@
 
     /* Discount Rate Styling */
     .discount-cell {
-        font-weight: 600;
+        font-weight: normal;
     }
 
     .discount-rate {
@@ -319,7 +368,7 @@
         padding: 0;
         border-radius: 0;
         border: none;
-        font-weight: 600;
+        font-weight: normal;
     }
 
     /* Status Badges */
@@ -327,7 +376,7 @@
         padding: 6px 12px;
         border-radius: 20px;
         font-size: 12px;
-        font-weight: 600;
+        font-weight: normal;
         text-transform: uppercase;
     }
 
@@ -555,6 +604,26 @@
             line-height: 1.4;
         }
 
+    /* Confirmation modal */
+    .confirmation-modal {
+        max-width: 420px;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-warning-box {
+        background: #fff4ce;
+        border: 1px solid #ffe28a;
+        color: #c0392b;
+        font-weight: 600;
+        padding: 12px 16px;
+        border-radius: 8px;
+        text-align: center;
+        margin-top: 12px;
+    }
+
     /* Error message styles */
     .error-message {
         color: #e74c3c;
@@ -749,25 +818,38 @@
         StateHasChanged();
     }
 
-    private async Task ArchivePromotion(Promotion promo)
+    private Promotion? selectedPromotion;
+    private bool showArchiveConfirmation = false;
+
+    private void ShowArchiveConfirmation(Promotion promo)
     {
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", 
-            $"Are you sure you want to archive promotion '{promo.PromoName}'?");
-        
-        if (!confirm)
+        selectedPromotion = promo;
+        showArchiveConfirmation = true;
+    }
+
+    private void CloseArchiveConfirmation()
+    {
+        showArchiveConfirmation = false;
+        selectedPromotion = null;
+    }
+
+    private async Task ConfirmArchivePromotion()
+    {
+        if (selectedPromotion == null)
             return;
 
         try
         {
-            promo.IsArchived = true;
-            Context.Promotions.Update(promo);
+            selectedPromotion.IsArchived = true;
+            Context.Promotions.Update(selectedPromotion);
             await Context.SaveChangesAsync();
             await LoadPromotions();
-            await JSRuntime.InvokeVoidAsync("alert", "Promotion archived successfully.");
+            CloseArchiveConfirmation();
+            ToastService.ShowWarning("Promotion archived successfully");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error archiving promotion: {ex.Message}");
+            ToastService.ShowError($"Error archiving promotion: {ex.Message}");
         }
     }
 
@@ -818,38 +900,38 @@
 
         try
         {
-        if (isEditMode)
-        {
+            if (isEditMode)
+            {
                 // Fetch the entity from database to avoid tracking conflicts
                 var existingPromo = await Context.Promotions.FindAsync(currentPromo.PromoID);
-            if (existingPromo != null)
-            {
-                existingPromo.PromoName = currentPromo.PromoName;
-                existingPromo.Description = currentPromo.Description;
-                existingPromo.DiscountRate = currentPromo.DiscountRate;
-                existingPromo.StartDate = currentPromo.StartDate;
-                existingPromo.EndDate = currentPromo.EndDate;
+                if (existingPromo != null)
+                {
+                    existingPromo.PromoName = currentPromo.PromoName;
+                    existingPromo.Description = currentPromo.Description;
+                    existingPromo.DiscountRate = currentPromo.DiscountRate;
+                    existingPromo.StartDate = currentPromo.StartDate;
+                    existingPromo.EndDate = currentPromo.EndDate;
                     await Context.SaveChangesAsync();
-                    await JSRuntime.InvokeVoidAsync("alert", "Promotion updated successfully.");
+                    ToastService.ShowSuccess("Updated successfully");
                 }
                 else
                 {
-                    await JSRuntime.InvokeVoidAsync("alert", "Promotion not found.");
+                    ToastService.ShowError("Promotion not found.");
+                }
             }
-        }
-        else
-        {
+            else
+            {
                 Context.Promotions.Add(currentPromo);
                 await Context.SaveChangesAsync();
-                await JSRuntime.InvokeVoidAsync("alert", "Promotion created successfully.");
-        }
+                ToastService.ShowSuccess("Added successfully");
+            }
 
             await LoadPromotions();
-        CloseModal();
+            CloseModal();
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving promotion: {ex.Message}");
+            ToastService.ShowError($"Error saving promotion: {ex.Message}");
         }
     }
 

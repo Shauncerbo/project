@@ -1,0 +1,490 @@
+@page "/administration/archived"
+@layout MainLayout
+@using System.Linq
+@using System.Collections.Generic
+@using System.Threading.Tasks
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@inject project.Services.IAuthService AuthService
+@inject project.Services.IToastService ToastService
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Maui.Storage
+
+<div class="settings-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Archived Accounts</h1>
+        <p class="page-subtitle">View and manage archived staff/trainer accounts.</p>
+    </div>
+
+    <div class="account-management-card">
+        @if (accountIsLoading)
+        {
+            <div class="account-loading">Loading archived accounts...</div>
+        }
+        else if (archivedUsers == null || !archivedUsers.Any())
+        {
+            <div class="empty-state">
+                <h3>No Archived Accounts</h3>
+                <p>There are no archived accounts to display.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-container">
+                <table class="archived-table">
+                    <thead>
+                        <tr>
+                            <th>USERNAME</th>
+                            <th>ROLE</th>
+                            <th>ARCHIVED ON</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in archivedUsers)
+                        {
+                            <tr>
+                                <td>@user.Username</td>
+                                <td>@user.Role?.RoleName</td>
+                                <td>@(user.UpdatedAt.HasValue ? user.UpdatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
+                                <td class="account-actions">
+                                    <button class="btn-restore" @onclick="() => RestoreAccount(user)">Restore</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <!-- Restore Confirmation Modal -->
+    @if (showRestoreConfirmation && selectedRestoreUser != null)
+    {
+        <div class="modal-overlay" @onclick="CloseRestoreConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Restore Account</h2>
+                    <button class="close-btn" @onclick="CloseRestoreConfirmation">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Restore Account</h3>
+                        <p>You are about to restore <strong>@selectedRestoreUser.Username</strong>.</p>
+                        <p class="confirmation-warning">This will reactivate the account and make it available again. Continue?</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseRestoreConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmRestoreAccount" disabled="@isRestoringAccount">
+                        @(isRestoringAccount ? "Restoring..." : "Yes, Restore Account")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .settings-container {
+        padding: 30px;
+        background: white;
+    }
+
+    .page-header {
+        margin-bottom: 30px;
+    }
+
+    .page-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #234060;
+        margin: 0 0 8px 0;
+    }
+
+    .page-subtitle {
+        color: #666;
+        font-size: 14px;
+        margin: 0;
+    }
+
+    .account-management-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        padding: 25px;
+        margin-bottom: 20px;
+    }
+
+    .account-loading {
+        padding: 16px;
+        color: #555;
+    }
+
+    .account-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .table-container {
+        overflow-x: auto;
+        overflow-y: auto; /* Only shows scrollbar when content overflows */
+    }
+
+    .archived-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .archived-table thead {
+        background: #234060;
+        color: white;
+    }
+
+    .archived-table th {
+        padding: 14px 16px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .archived-table td {
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        color: #333;
+    }
+
+    .archived-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .btn-restore {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        background: #FFA500;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-restore:hover {
+        background: #ff8c00;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(255,165,0,0.3);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #999;
+    }
+
+    .empty-state h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #666;
+        margin: 0 0 8px 0;
+    }
+
+    .empty-state p {
+        font-size: 14px;
+        color: #999;
+        margin: 0;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 500px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        animation: fadeIn 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+        font-size: 22px;
+        color: #333;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 32px;
+        color: #999;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        transition: color 0.2s;
+    }
+
+    .close-btn:hover {
+        color: #333;
+    }
+
+    .modal-body {
+        padding: 24px;
+    }
+
+    .modal-footer {
+        padding: 20px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-cancel {
+        background: #f1f3f7;
+        color: #234060;
+    }
+
+    .btn-cancel:hover {
+        background: #e0e4e8;
+    }
+
+    .btn-danger {
+        background: #e74c3c;
+        color: white;
+    }
+
+    .btn-danger:hover:not([disabled]) {
+        background: #c0392b;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    .btn-danger[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    /* Confirmation Modal Styles */
+    .confirmation-modal {
+        max-width: 500px;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 24px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .confirmation-warning {
+        color: #e74c3c !important;
+        font-weight: 600;
+        background: #ffeaa7;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 15px !important;
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+@code {
+    private List<User> archivedUsers = new();
+    private bool accountIsLoading = false;
+    private bool showRestoreConfirmation = false;
+    private User? selectedRestoreUser;
+    private bool isRestoringAccount = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadArchivedAccounts();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadArchivedAccounts();
+    }
+
+    private async Task LoadArchivedAccounts()
+    {
+        accountIsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var availableRoles = await Context.Roles
+                .Where(r => r.RoleName.ToLower() == "staff" || r.RoleName.ToLower() == "trainer")
+                .Select(r => r.RoleID)
+                .ToListAsync();
+
+            var managedUsers = await Context.Users
+                .Include(u => u.Role)
+                .Where(u => availableRoles.Contains(u.RoleID))
+                .OrderBy(u => u.Username)
+                .ToListAsync();
+
+            // Filter for archived users (IsActive == false, null means active for backward compatibility)
+            archivedUsers = managedUsers.Where(u => u.IsActive == false).ToList();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error loading archived accounts: {ex.Message}");
+        }
+        finally
+        {
+            accountIsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void RestoreAccount(User user)
+    {
+        selectedRestoreUser = user;
+        showRestoreConfirmation = true;
+    }
+
+    private void CloseRestoreConfirmation()
+    {
+        showRestoreConfirmation = false;
+        selectedRestoreUser = null;
+        isRestoringAccount = false;
+    }
+
+    private async Task ConfirmRestoreAccount()
+    {
+        if (selectedRestoreUser == null || isRestoringAccount)
+            return;
+
+        isRestoringAccount = true;
+        StateHasChanged();
+
+        try
+        {
+            // Store username before closing modal
+            var username = selectedRestoreUser.Username;
+            var userId = selectedRestoreUser.UserID;
+
+            selectedRestoreUser.IsActive = true;
+            selectedRestoreUser.UpdatedAt = DateTime.Now;
+            Context.Users.Update(selectedRestoreUser);
+            await Context.SaveChangesAsync();
+            await LogAuditAction("Account Restored", "User", userId, username, $"Restored account: {username}");
+            await LoadArchivedAccounts();
+            CloseRestoreConfirmation();
+            ToastService.ShowSuccess($"Account '{username}' restored successfully!");
+        }
+        catch (Exception ex)
+        {
+            var username = selectedRestoreUser?.Username ?? "Unknown";
+            var userId = selectedRestoreUser?.UserID;
+            await LogAuditAction("Account Restore Failed", "User", userId, username, $"Failed to restore account: {ex.Message}", "Failed", ex.Message);
+            ToastService.ShowError($"Error restoring account: {ex.Message}");
+        }
+        finally
+        {
+            isRestoringAccount = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
+            int? userId = null;
+            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
+            {
+                userId = parsedUserId;
+            }
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
+    }
+}
+

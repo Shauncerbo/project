@@ -1,0 +1,893 @@
+@page "/administration"
+@layout MainLayout
+@using System.Linq
+@using System.Collections.Generic
+@using System.Threading.Tasks
+@inject IJSRuntime JSRuntime
+@inject AppDbContext Context
+@inject project.Services.IAuthService AuthService
+@inject project.Services.IToastService ToastService
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Maui.Storage
+
+<div class="settings-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Account Management</h1>
+        <p class="page-subtitle">Create and manage staff/trainer logins.</p>
+    </div>
+
+    <!-- Account Management -->
+    <div class="account-management-card">
+        <div class="account-header">
+            <div>
+                <h2>Account Management</h2>
+                <p>Create and manage staff/trainer logins.</p>
+            </div>
+            <button class="btn-primary" @onclick="OpenAccountModal">
+                + Add Account
+            </button>
+        </div>
+
+        @if (accountLoadError != null)
+        {
+            <div class="account-error">@accountLoadError</div>
+        }
+        else if (accountIsLoading)
+        {
+            <div class="account-loading">Loading accounts...</div>
+        }
+        else if (activeUsers == null || !activeUsers.Any())
+        {
+            <div class="empty-state small">
+                <h3>No Staff/Trainer Accounts</h3>
+                <p>Create the first account to allow staff or trainers to log in.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-container">
+                <table class="archived-table">
+                    <thead>
+                        <tr>
+                            <th>USERNAME</th>
+                            <th>ROLE</th>
+                            <th>STATUS</th>
+                            <th>CREATED</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in activeUsers)
+                        {
+                            <tr>
+                                <td>@user.Username</td>
+                                <td>@user.Role?.RoleName</td>
+                                <td>
+                                    <span class="status-badge @(user.IsActive == true ? "status-active" : "status-inactive")">
+                                        @(user.IsActive == true ? "Active" : "Inactive")
+                                    </span>
+                                </td>
+                                <td>@(user.CreatedAt.HasValue ? user.CreatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
+                                <td class="account-actions">
+                                    <button class="btn-secondary" @onclick="() => OpenPasswordModal(user)">Change Password</button>
+                                    <button class="btn-archive" @onclick="() => ArchiveAccount(user)">
+                                        Archive
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <!-- Add Account Modal -->
+    @if (showAccountModal)
+    {
+        <div class="modal-overlay" @onclick="CloseAccountModal">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Add New Account</h2>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(accountModalError))
+                    {
+                        <div class="account-error">@accountModalError</div>
+                    }
+                    <div class="form-group">
+                        <label class="required">Username</label>
+                        <input type="text" class="form-control" @bind="newAccountUsername" placeholder="Enter username" />
+                    </div>
+                    <div class="form-group">
+                        <label class="required">Password</label>
+                        <input type="password" class="form-control" @bind="newAccountPassword" placeholder="Enter password" />
+                    </div>
+                    <div class="form-group">
+                        <label class="required">Role</label>
+                        <select class="form-control" @bind="selectedRoleId">
+                            @foreach (var role in availableRoles)
+                            {
+                                <option value="@role.RoleID">@role.RoleName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" @onclick="CloseAccountModal">Cancel</button>
+                    <button class="btn-primary" @onclick="SaveAccount" disabled="@isSavingAccount">
+                        @(isSavingAccount ? "Saving..." : "Save")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Change Password Modal -->
+    @if (showPasswordModal && selectedPasswordUser != null)
+    {
+        <div class="modal-overlay" @onclick="ClosePasswordModal">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Change Password</h2>
+                </div>
+                <div class="modal-body">
+                    <p>Change password for: <strong>@selectedPasswordUser.Username</strong></p>
+                    @if (!string.IsNullOrEmpty(passwordModalError))
+                    {
+                        <div class="account-error">@passwordModalError</div>
+                    }
+                    <div class="form-group">
+                        <label class="required">New Password</label>
+                        <input type="password" class="form-control" @bind="passwordInput" placeholder="Enter new password" />
+                    </div>
+                    <div class="form-group">
+                        <label class="required">Confirm Password</label>
+                        <input type="password" class="form-control" @bind="passwordConfirm" placeholder="Confirm new password" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" @onclick="ClosePasswordModal">Cancel</button>
+                    <button class="btn-primary" @onclick="SavePasswordChange" disabled="@isSavingPassword">
+                        @(isSavingPassword ? "Saving..." : "Update Password")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Archive Confirmation Modal -->
+    @if (showArchiveConfirmation && selectedArchiveUser != null)
+    {
+        <div class="modal-overlay" @onclick="CloseArchiveConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Archive Account</h2>
+                    <button class="close-btn" @onclick="CloseArchiveConfirmation">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Archive Account</h3>
+                        <p>You are about to archive <strong>@selectedArchiveUser.Username</strong>.</p>
+                        <p class="confirmation-warning">This will remove the account from the active list. Continue?</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseArchiveConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmArchiveAccount" disabled="@isArchivingAccount">
+                        @(isArchivingAccount ? "Archiving..." : "Yes, Archive Account")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .settings-container {
+        padding: 30px;
+        background: white;
+    }
+
+    .page-header {
+        margin-bottom: 30px;
+    }
+
+    .page-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #234060;
+        margin: 0 0 8px 0;
+    }
+
+    .page-subtitle {
+        color: #666;
+        font-size: 14px;
+        margin: 0;
+    }
+
+    .account-management-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        padding: 25px;
+        margin-bottom: 20px;
+    }
+
+    .account-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+    }
+
+    .account-header h2 {
+        margin: 0;
+        font-size: 22px;
+        color: #234060;
+    }
+
+    .account-header p {
+        margin: 4px 0 0;
+        color: #777;
+        font-size: 14px;
+    }
+
+    .btn-primary {
+        background: #234060;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover {
+        background: #1a3450;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #f1f3f7;
+        color: #234060;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-secondary:hover {
+        background: #e0e4e8;
+    }
+
+    .btn-archive {
+        background: #fbeaea;
+        color: #b71c1c;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+        font-size: 13px;
+    }
+
+    .btn-archive:hover {
+        background: #f8d7da;
+        color: #7f0000;
+    }
+
+    .account-error {
+        background: #fdecea;
+        color: #b0382f;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-top: 16px;
+    }
+
+    .account-loading {
+        padding: 16px;
+        color: #555;
+    }
+
+    .account-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .table-container {
+        overflow-x: auto;
+        overflow-y: auto; /* Only shows scrollbar when content overflows */
+    }
+
+    .archived-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .archived-table thead {
+        background: #234060;
+        color: white;
+    }
+
+    .archived-table th {
+        padding: 14px 16px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .archived-table td {
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        color: #333;
+    }
+
+    .archived-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .status-active {
+        background: #e6f6ed;
+        color: #1d8348;
+    }
+
+    .status-inactive {
+        background: #fdecea;
+        color: #b0382f;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #999;
+    }
+
+    .empty-state.small {
+        padding: 40px 20px;
+    }
+
+    .empty-state h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #666;
+        margin: 0 0 8px 0;
+    }
+
+    .empty-state p {
+        font-size: 14px;
+        color: #999;
+        margin: 0;
+    }
+
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .modal-card {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 420px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        animation: fadeIn 0.2s ease;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 500px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        animation: fadeIn 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 500px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        animation: fadeIn 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+        font-size: 22px;
+        color: #333;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 32px;
+        color: #999;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        transition: color 0.2s;
+    }
+
+    .close-btn:hover {
+        color: #333;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .modal-footer {
+        padding: 20px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-cancel {
+        background: #f1f3f7;
+        color: #234060;
+    }
+
+    .btn-cancel:hover {
+        background: #e0e4e8;
+    }
+
+    .btn-danger {
+        background: #e74c3c;
+        color: white;
+    }
+
+    .btn-danger:hover:not([disabled]) {
+        background: #c0392b;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    .btn-danger[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    /* Confirmation Modal Styles */
+    .confirmation-modal {
+        max-width: 500px;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 24px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .confirmation-warning {
+        color: #e74c3c !important;
+        font-weight: 600;
+        background: #ffeaa7;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 15px !important;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 8px;
+        color: #333;
+    }
+
+    .required::after {
+        content: " *";
+        color: #e74c3c;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #234060;
+        box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+@code {
+    private List<User> activeUsers = new();
+    private List<User> archivedUsers = new();
+    private List<Role> availableRoles = new();
+    private bool accountIsLoading = false;
+    private bool showAccountModal = false;
+    private bool isSavingAccount = false;
+    private string? accountLoadError;
+    private string accountModalError = "";
+    private string newAccountUsername = "";
+    private string newAccountPassword = "";
+    private int selectedRoleId = 0;
+    private bool showPasswordModal = false;
+    private User? selectedPasswordUser;
+    private string passwordInput = "";
+    private string passwordConfirm = "";
+    private string passwordModalError = "";
+    private bool isSavingPassword = false;
+    private bool showArchiveConfirmation = false;
+    private User? selectedArchiveUser;
+    private bool isArchivingAccount = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAccountData();
+    }
+
+    private async Task LoadAccountData()
+    {
+        accountIsLoading = true;
+        accountLoadError = null;
+        StateHasChanged();
+
+        try
+        {
+            availableRoles = await Context.Roles
+                .Where(r => r.RoleName.ToLower() == "staff" || r.RoleName.ToLower() == "trainer")
+                .OrderBy(r => r.RoleName)
+                .ToListAsync();
+
+            if (selectedRoleId == 0 && availableRoles.Any())
+            {
+                selectedRoleId = availableRoles.First().RoleID;
+            }
+
+            var managedRoleIds = availableRoles.Select(r => r.RoleID).ToList();
+
+            var managedUsers = await Context.Users
+                .Include(u => u.Role)
+                .Where(u => managedRoleIds.Contains(u.RoleID))
+                .OrderBy(u => u.Username)
+                .ToListAsync();
+
+            activeUsers = managedUsers.Where(u => u.IsActive == true).ToList();
+            archivedUsers = managedUsers.Where(u => u.IsActive == false).ToList();
+        }
+        catch (Exception ex)
+        {
+            accountLoadError = $"Error loading accounts: {ex.Message}";
+        }
+        finally
+        {
+            accountIsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenAccountModal()
+    {
+        accountModalError = "";
+        newAccountUsername = "";
+        newAccountPassword = "";
+        if (availableRoles.Any())
+        {
+            selectedRoleId = availableRoles.First().RoleID;
+        }
+        showAccountModal = true;
+    }
+
+    private void CloseAccountModal()
+    {
+        showAccountModal = false;
+        accountModalError = "";
+        isSavingAccount = false;
+    }
+
+    private async Task SaveAccount()
+    {
+        if (isSavingAccount)
+            return;
+
+        accountModalError = "";
+
+        if (string.IsNullOrWhiteSpace(newAccountUsername) || string.IsNullOrWhiteSpace(newAccountPassword))
+        {
+            accountModalError = "Username and password are required.";
+            return;
+        }
+
+        if (!availableRoles.Any())
+        {
+            accountModalError = "No roles available. Please add Staff or Trainer roles first.";
+            return;
+        }
+
+        isSavingAccount = true;
+
+        try
+        {
+            var username = newAccountUsername.Trim();
+
+            var exists = await Context.Users
+                .AnyAsync(u => u.Username.ToLower() == username.ToLower());
+
+            if (exists)
+            {
+                accountModalError = "Username already exists.";
+                ToastService.ShowError("Username already exists.");
+                isSavingAccount = false;
+                StateHasChanged();
+                return;
+            }
+
+            var user = new User
+            {
+                Username = username,
+                Password = newAccountPassword.Trim(),
+                RoleID = selectedRoleId,
+                IsActive = true,
+                CreatedAt = DateTime.Now
+            };
+
+            Context.Users.Add(user);
+            await Context.SaveChangesAsync();
+
+            var roleName = availableRoles.FirstOrDefault(r => r.RoleID == selectedRoleId)?.RoleName ?? "Unknown";
+            await LogAuditAction("Account Created", "User", user.UserID, username, $"Created new {roleName} account: {username}");
+            await LoadAccountData();
+            CloseAccountModal();
+            ToastService.ShowSuccess("Account created successfully.");
+        }
+        catch (Exception ex)
+        {
+            await LogAuditAction("Account Creation Failed", "User", null, newAccountUsername, $"Failed to create account: {ex.Message}", "Failed", ex.Message);
+            accountModalError = $"Error creating account: {ex.Message}";
+            ToastService.ShowError($"Error creating account: {ex.Message}");
+        }
+        finally
+        {
+            isSavingAccount = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenPasswordModal(User user)
+    {
+        selectedPasswordUser = user;
+        passwordInput = "";
+        passwordConfirm = "";
+        passwordModalError = "";
+        isSavingPassword = false;
+        showPasswordModal = true;
+    }
+
+    private void ClosePasswordModal()
+    {
+        showPasswordModal = false;
+        selectedPasswordUser = null;
+        passwordInput = "";
+        passwordConfirm = "";
+        passwordModalError = "";
+        isSavingPassword = false;
+    }
+
+    private async Task SavePasswordChange()
+    {
+        if (selectedPasswordUser == null || isSavingPassword)
+            return;
+
+        passwordModalError = "";
+
+        if (string.IsNullOrWhiteSpace(passwordInput) || string.IsNullOrWhiteSpace(passwordConfirm))
+        {
+            passwordModalError = "Please enter and confirm the new password.";
+            return;
+        }
+
+        if (passwordInput.Length < 4)
+        {
+            passwordModalError = "Password must be at least 4 characters.";
+            return;
+        }
+
+        if (passwordInput != passwordConfirm)
+        {
+            passwordModalError = "Passwords do not match.";
+            return;
+        }
+
+        isSavingPassword = true;
+
+        try
+        {
+            selectedPasswordUser.Password = passwordInput.Trim();
+            selectedPasswordUser.LastPasswordChange = DateTime.Now;
+            Context.Users.Update(selectedPasswordUser);
+            await Context.SaveChangesAsync();
+            await LogAuditAction("Password Changed", "User", selectedPasswordUser.UserID, selectedPasswordUser.Username, $"Password changed for account: {selectedPasswordUser.Username}");
+            ToastService.ShowSuccess("Password updated successfully.");
+            ClosePasswordModal();
+        }
+        catch (Exception ex)
+        {
+            await LogAuditAction("Password Change Failed", "User", selectedPasswordUser.UserID, selectedPasswordUser.Username, $"Failed to change password: {ex.Message}", "Failed", ex.Message);
+            passwordModalError = $"Error updating password: {ex.Message}";
+        }
+        finally
+        {
+            isSavingPassword = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ArchiveAccount(User user)
+    {
+        selectedArchiveUser = user;
+        showArchiveConfirmation = true;
+    }
+
+    private void CloseArchiveConfirmation()
+    {
+        showArchiveConfirmation = false;
+        selectedArchiveUser = null;
+        isArchivingAccount = false;
+    }
+
+    private async Task ConfirmArchiveAccount()
+    {
+        if (selectedArchiveUser == null || isArchivingAccount)
+            return;
+
+        isArchivingAccount = true;
+        StateHasChanged();
+
+        try
+        {
+            // Store username before closing modal (which sets selectedArchiveUser to null)
+            var username = selectedArchiveUser.Username;
+            var userId = selectedArchiveUser.UserID;
+
+            selectedArchiveUser.IsActive = false;
+            selectedArchiveUser.UpdatedAt = DateTime.Now;
+            Context.Users.Update(selectedArchiveUser);
+            await Context.SaveChangesAsync();
+            await LogAuditAction("Account Archived", "User", userId, username, $"Archived account: {username}");
+            await LoadAccountData();
+            CloseArchiveConfirmation();
+            ToastService.ShowSuccess($"Account '{username}' archived successfully.");
+        }
+        catch (Exception ex)
+        {
+            // Store username before potential null reference
+            var username = selectedArchiveUser?.Username ?? "Unknown";
+            var userId = selectedArchiveUser?.UserID;
+            await LogAuditAction("Account Archive Failed", "User", userId, username, $"Failed to archive account: {ex.Message}", "Failed", ex.Message);
+            ToastService.ShowError($"Error archiving account: {ex.Message}");
+        }
+        finally
+        {
+            isArchivingAccount = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
+            int? userId = null;
+            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
+            {
+                userId = parsedUserId;
+            }
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
+    }
+}
+

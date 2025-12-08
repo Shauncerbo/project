@@ -20,10 +20,15 @@
         </div>
     }
 
-    <!-- Page Header - No gaps with sidebar and top -->
+    <!-- Page Header - keep only the title (no search/add here) -->
     <div class="page-header">
         <h1 class="page-title">Trainer Management</h1>
-        <div class="header-actions">
+    </div>
+
+    <!-- Trainers Data Table -->
+    <div class="table-container">
+        <div class="table-toolbar">
+            <span class="table-title">Trainers</span>
             <input type="text"
                    class="search-bar"
                    placeholder="Search Trainer..."
@@ -32,10 +37,6 @@
                    @onkeyup="HandleSearch" />
             <button class="add-member-btn" @onclick="OpenAddTrainerModal">+ Add Trainer</button>
         </div>
-    </div>
-
-    <!-- Trainers Data Table -->
-    <div class="table-container">
         <table class="members-table">
             <thead>
                 <tr>
@@ -65,14 +66,16 @@
                         <tr>
                             <td>
                                 <div class="member-info">
-                                    <div class="member-avatar">@trainer.FullName.Substring(0, 1).ToUpper()</div>
-                                    <span>@trainer.FullName</span>
+                                    @{
+                                        var displayName = GetDisplayName(trainer.FirstName, trainer.MiddleName, trainer.LastName);
+                                        var initial = !string.IsNullOrEmpty(displayName) ? displayName.Substring(0, 1).ToUpper() : "?";
+                                    }
+                                    <div class="member-avatar">@initial</div>
+                                    <span>@displayName</span>
                                 </div>
                             </td>
                             <td>
-                                <span class="membership-badge @GetSpecialtyClass(trainer.Specialty)">
-                                    @trainer.Specialty
-                                </span>
+                                <span>@trainer.Specialty</span>
                             </td>
                             <td>@trainer.ContactNumber</td>
                             <td>
@@ -208,7 +211,7 @@
                 <div class="modal-body">
                     <div class="confirmation-content text-only">
                         <h3>Archive Trainer</h3>
-                        <p>You are about to archive <strong>@selectedTrainer?.FullName</strong>.</p>
+                        <p>You are about to archive <strong>@(selectedTrainer != null ? GetDisplayName(selectedTrainer.FirstName, selectedTrainer.MiddleName, selectedTrainer.LastName) : "")</strong>.</p>
                         <p class="confirmation-warning">This will remove the trainer from the active list. Continue?</p>
                     </div>
                 </div>
@@ -227,7 +230,7 @@
         <div class="modal-overlay" @onclick="CloseScheduleModal">
             <div class="modal-content schedule-modal" @onclick:stopPropagation="true">
                 <div class="modal-header">
-                    <h2>Manage Schedules - @selectedTrainerForSchedule?.FullName</h2>
+                    <h2>Manage Schedules - @(selectedTrainerForSchedule != null ? GetDisplayName(selectedTrainerForSchedule.FirstName, selectedTrainerForSchedule.MiddleName, selectedTrainerForSchedule.LastName) : "")</h2>
                     <button class="close-btn" @onclick="CloseScheduleModal">×</button>
                 </div>
 
@@ -534,7 +537,16 @@
                         walkin.TrainerScheduleID = null;
                     }
 
-                    // 3) Remove any trainer schedules
+                    // 3) Remove any MemberTrainer join records for this trainer
+                    var memberTrainers = await Context.MemberTrainers
+                        .Where(mt => mt.TrainerID == trainerId)
+                        .ToListAsync();
+                    if (memberTrainers.Any())
+                    {
+                        Context.MemberTrainers.RemoveRange(memberTrainers);
+                    }
+
+                    // 4) Remove any trainer schedules
                     var schedules = await Context.TrainerSchedules
                         .Where(ts => ts.TrainerID == trainerId)
                         .ToListAsync();
@@ -543,7 +555,7 @@
                         Context.TrainerSchedules.RemoveRange(schedules);
                     }
 
-                    // 4) Remove any linked user accounts that reference this trainer
+                    // 5) Remove any linked user accounts that reference this trainer
                     var linkedUsers = await Context.Users
                         .Where(u => u.TrainerID == trainerId)
                         .ToListAsync();
@@ -552,19 +564,26 @@
                         Context.Users.RemoveRange(linkedUsers);
                     }
 
-                    // 5) Finally remove the trainer record itself
+                    // Save these dependency removals first so FK constraints are satisfied
+                    await Context.SaveChangesAsync();
+
+                    // 6) Finally remove the trainer record itself
                     Context.Trainers.Remove(trainer);
 
                     await Context.SaveChangesAsync();
                     await LoadTrainersFromDatabase();
                     CloseArchiveConfirmation();
-                    ToastService.ShowSuccess("Archived successfully");
+                    // Use warning type for destructive-but-successful actions (red background with check)
+                    ToastService.ShowWarning("Archived successfully");
                 }
             }
             catch (Exception ex)
             {
                 var inner = ex.InnerException?.Message ?? "No inner exception";
-                ToastService.ShowError($"Error archiving trainer: {ex.Message}");
+                var fullMessage = inner == "No inner exception"
+                    ? ex.Message
+                    : $"{ex.Message} | Inner: {inner}";
+                ToastService.ShowError($"Error archiving trainer: {fullMessage}");
             }
         }
     }
@@ -611,6 +630,34 @@
         }
     }
 
+    // Helper method to capitalize first letter of each name
+    private string CapitalizeName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return name;
+        
+        name = name.Trim();
+        if (name.Length == 0)
+            return name;
+        
+        // Capitalize first letter, lowercase the rest
+        return char.ToUpper(name[0]) + (name.Length > 1 ? name.Substring(1).ToLower() : "");
+    }
+
+    // Helper method to format trainer name for display with proper capitalization
+    private string GetDisplayName(string firstName, string middleName, string lastName)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(firstName))
+            parts.Add(CapitalizeName(firstName));
+        if (!string.IsNullOrWhiteSpace(middleName))
+            parts.Add(CapitalizeName(middleName));
+        if (!string.IsNullOrWhiteSpace(lastName))
+            parts.Add(CapitalizeName(lastName));
+        
+        return string.Join(" ", parts);
+    }
+
     private async Task SaveTrainer()
     {
         ValidateForm();
@@ -620,6 +667,14 @@
             StateHasChanged();
             return;
         }
+
+        // Capitalize names before saving
+        currentTrainer.FirstName = CapitalizeName(currentTrainer.FirstName);
+        if (!string.IsNullOrWhiteSpace(currentTrainer.MiddleName))
+        {
+            currentTrainer.MiddleName = CapitalizeName(currentTrainer.MiddleName);
+        }
+        currentTrainer.LastName = CapitalizeName(currentTrainer.LastName);
 
         try
         {
@@ -977,7 +1032,7 @@
         background: white;
         padding: 25px 30px;
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start; /* only title now */
         align-items: center;
         margin: 0 0 30px 0;
         border-radius: 10px;
@@ -1040,6 +1095,31 @@
         overflow-y: auto; /* will only show if table itself grows taller than viewport */
     }
 
+    /* Toolbar under the header (same pattern as Members table) */
+    .table-toolbar {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px 8px 16px;
+        margin-bottom: 4px;
+        gap: 10px;
+    }
+
+    .table-toolbar .table-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .table-toolbar .search-bar {
+        margin-left: auto; /* push search (and button) to the right */
+        max-width: 260px;
+    }
+
+    .table-toolbar .add-member-btn {
+        margin-left: 8px;
+        white-space: nowrap;
+    }
+
     .members-table {
         width: 100%;
         border-collapse: collapse;
@@ -1093,44 +1173,7 @@
         font-size: 14px;
     }
 
-    /* Specialty Badges */
-    .membership-badge {
-        padding: 6px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-
-    .specialty-strength {
-        background: #e3f2fd;
-        color: #1976d2;
-    }
-
-    .specialty-cardio {
-        background: #f3e5f5;
-        color: #7b1fa2;
-    }
-
-    .specialty-yoga {
-        background: #e8f5e8;
-        color: #2e7d32;
-    }
-
-    .specialty-pilates {
-        background: #fff3e0;
-        color: #e65100;
-    }
-
-    .specialty-crossfit {
-        background: #fce4ec;
-        color: #c2185b;
-    }
-
-    .specialty-personal {
-        background: #e1f5fe;
-        color: #0277bd;
-    }
+    /* Specialty column now plain text (no badge styles) */
 
     .action-buttons {
         display: flex;

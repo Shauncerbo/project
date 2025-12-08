@@ -93,14 +93,17 @@ namespace project
             builder.Services.AddScoped<IAttendanceService, AttendanceService>();
             builder.Services.AddScoped<IMemberService, MemberService>();
             builder.Services.AddScoped<IUserService, UserService>();
+            builder.Services.AddScoped<IDatabaseSyncService, DatabaseSyncService>();
+            builder.Services.AddHttpClient<IPayMongoService, PayMongoService>();
             builder.Services.AddSingleton<IToastService, ToastService>();
             builder.Services.AddSingleton<INativeNavigationService, NativeNavigationService>();
             builder.Services.AddTransient<AttendanceScannerPage>();
+            
+            // Email notification services
+            builder.Services.AddScoped<IEmailService, EmailService>();
+            builder.Services.AddHostedService<ExpirationNotificationService>();
 
-            // Database configuration - Toggle between Local and Cloud
-            // 🔄 TOGGLE: Set to true for MonsterASP.net (online), false for SQL Server Express (local)
-            const bool USE_MONSTERASP_DB = false;
-
+            // Database configuration - Read from SecureStorage (defaults to local if not set)
             // Local SQL Server Express Database
             const string localConnectionString = 
                 "Data Source=LAPTOP-3VCGD3TV\\SQLEXPRESS;Initial Catalog=GymCRM_DB;Integrated Security=True;Encrypt=True;Trust Server Certificate=True";
@@ -110,8 +113,18 @@ namespace project
             const string monsterAspConnectionString =
                 "Server=db32884.public.databaseasp.net;Database=db32884;User Id=db32884;Password=P_y79xY!kQ%6;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;Connection Timeout=60;";
 
-            // Select connection string based on toggle
-            var connectionString = USE_MONSTERASP_DB ? monsterAspConnectionString : localConnectionString;
+            // Get database type from SecureStorage (defaults to local)
+            string connectionString;
+            try
+            {
+                var dbType = SecureStorage.Default.GetAsync("database_type").GetAwaiter().GetResult();
+                connectionString = (dbType == "online") ? monsterAspConnectionString : localConnectionString;
+            }
+            catch
+            {
+                // Default to local if SecureStorage is not available or not set
+                connectionString = localConnectionString;
+            }
 
             // Register EF Core DbContext (scoped) and factory (for background/off-thread usage)
             void ConfigureDbContext(DbContextOptionsBuilder options)

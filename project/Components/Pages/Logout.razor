@@ -1,0 +1,22 @@
+@page "/logout"
+@layout BlankLayout
+@using project.Services
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
+
+<div class="logout-page">
+    <div class="logout-content">
+        <p>Signing you out...</p>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure all auth data is cleared, then go to the login screen.
+        await AuthService.LogoutAsync();
+        NavigationManager.NavigateTo("/login", forceLoad: true);
+    }
+}
+
+

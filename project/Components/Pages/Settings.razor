@@ -7,6 +7,7 @@
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
 @inject project.Services.IAuthService AuthService
+@inject project.Services.IToastService ToastService
 @using project.Data
 @using project.Models
 @using Microsoft.EntityFrameworkCore
@@ -15,106 +16,8 @@
 <div class="settings-container">
     <!-- Page Header -->
     <div class="page-header">
-        <h1 class="page-title">Settings</h1>
+        <h1 class="page-title">Archived Items</h1>
         <p class="page-subtitle">Manage archived items and restore them if needed</p>
-    </div>
-
-    <!-- Account Management -->
-    <div class="account-management-card">
-        <div class="account-header">
-            <div>
-                <h2>Account Management</h2>
-                <p>Create and manage staff/trainer logins.</p>
-            </div>
-            <button class="btn-primary" @onclick="OpenAccountModal">
-                + Add Account
-            </button>
-        </div>
-
-        @if (accountLoadError != null)
-        {
-            <div class="account-error">@accountLoadError</div>
-        }
-        else if (accountIsLoading)
-        {
-            <div class="account-loading">Loading accounts...</div>
-        }
-        else if (activeUsers == null || !activeUsers.Any())
-        {
-            <div class="empty-state small">
-                <h3>No Staff/Trainer Accounts</h3>
-                <p>Create the first account to allow staff or trainers to log in.</p>
-            </div>
-        }
-        else
-        {
-            <div class="table-container">
-                <table class="archived-table">
-                    <thead>
-                        <tr>
-                            <th>USERNAME</th>
-                            <th>ROLE</th>
-                            <th>STATUS</th>
-                            <th>CREATED</th>
-                            <th>ACTIONS</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var user in activeUsers)
-                        {
-                            <tr>
-                                <td>@user.Username</td>
-                                <td>@user.Role?.RoleName</td>
-                                <td>
-                                    <span class="status-badge @(user.IsActive == true ? "status-active" : "status-inactive")">
-                                        @(user.IsActive == true ? "Active" : "Inactive")
-                                    </span>
-                                </td>
-                                <td>@(user.CreatedAt.HasValue ? user.CreatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
-                                <td class="account-actions">
-                                    <button class="btn-secondary" @onclick="() => OpenPasswordModal(user)">Change Password</button>
-                                    <button class="btn-link red" @onclick="() => ArchiveAccount(user)">
-                                        Archive
-                                    </button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-
-        @if (archivedUsers != null && archivedUsers.Any())
-        {
-            <div class="archived-accounts">
-                <h3>Archived Accounts</h3>
-                <div class="table-container">
-                    <table class="archived-table">
-                        <thead>
-                            <tr>
-                                <th>USERNAME</th>
-                                <th>ROLE</th>
-                                <th>ARCHIVED ON</th>
-                                <th>ACTIONS</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var user in archivedUsers)
-                            {
-                                <tr>
-                                    <td>@user.Username</td>
-                                    <td>@user.Role?.RoleName</td>
-                                    <td>@(user.UpdatedAt.HasValue ? user.UpdatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
-                                    <td class="account-actions">
-                                        <button class="btn-secondary" @onclick="() => RestoreAccount(user)">Restore</button>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        }
     </div>
 
     <!-- Tabs Navigation -->
@@ -143,11 +46,7 @@
                 <span class="badge">@archivedMembershipTypesCount</span>
             }
         </button>
-        <button class="tab-btn @(activeTab == "auditlogs" ? "active" : "")" @onclick='() => SwitchTab("auditlogs")'>
-            <span class="tab-icon"></span>
-            Audit Logs
-        </button>
-    </div>
+        </div>
 
     <!-- Tab Content -->
     <div class="tab-content">
@@ -176,7 +75,6 @@
                     @if (filteredArchivedMembers == null || !filteredArchivedMembers.Any())
                     {
                         <div class="empty-state">
-                            <div class="empty-icon"></div>
                             <h3>No Archived Members</h3>
                             <p>There are no archived members to display.</p>
                         </div>
@@ -188,10 +86,10 @@
                                 <thead>
                                     <tr>
                                         <th>NAME</th>
+                                        <th>CONTACT</th>
                                         <th>EMAIL</th>
-                                        <th>CONTACT NUMBER</th>
-                                        <th>JOIN DATE</th>
-                                        <th>STATUS</th>
+                                        <th>MEMBERSHIP TYPE</th>
+                                        <th>ARCHIVED DATE</th>
                                         <th>ACTIONS</th>
                                     </tr>
                                 </thead>
@@ -202,20 +100,16 @@
                                             <td>
                                                 <div class="member-info">
                                                     <div class="member-avatar">@GetInitials(member.FirstName, member.LastName)</div>
-                                                    <span>@member.FirstName @member.LastName</span>
+                                                    <span>@GetDisplayName(member.FirstName, member.MiddleInitial, member.LastName)</span>
                                                 </div>
                                             </td>
-                                            <td>@member.Email</td>
                                             <td>@member.ContactNumber</td>
-                                            <td>@member.JoinDate.ToString("MM/dd/yyyy")</td>
+                                            <td>@member.Email</td>
+                                            <td>@(member.MembershipType?.TypeName ?? "N/A")</td>
+                                            <td>-</td>
                                             <td>
-                                                @* Archived members always show "Inactive" status *@
-                                                <span class="status-badge status-archived">Inactive</span>
-                                            </td>
-                                            <td>
-                                                <button class="btn-restore" @onclick="() => UnarchiveMember(member)" title="Restore">
-                                                    <span class="restore-icon"></span>
-                                                    Restore
+                                                <button class="btn-restore" @onclick="() => RestoreMember(member)">
+                                                    <span class="restore-icon"></span> Restore
                                                 </button>
                                             </td>
                                         </tr>
@@ -244,7 +138,6 @@
                     @if (filteredArchivedPromotions == null || !filteredArchivedPromotions.Any())
                     {
                         <div class="empty-state">
-                            <div class="empty-icon"></div>
                             <h3>No Archived Promotions</h3>
                             <p>There are no archived promotions to display.</p>
                         </div>
@@ -255,11 +148,11 @@
                             <table class="archived-table">
                                 <thead>
                                     <tr>
-                                        <th>PROMO NAME</th>
-                                        <th>DESCRIPTION</th>
+                                        <th>PROMOTION NAME</th>
                                         <th>DISCOUNT RATE</th>
                                         <th>START DATE</th>
                                         <th>END DATE</th>
+                                        <th>ARCHIVED DATE</th>
                                         <th>ACTIONS</th>
                                     </tr>
                                 </thead>
@@ -267,19 +160,14 @@
                                     @foreach (var promotion in filteredArchivedPromotions)
                                     {
                                         <tr>
+                                            <td>@promotion.PromoName</td>
+                                            <td>@promotion.DiscountRate%</td>
+                                            <td>@promotion.StartDate.ToString("MMM dd, yyyy")</td>
+                                            <td>@promotion.EndDate.ToString("MMM dd, yyyy")</td>
+                                            <td>-</td>
                                             <td>
-                                                <div class="type-name">@promotion.PromoName</div>
-                                            </td>
-                                            <td>@promotion.Description</td>
-                                            <td class="price-cell">
-                                                <span class="price">@promotion.DiscountRate.ToString("P0")</span>
-                                            </td>
-                                            <td>@promotion.StartDate.ToString("MM/dd/yyyy")</td>
-                                            <td>@promotion.EndDate.ToString("MM/dd/yyyy")</td>
-                                            <td>
-                                                <button class="btn-restore" @onclick="() => UnarchivePromotion(promotion)" title="Restore">
-                                                    <span class="restore-icon">↩️</span>
-                                                    Restore
+                                                <button class="btn-restore" @onclick="() => RestorePromotion(promotion)">
+                                                    <span class="restore-icon"></span> Restore
                                                 </button>
                                             </td>
                                         </tr>
@@ -308,7 +196,6 @@
                     @if (filteredArchivedMembershipTypes == null || !filteredArchivedMembershipTypes.Any())
                     {
                         <div class="empty-state">
-                            <div class="empty-icon"></div>
                             <h3>No Archived Membership Types</h3>
                             <p>There are no archived membership types to display.</p>
                         </div>
@@ -321,7 +208,8 @@
                                     <tr>
                                         <th>TYPE NAME</th>
                                         <th>PRICE</th>
-                                        <th>DURATION (DAYS)</th>
+                                        <th>DURATION</th>
+                                        <th>ARCHIVED DATE</th>
                                         <th>ACTIONS</th>
                                     </tr>
                                 </thead>
@@ -329,85 +217,14 @@
                                     @foreach (var membershipType in filteredArchivedMembershipTypes)
                                     {
                                         <tr>
-                                            <td>
-                                                <div class="type-name">@membershipType.TypeName</div>
-                                            </td>
-                                            <td class="price-cell">
-                                                <span class="price">₱@membershipType.Price.ToString("N2")</span>
-                                            </td>
+                                            <td>@membershipType.TypeName</td>
+                                            <td>₱@membershipType.Price.ToString("N2")</td>
                                             <td>@membershipType.DurationInDays days</td>
+                                            <td>-</td>
                                             <td>
-                                                <button class="btn-restore" @onclick="() => UnarchiveMembershipType(membershipType)" title="Restore">
-                                                    <span class="restore-icon">↩️</span>
-                                                    Restore
+                                                <button class="btn-restore" @onclick="() => RestoreMembershipType(membershipType)">
+                                                    <span class="restore-icon"></span> Restore
                                                 </button>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
-            }
-
-            <!-- Audit Logs Tab -->
-            @if (activeTab == "auditlogs")
-            {
-                <div class="archived-section">
-                    <div class="section-header">
-                        <h2>Audit Logs</h2>
-                        <div class="audit-filters">
-                            <select @bind="auditLogFilter" @bind:after="LoadAuditLogs" class="filter-select">
-                                <option value="all">All Actions</option>
-                                <option value="Account">Account Actions</option>
-                                <option value="Member">Member Actions</option>
-                                <option value="Promotion">Promotion Actions</option>
-                                <option value="MembershipType">Membership Type Actions</option>
-                            </select>
-                            <input type="date" @bind="auditLogStartDate" @bind:after="LoadAuditLogs" class="date-filter-input" />
-                            <span>to</span>
-                            <input type="date" @bind="auditLogEndDate" @bind:after="LoadAuditLogs" class="date-filter-input" />
-                        </div>
-                    </div>
-
-                    @if (auditLogs == null || !auditLogs.Any())
-                    {
-                        <div class="empty-state">
-                            <div class="empty-icon"></div>
-                            <h3>No Audit Logs</h3>
-                            <p>There are no audit logs to display.</p>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="table-container">
-                            <table class="archived-table">
-                                <thead>
-                                    <tr>
-                                        <th>TIMESTAMP</th>
-                                        <th>ACTION</th>
-                                        <th>ENTITY TYPE</th>
-                                        <th>ENTITY NAME</th>
-                                        <th>PERFORMED BY</th>
-                                        <th>DESCRIPTION</th>
-                                        <th>STATUS</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var log in auditLogs)
-                                    {
-                                        <tr>
-                                            <td>@log.Timestamp.ToString("MM/dd/yyyy HH:mm:ss")</td>
-                                            <td>@log.Action</td>
-                                            <td>@log.EntityType</td>
-                                            <td>@(string.IsNullOrEmpty(log.EntityName) ? "-" : log.EntityName)</td>
-                                            <td>@log.PerformedBy</td>
-                                            <td class="description-cell">@(string.IsNullOrEmpty(log.Description) ? "-" : log.Description)</td>
-                                            <td>
-                                                <span class="status-badge @(log.Status == "Success" ? "status-success" : "status-error")">
-                                                    @log.Status
-                                                </span>
                                             </td>
                                         </tr>
                                     }
@@ -419,81 +236,85 @@
             }
         }
     </div>
+
+    <!-- Restore Member Confirmation Modal -->
+    @if (showRestoreMemberConfirmation && selectedRestoreMember != null)
+    {
+        <div class="modal-overlay" @onclick="CloseRestoreMemberConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Restore Member</h2>
+                    <button class="close-btn" @onclick="CloseRestoreMemberConfirmation">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Restore Member</h3>
+                        <p>You are about to restore <strong>@GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName)</strong>.</p>
+                        <p class="confirmation-warning">This will reactivate the member and make them available again. Continue?</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseRestoreMemberConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmRestoreMember" disabled="@isRestoringMember">
+                        @(isRestoringMember ? "Restoring..." : "Yes, Restore Member")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Restore Promotion Confirmation Modal -->
+    @if (showRestorePromotionConfirmation && selectedRestorePromotion != null)
+    {
+        <div class="modal-overlay" @onclick="CloseRestorePromotionConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Restore Promotion</h2>
+                    <button class="close-btn" @onclick="CloseRestorePromotionConfirmation">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Restore Promotion</h3>
+                        <p>You are about to restore <strong>@selectedRestorePromotion.PromoName</strong>.</p>
+                        <p class="confirmation-warning">This will reactivate the promotion and make it available again. Continue?</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseRestorePromotionConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmRestorePromotion" disabled="@isRestoringPromotion">
+                        @(isRestoringPromotion ? "Restoring..." : "Yes, Restore Promotion")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Restore Membership Type Confirmation Modal -->
+    @if (showRestoreMembershipTypeConfirmation && selectedRestoreMembershipType != null)
+    {
+        <div class="modal-overlay" @onclick="CloseRestoreMembershipTypeConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Restore Membership Type</h2>
+                    <button class="close-btn" @onclick="CloseRestoreMembershipTypeConfirmation">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Restore Membership Type</h3>
+                        <p>You are about to restore <strong>@selectedRestoreMembershipType.TypeName</strong>.</p>
+                        <p class="confirmation-warning">This will reactivate the membership type and make it available again. Continue?</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseRestoreMembershipTypeConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmRestoreMembershipType" disabled="@isRestoringMembershipType">
+                        @(isRestoringMembershipType ? "Restoring..." : "Yes, Restore Membership Type")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
-
-@if (showAccountModal)
-{
-    <div class="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3>Create Account</h3>
-                <button class="close-btn" @onclick="CloseAccountModal">×</button>
-            </div>
-            <div class="modal-body">
-                @if (!string.IsNullOrEmpty(accountModalError))
-                {
-                    <div class="modal-error">@accountModalError</div>
-                }
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" @bind="newAccountUsername" @bind:event="oninput" placeholder="Enter username" />
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" @bind="newAccountPassword" @bind:event="oninput" placeholder="Enter password" />
-                </div>
-                <div class="form-group">
-                    <label>Role</label>
-                    <select @bind="selectedRoleId">
-                        @foreach (var role in availableRoles)
-                        {
-                            <option value="@role.RoleID">@role.RoleName</option>
-                        }
-                    </select>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-secondary" @onclick="CloseAccountModal">Cancel</button>
-                <button class="btn-primary" @onclick="SaveAccount" disabled="@isSavingAccount">
-                    @(isSavingAccount ? "Saving..." : "Save Account")
-                </button>
-            </div>
-        </div>
-    </div>
-}
-
-@if (showPasswordModal && selectedPasswordUser != null)
-{
-    <div class="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3>Change Password</h3>
-                <button class="close-btn" @onclick="ClosePasswordModal">×</button>
-            </div>
-            <div class="modal-body">
-                <p class="modal-subtitle">Updating password for <strong>@selectedPasswordUser.Username</strong></p>
-                @if (!string.IsNullOrEmpty(passwordModalError))
-                {
-                    <div class="modal-error">@passwordModalError</div>
-                }
-                <div class="form-group">
-                    <label>New Password</label>
-                    <input type="password" @bind="passwordInput" @bind:event="oninput" placeholder="Enter new password" />
-                </div>
-                <div class="form-group">
-                    <label>Confirm Password</label>
-                    <input type="password" @bind="passwordConfirm" @bind:event="oninput" placeholder="Confirm new password" />
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-secondary" @onclick="ClosePasswordModal">Cancel</button>
-                <button class="btn-primary" @onclick="SavePasswordChange" disabled="@isSavingPassword">
-                    @(isSavingPassword ? "Saving..." : "Update Password")
-                </button>
-            </div>
-        </div>
-    </div>
-}
 
 <style>
     .settings-container {
@@ -620,54 +441,29 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 20px;
+        flex-wrap: wrap;
         gap: 15px;
     }
 
     .section-header h2 {
-        font-size: 20px;
+        font-size: 22px;
         font-weight: 600;
-        color: #333;
+        color: #234060;
         margin: 0;
     }
 
     .search-bar {
         padding: 10px 15px;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        width: 300px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
         font-size: 14px;
-        transition: all 0.3s;
+        width: 300px;
+        transition: border-color 0.3s;
     }
 
     .search-bar:focus {
         outline: none;
         border-color: #234060;
-        box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 60px 20px;
-        color: #999;
-    }
-
-    .empty-icon {
-        font-size: 64px;
-        margin-bottom: 16px;
-        display: block;
-    }
-
-    .empty-state h3 {
-        font-size: 20px;
-        font-weight: 600;
-        color: #666;
-        margin: 0 0 8px 0;
-    }
-
-    .empty-state p {
-        font-size: 14px;
-        color: #999;
-        margin: 0;
     }
 
     .table-container {
@@ -677,6 +473,7 @@
     .archived-table {
         width: 100%;
         border-collapse: collapse;
+        background: white;
     }
 
     .archived-table thead {
@@ -691,18 +488,12 @@
         font-size: 13px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        border-bottom: 2px solid #1a3450;
     }
 
     .archived-table td {
         padding: 14px 16px;
         border-bottom: 1px solid #f0f0f0;
         color: #333;
-        vertical-align: middle;
-    }
-
-    .archived-table tbody tr {
-        transition: background 0.2s;
     }
 
     .archived-table tbody tr:hover {
@@ -712,12 +503,12 @@
     .member-info {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
     }
 
     .member-avatar {
-        width: 36px;
-        height: 36px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -729,97 +520,12 @@
         flex-shrink: 0;
     }
 
-    .status-badge {
-        display: inline-block;
-        padding: 0;
-        border-radius: 0;
-        font-size: 14px;
-        font-weight: 600;
-        text-transform: none;
-        background: transparent !important;
-        border: none !important;
-    }
-
-    .status-active {
-        background: transparent !important;
-        color: #333 !important;
-    }
-
-    .status-inactive {
-        background: transparent !important;
-        color: #333 !important;
-    }
-
-    .status-archived {
-        background: transparent !important;
-        color: #333 !important;
-    }
-
-    .status-success {
-        background: transparent !important;
-        color: #333 !important;
-    }
-
-    .status-error {
-        background: transparent !important;
-        color: #333 !important;
-    }
-
-    .type-name {
-        font-weight: 600;
-        color: #333;
-    }
-
-    .price-cell {
-        font-weight: 600;
-    }
-
-    .price {
-        color: #27ae60;
-    }
-
-    .payment-amount {
-        color: #27ae60;
-        font-weight: 600;
-    }
-
-    .amount-cell {
-        font-weight: 600;
-    }
-
-    .audit-filters {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-    }
-
-    .filter-select {
-        padding: 8px 12px;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        font-size: 14px;
-    }
-
-    .date-filter-input {
-        padding: 8px 12px;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        font-size: 14px;
-    }
-
-    .description-cell {
-        max-width: 300px;
-        word-wrap: break-word;
-        font-size: 13px;
-    }
-
     .btn-restore {
         display: flex;
         align-items: center;
         gap: 6px;
         padding: 8px 16px;
-        background: #5cb85c;
+        background: #FFA500;
         color: white;
         border: none;
         border-radius: 6px;
@@ -830,13 +536,32 @@
     }
 
     .btn-restore:hover {
-        background: #4cae4c;
+        background: #ff8c00;
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+        box-shadow: 0 4px 12px rgba(255,165,0,0.3);
     }
 
     .restore-icon {
         font-size: 16px;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #999;
+    }
+
+    .empty-state h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #666;
+        margin: 0 0 8px 0;
+    }
+
+    .empty-state p {
+        font-size: 14px;
+        color: #999;
+        margin: 0;
     }
 
     @@media (max-width: 768px) {
@@ -854,193 +579,151 @@
         }
     }
 
-    .account-management-card {
-        background: white;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        padding: 25px;
-        margin-bottom: 20px;
-    }
-
-    .account-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-        flex-wrap: wrap;
-    }
-
-    .account-header h2 {
-        margin: 0;
-        font-size: 22px;
-        color: #234060;
-    }
-
-    .account-header p {
-        margin: 4px 0 0;
-        color: #777;
-        font-size: 14px;
-    }
-
-    .btn-primary {
-        background: #234060;
-        color: white;
-        border: none;
-        padding: 10px 18px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-    }
-
-    .btn-secondary {
-        background: #f1f3f7;
-        color: #234060;
-        border: none;
-        padding: 8px 14px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-    }
-
-    .btn-link {
-        background: transparent;
-        border: none;
-        color: #234060;
-        cursor: pointer;
-        font-weight: 600;
-    }
-
-    .btn-link.red {
-        color: #b0382f;
-    }
-
-    .account-error {
-        background: #fdecea;
-        color: #b0382f;
-        padding: 12px 16px;
-        border-radius: 8px;
-        margin-top: 16px;
-    }
-
-    .account-loading {
-        padding: 16px;
-        color: #555;
-    }
-
-    .account-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-    }
-
-    .archived-accounts {
-        margin-top: 20px;
-        border-top: 1px solid #eee;
-        padding-top: 20px;
-    }
-
-    .archived-accounts h3 {
-        margin: 0 0 12px 0;
-        font-size: 18px;
-        color: #234060;
-    }
-
-    .status-active {
-        background: #e6f6ed;
-        color: #1d8348;
-    }
-
-    .status-inactive {
-        background: #fdecea;
-        color: #b0382f;
-    }
-
+    /* Modal Styles */
     .modal-overlay {
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0,0,0,0.4);
+        background: rgba(0,0,0,0.5);
         display: flex;
         justify-content: center;
         align-items: center;
         z-index: 2000;
         padding: 20px;
+        box-sizing: border-box;
     }
 
-    .modal-card {
+    .modal-content {
         background: white;
         border-radius: 12px;
         width: 100%;
-        max-width: 420px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        max-width: 500px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
         animation: fadeIn 0.2s ease;
-    }
-
-    .modal-header, .modal-footer {
-        padding: 20px;
-        border-bottom: 1px solid #eee;
-    }
-
-    .modal-footer {
-        border-top: 1px solid #eee;
-        border-bottom: none;
         display: flex;
-        justify-content: flex-end;
-        gap: 10px;
+        flex-direction: column;
+        position: relative;
     }
 
-    .modal-body {
-        padding: 20px;
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
     }
 
-    .form-group {
-        margin-bottom: 15px;
-    }
-
-    .form-group label {
-        display: block;
-        font-weight: 600;
-        font-size: 14px;
-        margin-bottom: 6px;
-    }
-
-    .form-group input,
-    .form-group select {
-        width: 100%;
-        padding: 10px 12px;
-        border: 1px solid #dcdfe6;
-        border-radius: 8px;
-        font-size: 14px;
-    }
-
-    .modal-error {
-        background: #fdecea;
-        color: #b0382f;
-        border-radius: 8px;
-        padding: 10px 12px;
-        margin-bottom: 12px;
-        font-size: 14px;
+    .modal-header h2 {
+        margin: 0;
+        font-size: 22px;
+        color: #333;
     }
 
     .close-btn {
         background: transparent;
         border: none;
-        font-size: 20px;
+        font-size: 32px;
+        color: #999;
         cursor: pointer;
-        color: #666;
+        line-height: 1;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        transition: color 0.2s;
     }
 
-    .modal-subtitle {
+    .close-btn:hover {
+        color: #333;
+    }
+
+    .modal-body {
+        padding: 24px;
+    }
+
+    .modal-footer {
+        padding: 20px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-cancel {
+        background: #f1f3f7;
+        color: #234060;
+    }
+
+    .btn-cancel:hover {
+        background: #e0e4e8;
+    }
+
+    .btn-danger {
+        background: #e74c3c;
+        color: white;
+    }
+
+    .btn-danger:hover:not([disabled]) {
+        background: #c0392b;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    .btn-danger[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    /* Confirmation Modal Styles */
+    .confirmation-modal {
+        max-width: 500px;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 24px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
         color: #666;
-        margin-top: 0;
-        margin-bottom: 15px;
-        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .confirmation-warning {
+        color: #e74c3c !important;
+        font-weight: 600;
+        background: #ffeaa7;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 15px !important;
     }
 
     @@keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-8px); }
+        from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
     }
 </style>
@@ -1048,25 +731,6 @@
 @code {
     private string activeTab = "members";
     private bool isLoading = false;
-    
-    // Account management
-    private List<User> activeUsers = new();
-    private List<User> archivedUsers = new();
-    private List<Role> availableRoles = new();
-    private bool accountIsLoading = false;
-    private bool showAccountModal = false;
-    private bool isSavingAccount = false;
-    private string? accountLoadError;
-    private string accountModalError = "";
-    private string newAccountUsername = "";
-    private string newAccountPassword = "";
-    private int selectedRoleId = 0;
-    private bool showPasswordModal = false;
-    private User? selectedPasswordUser;
-    private string passwordInput = "";
-    private string passwordConfirm = "";
-    private string passwordModalError = "";
-    private bool isSavingPassword = false;
     
     // Search queries
     private string memberSearchQuery = "";
@@ -1086,17 +750,22 @@
     private int archivedPromotionsCount = 0;
     private int archivedMembershipTypesCount = 0;
 
-    // Audit Logs
-    private List<AuditLog> auditLogs = new List<AuditLog>();
-    private string auditLogFilter = "all";
-    private DateTime? auditLogStartDate = DateTime.Today.AddDays(-30);
-    private DateTime? auditLogEndDate = DateTime.Today;
+    // Restore confirmation modals
+    private bool showRestoreMemberConfirmation = false;
+    private Member? selectedRestoreMember;
+    private bool isRestoringMember = false;
+
+    private bool showRestorePromotionConfirmation = false;
+    private Promotion? selectedRestorePromotion;
+    private bool isRestoringPromotion = false;
+
+    private bool showRestoreMembershipTypeConfirmation = false;
+    private project.Models.MembershipType? selectedRestoreMembershipType;
+    private bool isRestoringMembershipType = false;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadArchivedData();
-        await LoadAccountData();
-        await LoadAuditLogs();
     }
 
     private async Task LoadArchivedData()
@@ -1130,51 +799,11 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading archived data: {ex.Message}");
+            ToastService.ShowError($"Error loading archived data: {ex.Message}");
         }
         finally
         {
             isLoading = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task LoadAccountData()
-    {
-        accountIsLoading = true;
-        accountLoadError = null;
-        StateHasChanged();
-
-        try
-        {
-            availableRoles = await Context.Roles
-                .Where(r => r.RoleName == "Staff" || r.RoleName == "Trainer")
-                .OrderBy(r => r.RoleName)
-                .ToListAsync();
-
-            if (selectedRoleId == 0 && availableRoles.Any())
-            {
-                selectedRoleId = availableRoles.First().RoleID;
-            }
-
-            var managedRoleIds = availableRoles.Select(r => r.RoleID).ToList();
-
-            var managedUsers = await Context.Users
-                .Include(u => u.Role)
-                .Where(u => managedRoleIds.Contains(u.RoleID))
-                .OrderBy(u => u.Username)
-                .ToListAsync();
-
-            activeUsers = managedUsers.Where(u => u.IsActive == true).ToList();
-            archivedUsers = managedUsers.Where(u => u.IsActive == false).ToList();
-        }
-        catch (Exception ex)
-        {
-            accountLoadError = $"Error loading accounts: {ex.Message}";
-        }
-        finally
-        {
-            accountIsLoading = false;
             StateHasChanged();
         }
     }
@@ -1240,74 +869,147 @@
         StateHasChanged();
     }
 
-    private async Task UnarchiveMember(Member member)
+    private void RestoreMember(Member member)
     {
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to restore member '{member.FirstName} {member.LastName}'?");
-        if (!confirm)
+        selectedRestoreMember = member;
+        showRestoreMemberConfirmation = true;
+    }
+
+    private void CloseRestoreMemberConfirmation()
+    {
+        showRestoreMemberConfirmation = false;
+        selectedRestoreMember = null;
+        isRestoringMember = false;
+    }
+
+    private async Task ConfirmRestoreMember()
+    {
+        if (selectedRestoreMember == null || isRestoringMember)
             return;
+
+        isRestoringMember = true;
+        StateHasChanged();
 
         try
         {
-            member.IsArchived = false;
-            // Restore status to Active when unarchiving
-            member.Status = "Active";
-            Context.Members.Update(member);
+            var memberName = GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName);
+            var memberId = selectedRestoreMember.MemberID;
+
+            selectedRestoreMember.IsArchived = false;
+            Context.Members.Update(selectedRestoreMember);
             await Context.SaveChangesAsync();
-            await LogAuditAction("Member Restored", "Member", member.MemberID, $"{member.FirstName} {member.LastName}", $"Restored member {member.FirstName} {member.LastName} from archive");
+            await LogAuditAction("Member Restored", "Member", memberId, memberName, $"Restored member {memberName} from archive");
             await LoadArchivedData();
-            await LoadAuditLogs();
-            await JSRuntime.InvokeVoidAsync("alert", "Member restored successfully!");
+            CloseRestoreMemberConfirmation();
+            ToastService.ShowSuccess($"Member '{memberName}' restored successfully!");
         }
         catch (Exception ex)
         {
-            await LogAuditAction("Member Restore Failed", "Member", member.MemberID, $"{member.FirstName} {member.LastName}", $"Failed to restore member: {ex.Message}", "Failed", ex.Message);
-            await JSRuntime.InvokeVoidAsync("alert", $"Error restoring member: {ex.Message}");
+            var memberName = selectedRestoreMember != null ? GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName) : "Unknown";
+            var memberId = selectedRestoreMember?.MemberID;
+            await LogAuditAction("Member Restore Failed", "Member", memberId, memberName, $"Failed to restore member: {ex.Message}", "Failed", ex.Message);
+            ToastService.ShowError($"Error restoring member: {ex.Message}");
+        }
+        finally
+        {
+            isRestoringMember = false;
+            StateHasChanged();
         }
     }
 
-    private async Task UnarchivePromotion(Promotion promotion)
+    private void RestorePromotion(Promotion promotion)
     {
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to restore promotion '{promotion.PromoName}'?");
-        if (!confirm)
+        selectedRestorePromotion = promotion;
+        showRestorePromotionConfirmation = true;
+    }
+
+    private void CloseRestorePromotionConfirmation()
+    {
+        showRestorePromotionConfirmation = false;
+        selectedRestorePromotion = null;
+        isRestoringPromotion = false;
+    }
+
+    private async Task ConfirmRestorePromotion()
+    {
+        if (selectedRestorePromotion == null || isRestoringPromotion)
             return;
+
+        isRestoringPromotion = true;
+        StateHasChanged();
 
         try
         {
-            promotion.IsArchived = false;
-            Context.Promotions.Update(promotion);
+            var promoName = selectedRestorePromotion.PromoName;
+            var promoId = selectedRestorePromotion.PromoID;
+
+            selectedRestorePromotion.IsArchived = false;
+            Context.Promotions.Update(selectedRestorePromotion);
             await Context.SaveChangesAsync();
-            await LogAuditAction("Promotion Restored", "Promotion", promotion.PromoID, promotion.PromoName, $"Restored promotion {promotion.PromoName} from archive");
+            await LogAuditAction("Promotion Restored", "Promotion", promoId, promoName, $"Restored promotion {promoName} from archive");
             await LoadArchivedData();
-            await LoadAuditLogs();
-            await JSRuntime.InvokeVoidAsync("alert", "Promotion restored successfully!");
+            CloseRestorePromotionConfirmation();
+            ToastService.ShowSuccess($"Promotion '{promoName}' restored successfully!");
         }
         catch (Exception ex)
         {
-            await LogAuditAction("Promotion Restore Failed", "Promotion", promotion.PromoID, promotion.PromoName, $"Failed to restore promotion: {ex.Message}", "Failed", ex.Message);
-            await JSRuntime.InvokeVoidAsync("alert", $"Error restoring promotion: {ex.Message}");
+            var promoName = selectedRestorePromotion?.PromoName ?? "Unknown";
+            var promoId = selectedRestorePromotion?.PromoID;
+            await LogAuditAction("Promotion Restore Failed", "Promotion", promoId, promoName, $"Failed to restore promotion: {ex.Message}", "Failed", ex.Message);
+            ToastService.ShowError($"Error restoring promotion: {ex.Message}");
+        }
+        finally
+        {
+            isRestoringPromotion = false;
+            StateHasChanged();
         }
     }
 
-    private async Task UnarchiveMembershipType(project.Models.MembershipType membershipType)
+    private void RestoreMembershipType(project.Models.MembershipType membershipType)
     {
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to restore membership type '{membershipType.TypeName}'?");
-        if (!confirm)
+        selectedRestoreMembershipType = membershipType;
+        showRestoreMembershipTypeConfirmation = true;
+    }
+
+    private void CloseRestoreMembershipTypeConfirmation()
+    {
+        showRestoreMembershipTypeConfirmation = false;
+        selectedRestoreMembershipType = null;
+        isRestoringMembershipType = false;
+    }
+
+    private async Task ConfirmRestoreMembershipType()
+    {
+        if (selectedRestoreMembershipType == null || isRestoringMembershipType)
             return;
+
+        isRestoringMembershipType = true;
+        StateHasChanged();
 
         try
         {
-            membershipType.IsArchived = false;
-            Context.MembershipTypes.Update(membershipType);
+            var typeName = selectedRestoreMembershipType.TypeName;
+            var typeId = selectedRestoreMembershipType.MembershipTypeID;
+
+            selectedRestoreMembershipType.IsArchived = false;
+            Context.MembershipTypes.Update(selectedRestoreMembershipType);
             await Context.SaveChangesAsync();
-            await LogAuditAction("Membership Type Restored", "MembershipType", membershipType.MembershipTypeID, membershipType.TypeName, $"Restored membership type {membershipType.TypeName} from archive");
+            await LogAuditAction("Membership Type Restored", "MembershipType", typeId, typeName, $"Restored membership type {typeName} from archive");
             await LoadArchivedData();
-            await LoadAuditLogs();
-            await JSRuntime.InvokeVoidAsync("alert", "Membership type restored successfully!");
+            CloseRestoreMembershipTypeConfirmation();
+            ToastService.ShowSuccess($"Membership type '{typeName}' restored successfully!");
         }
         catch (Exception ex)
         {
-            await LogAuditAction("Membership Type Restore Failed", "MembershipType", membershipType.MembershipTypeID, membershipType.TypeName, $"Failed to restore membership type: {ex.Message}", "Failed", ex.Message);
-            await JSRuntime.InvokeVoidAsync("alert", $"Error restoring membership type: {ex.Message}");
+            var typeName = selectedRestoreMembershipType?.TypeName ?? "Unknown";
+            var typeId = selectedRestoreMembershipType?.MembershipTypeID;
+            await LogAuditAction("Membership Type Restore Failed", "MembershipType", typeId, typeName, $"Failed to restore membership type: {ex.Message}", "Failed", ex.Message);
+            ToastService.ShowError($"Error restoring membership type: {ex.Message}");
+        }
+        finally
+        {
+            isRestoringMembershipType = false;
+            StateHasChanged();
         }
     }
 
@@ -1318,239 +1020,25 @@
         return $"{firstInitial}{lastInitial}";
     }
 
-    private void OpenAccountModal()
+    private string GetDisplayName(string firstName, string middleInitial, string lastName)
     {
-        accountModalError = "";
-        newAccountUsername = "";
-        newAccountPassword = "";
-        if (availableRoles.Any())
-        {
-            selectedRoleId = availableRoles.First().RoleID;
-        }
-        showAccountModal = true;
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(firstName))
+            parts.Add(CapitalizeName(firstName));
+        if (!string.IsNullOrWhiteSpace(middleInitial))
+            parts.Add(CapitalizeName(middleInitial));
+        if (!string.IsNullOrWhiteSpace(lastName))
+            parts.Add(CapitalizeName(lastName));
+        
+        return string.Join(" ", parts);
     }
 
-    private void CloseAccountModal()
+    private string CapitalizeName(string name)
     {
-        showAccountModal = false;
-        accountModalError = "";
-        isSavingAccount = false;
-    }
-
-    private async Task SaveAccount()
-    {
-        if (isSavingAccount)
-            return;
-
-        accountModalError = "";
-
-        if (string.IsNullOrWhiteSpace(newAccountUsername) || string.IsNullOrWhiteSpace(newAccountPassword))
-        {
-            accountModalError = "Username and password are required.";
-            return;
-        }
-
-        if (!availableRoles.Any())
-        {
-            accountModalError = "No roles available. Please add Staff or Trainer roles first.";
-            return;
-        }
-
-        isSavingAccount = true;
-
-        try
-        {
-            var username = newAccountUsername.Trim();
-
-            var exists = await Context.Users
-                .AnyAsync(u => u.Username.ToLower() == username.ToLower());
-
-            if (exists)
-            {
-                accountModalError = "Username already exists.";
-                return;
-            }
-
-            var user = new User
-            {
-                Username = username,
-                Password = newAccountPassword.Trim(),
-                RoleID = selectedRoleId,
-                IsActive = true,
-                CreatedAt = DateTime.Now
-            };
-
-            Context.Users.Add(user);
-            await Context.SaveChangesAsync();
-
-            var roleName = availableRoles.FirstOrDefault(r => r.RoleID == selectedRoleId)?.RoleName ?? "Unknown";
-            await LogAuditAction("Account Created", "User", user.UserID, username, $"Created new {roleName} account: {username}");
-            await LoadAccountData();
-            await LoadAuditLogs();
-            CloseAccountModal();
-            await JSRuntime.InvokeVoidAsync("alert", "Account created successfully.");
-        }
-        catch (Exception ex)
-        {
-            await LogAuditAction("Account Creation Failed", "User", null, newAccountUsername, $"Failed to create account: {ex.Message}", "Failed", ex.Message);
-            accountModalError = $"Error creating account: {ex.Message}";
-        }
-        finally
-        {
-            isSavingAccount = false;
-            StateHasChanged();
-        }
-    }
-
-    private void OpenPasswordModal(User user)
-    {
-        selectedPasswordUser = user;
-        passwordInput = "";
-        passwordConfirm = "";
-        passwordModalError = "";
-        isSavingPassword = false;
-        showPasswordModal = true;
-    }
-
-    private void ClosePasswordModal()
-    {
-        showPasswordModal = false;
-        selectedPasswordUser = null;
-        passwordInput = "";
-        passwordConfirm = "";
-        passwordModalError = "";
-        isSavingPassword = false;
-    }
-
-    private async Task SavePasswordChange()
-    {
-        if (selectedPasswordUser == null || isSavingPassword)
-            return;
-
-        passwordModalError = "";
-
-        if (string.IsNullOrWhiteSpace(passwordInput) || string.IsNullOrWhiteSpace(passwordConfirm))
-        {
-            passwordModalError = "Please enter and confirm the new password.";
-            return;
-        }
-
-        if (passwordInput.Length < 4)
-        {
-            passwordModalError = "Password must be at least 4 characters.";
-            return;
-        }
-
-        if (passwordInput != passwordConfirm)
-        {
-            passwordModalError = "Passwords do not match.";
-            return;
-        }
-
-        isSavingPassword = true;
-
-        try
-        {
-            selectedPasswordUser.Password = passwordInput.Trim();
-            selectedPasswordUser.LastPasswordChange = DateTime.Now;
-            Context.Users.Update(selectedPasswordUser);
-            await Context.SaveChangesAsync();
-            await LogAuditAction("Password Changed", "User", selectedPasswordUser.UserID, selectedPasswordUser.Username, $"Password changed for account: {selectedPasswordUser.Username}");
-            await LoadAuditLogs();
-            await JSRuntime.InvokeVoidAsync("alert", "Password updated.");
-            ClosePasswordModal();
-        }
-        catch (Exception ex)
-        {
-            await LogAuditAction("Password Change Failed", "User", selectedPasswordUser.UserID, selectedPasswordUser.Username, $"Failed to change password: {ex.Message}", "Failed", ex.Message);
-            passwordModalError = $"Error updating password: {ex.Message}";
-        }
-        finally
-        {
-            isSavingPassword = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task ArchiveAccount(User user)
-    {
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Archive account '{user.Username}'?");
-        if (!confirm)
-            return;
-
-        try
-        {
-            user.IsActive = false;
-            user.UpdatedAt = DateTime.Now;
-            Context.Users.Update(user);
-            await Context.SaveChangesAsync();
-            await LogAuditAction("Account Archived", "User", user.UserID, user.Username, $"Archived account: {user.Username}");
-            await LoadAccountData();
-            await LoadAuditLogs();
-            await JSRuntime.InvokeVoidAsync("alert", "Account archived.");
-        }
-        catch (Exception ex)
-        {
-            await LogAuditAction("Account Archive Failed", "User", user.UserID, user.Username, $"Failed to archive account: {ex.Message}", "Failed", ex.Message);
-            await JSRuntime.InvokeVoidAsync("alert", $"Error archiving account: {ex.Message}");
-        }
-    }
-
-    private async Task RestoreAccount(User user)
-    {
-        try
-        {
-            user.IsActive = true;
-            user.UpdatedAt = DateTime.Now;
-            Context.Users.Update(user);
-            await Context.SaveChangesAsync();
-            await LogAuditAction("Account Restored", "User", user.UserID, user.Username, $"Restored account: {user.Username}");
-            await LoadAccountData();
-            await LoadAuditLogs();
-            await JSRuntime.InvokeVoidAsync("alert", "Account restored.");
-        }
-        catch (Exception ex)
-        {
-            await LogAuditAction("Account Restore Failed", "User", user.UserID, user.Username, $"Failed to restore account: {ex.Message}", "Failed", ex.Message);
-            await JSRuntime.InvokeVoidAsync("alert", $"Error restoring account: {ex.Message}");
-        }
-    }
-
-    private async Task LoadAuditLogs()
-    {
-        try
-        {
-            var query = Context.AuditLogs.AsQueryable();
-
-            // Filter by entity type
-            if (auditLogFilter != "all")
-            {
-                query = query.Where(log => log.EntityType == auditLogFilter);
-            }
-
-            // Filter by date range
-            if (auditLogStartDate.HasValue)
-            {
-                query = query.Where(log => log.Timestamp >= auditLogStartDate.Value);
-            }
-
-            if (auditLogEndDate.HasValue)
-            {
-                var endDate = auditLogEndDate.Value.AddDays(1); // Include the entire end date
-                query = query.Where(log => log.Timestamp < endDate);
-            }
-
-            auditLogs = await query
-                .OrderByDescending(log => log.Timestamp)
-                .Take(500) // Limit to last 500 logs for performance
-                .ToListAsync();
-        }
-        catch (Exception ex)
-        {
-            // If AuditLogs table doesn't exist yet, just set empty list
-            auditLogs = new List<AuditLog>();
-            System.Diagnostics.Debug.WriteLine($"Error loading audit logs: {ex.Message}");
-        }
+        if (string.IsNullOrWhiteSpace(name))
+            return "";
+        
+        return name.Substring(0, 1).ToUpper() + name.Substring(1).ToLower();
     }
 
     private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
@@ -1584,9 +1072,7 @@
         }
         catch (Exception ex)
         {
-            // Silently fail if audit logging fails (e.g., table doesn't exist yet)
             System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
         }
     }
 }
-

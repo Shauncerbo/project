@@ -14,6 +14,9 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <!-- html2pdf.js for PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Chart.js for dashboard charts (loaded from local file for offline MAUI WebView) -->
+    <!-- Make sure you have wwwroot/js/chart.umd.min.js copied from the official Chart.js distribution -->
+    <script src="js/chart.umd.min.js"></script>
 
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -31,6 +34,7 @@
     </div>
 
     <script src="_framework/blazor.webview.js"></script>
+    <script src="dashboardCharts.js"></script>
 
     <script>
         // MAUI WebView2 Camera Implementation
@@ -385,6 +389,34 @@ Windows Settings → Privacy & Security → Camera → Allow apps to access your
                 });
             } else {
                 console.warn('Logout button not found!');
+            }
+        };
+
+        // Scroll to section function for Reports page
+        window.scrollToSection = function(sectionId) {
+            console.log('Scrolling to section:', sectionId);
+            const element = document.getElementById(sectionId);
+            if (element) {
+                // Calculate offset for fixed header (adjust 100px if needed)
+                const headerOffset = 100;
+                const elementPosition = element.getBoundingClientRect().top;
+                const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+                window.scrollTo({
+                    top: offsetPosition,
+                    behavior: 'smooth'
+                });
+                
+                // Add highlight effect
+                const originalBg = element.style.backgroundColor;
+                element.style.transition = 'background-color 0.3s';
+                element.style.backgroundColor = '#f0f4f8';
+                setTimeout(() => {
+                    element.style.backgroundColor = originalBg || '';
+                }, 2000);
+            } else {
+                console.error('Section not found:', sectionId);
+                alert('Section not found: ' + sectionId);
             }
         };
     </script>
