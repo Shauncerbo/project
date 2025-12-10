@@ -38,6 +38,9 @@ namespace project.Models
 
         public bool IsArchived { get; set; } = false;
 
+        // Lead Source - tracks how member discovered the gym
+        public string? LeadSource { get; set; }  // Facebook, Instagram, Referral, Walk-in, Promotion, Google, Website, Other
+
         // Foreign Keys
         public int MembershipTypeID { get; set; }
         public int? TrainerID { get; set; }

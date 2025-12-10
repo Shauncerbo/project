@@ -165,7 +165,8 @@
                         <input type="datetime-local"
                                class="form-control @(validationErrors.ContainsKey("VisitDate") ? "error" : "")"
                                @bind="currentWalkin.VisitDate"
-                               format="yyyy-MM-ddTHH:mm" />
+                               @bind:format="yyyy-MM-ddTHH:mm"
+                               readonly />
                         @if (validationErrors.ContainsKey("VisitDate"))
                         {
                             <div class="error-message">@validationErrors["VisitDate"]</div>
@@ -274,6 +275,25 @@
                             }
                         </div>
                     }
+
+                    <!-- Lead Source -->
+                    <div class="form-group">
+                        <label>How did you hear about us?</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown" @bind="currentWalkin.LeadSource">
+                                <option value="">Select source (optional)</option>
+                                <option value="Facebook">Facebook</option>
+                                <option value="Instagram">Instagram</option>
+                                <option value="Referral">Referral (Friend/Family)</option>
+                                <option value="Walk-in">Walk-in / Passed by</option>
+                                <option value="Promotion">Promotion / Discount</option>
+                                <option value="Google">Google Search</option>
+                                <option value="Website">Website</option>
+                                <option value="Other">Other</option>
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                    </div>
 
                     <!-- General error message -->
                     @if (validationErrors.ContainsKey("General"))

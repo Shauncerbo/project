@@ -129,12 +129,12 @@
                                                 </small>
                                             </td>
                                             <td>
-                                                <span class="badge bg-success">
+                                                <span class="badge status-badge status-active">
                                                     <i class="fas fa-check-circle me-1"></i>Verified
                                                 </span>
                                             </td>
                                             <td>
-                                                <span class="badge @GetStatusBadge(record)">
+                                                <span class="badge status-badge @GetStatusBadge(record)">
                                                     @GetStatusText(record)
                                                 </span>
                                             </td>
@@ -240,13 +240,14 @@
         }
 
     .btn-outline-navy {
-        color: #234060;
+        color: white;
         border-color: #234060;
+        background-color: #234060;
     }
 
         .btn-outline-navy:hover {
-            background-color: #234060;
-            border-color: #234060;
+            background-color: #1a3450;
+            border-color: #1a3450;
             color: white;
         }
 
@@ -332,7 +333,7 @@
     }
 
     .alert-success {
-        border-left-color: #28a745;
+        border-left-color: #5cb85c;
         background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
     }
 
@@ -363,6 +364,42 @@
 
     .text-navy {
         color: #234060 !important;
+    }
+
+    .btn-outline-secondary {
+        color: white !important;
+        border-color: #234060 !important;
+        background-color: #234060 !important;
+    }
+
+    .btn-outline-secondary:hover {
+        color: white !important;
+        background-color: #1a3450 !important;
+        border-color: #1a3450 !important;
+    }
+
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        display: inline-block;
+    }
+
+    .status-active {
+        background: #e6f6ed;
+        color: #1d8348;
+    }
+
+    .status-inactive {
+        background: #fdecea;
+        color: #b0382f;
+    }
+
+    .status-expired {
+        background: #fdecea;
+        color: #b0382f;
     }
 </style>
 
@@ -517,9 +554,10 @@
     {
         return record.Member?.Status switch
         {
-            "Active" => "bg-success",
-            "Inactive" => "bg-danger",
-            _ => "bg-secondary"
+            "Active" => "status-active",
+            "Inactive" => "status-inactive",
+            "Expired" => "status-expired",
+            _ => "status-inactive"
         };
     }
 

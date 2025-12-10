@@ -5,6 +5,7 @@
 @using Microsoft.EntityFrameworkCore
 @using project.Data
 @using project.Models
+@using project.Services
 @using MemberModel = project.Models.Member
 @using MembershipTypeModel = project.Models.MembershipType
 @using PaymentModel = project.Models.Payment
@@ -13,6 +14,7 @@
 @using MemberPromo = project.Models.MemberPromo
 @inject AppDbContext Context
 @inject IJSRuntime JSRuntime
+@inject IToastService ToastService
 
 <div class="payments-container">
     <div class="payments-header">
@@ -38,8 +40,27 @@
 
     <!-- Detailed subscriptions datatable with search -->
     <div class="table-container payments-table-section">
-        <div class="table-toolbar">
-            <span class="table-title">Recent Subscriptions</span>
+        <div class="table-toolbar payments-filters">
+            <div class="toolbar-left">
+                <span class="table-title">Recent Subscriptions</span>
+                <div class="filter-group">
+                    <label class="filter-label">Period:</label>
+                    <select class="period-select" @bind="paymentsSelectedPeriod" @bind:after="OnPaymentsPeriodChanged">
+                        <option value="today">Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="year">This Year</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                    @if (paymentsSelectedPeriod == "custom")
+                    {
+                        <input type="date" class="date-input" @bind="paymentsCustomStartDate" @bind:after="OnPaymentsPeriodChanged" />
+                        <span>to</span>
+                        <input type="date" class="date-input" @bind="paymentsCustomEndDate" @bind:after="OnPaymentsPeriodChanged" />
+                    }
+                </div>
+            </div>
             <input type="text"
                    class="search-bar"
                    placeholder="Search by name or payment method..."
@@ -154,10 +175,34 @@
                         @DisplayError("Address")
                     </div>
 
+                    <!-- Lead Source -->
+                    <div class="form-group">
+                        <label>How did you hear about us?</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown" @bind="subscriptionMember.LeadSource">
+                                <option value="">Select source (optional)</option>
+                                <option value="Facebook">Facebook</option>
+                                <option value="Instagram">Instagram</option>
+                                <option value="Referral">Referral (Friend/Family)</option>
+                                <option value="Walk-in">Walk-in / Passed by</option>
+                                <option value="Promotion">Promotion / Discount</option>
+                                <option value="Google">Google Search</option>
+                                <option value="Website">Website</option>
+                                <option value="Other">Other</option>
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                    </div>
+
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="required">Join Date</label>
-                            <input type="date" class="form-control @(GetErrorClass("JoinDate"))" @bind="subscriptionJoinDate" @bind:format="yyyy-MM-dd" @bind:after="OnJoinDateChanged" />
+                            <label class="required">Join Date & Time</label>
+                            <input type="datetime-local"
+                                   class="form-control @(GetErrorClass("JoinDate"))"
+                                   @bind="subscriptionJoinDate"
+                                   @bind:format="yyyy-MM-ddTHH:mm"
+                                   @bind:after="OnJoinDateChanged"
+                                   readonly />
                             @DisplayError("JoinDate")
                         </div>
                         <div class="form-group">
@@ -402,11 +447,56 @@
         align-items: center;
         padding: 12px 16px 8px 16px;
         margin-bottom: 4px;
+        gap: 12px;
+        flex-wrap: wrap;
     }
 
         .table-toolbar .search-bar {
             margin-left: auto;
         }
+
+    .payments-filters {
+        align-items: flex-end;
+        padding: 12px 16px 8px 16px;
+        background: #ffffff;
+    }
+
+    .toolbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .filter-label {
+        font-weight: 600;
+        color: #234060;
+        font-size: 14px;
+    }
+
+    .period-select,
+    .date-input {
+        height: 36px;
+        border: 1px solid #dcdfe5;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 14px;
+    }
+
+    .date-input {
+        min-width: 150px;
+    }
+
+    .payments-filters .search-bar {
+        min-width: 260px;
+    }
 
     .table-title {
         font-size: 16px;
@@ -546,6 +636,7 @@
         display: flex;
         flex-direction: column;
         gap: 6px;
+    margin-bottom: 12px;
     }
 
     .form-group label {
@@ -710,7 +801,7 @@
     }
 
     .price-discount {
-        color: #28a745;
+        color: #5cb85c;
         font-weight: 600;
     }
 
@@ -763,6 +854,9 @@
     private List<PaymentModel> recentSubscriptions = new();
     private List<PaymentModel> filteredSubscriptions = new();
     private string paymentsSearchQuery = string.Empty;
+    private string paymentsSelectedPeriod = "today";
+    private DateTime? paymentsCustomStartDate = DateTime.Today;
+    private DateTime? paymentsCustomEndDate = DateTime.Today;
 
     protected override async Task OnInitializedAsync()
     {
@@ -861,7 +955,7 @@
             Status = "Active"
         };
 
-        subscriptionJoinDate = DateTime.Today;
+        subscriptionJoinDate = DateTime.Now;
         subscriptionExpiration = null;
         selectedMembershipTypeId = 0;
         selectedMembershipType = null;
@@ -887,6 +981,27 @@
         ApplyPaymentsFilter();
     }
 
+    private void OnPaymentsPeriodChanged()
+    {
+        ApplyPaymentsFilter();
+    }
+
+    private (DateTime start, DateTime end) GetPaymentsDateRange()
+    {
+        var today = DateTime.Today;
+
+        return paymentsSelectedPeriod switch
+        {
+            "today" => (today, today.AddDays(1).AddSeconds(-1)),
+            "yesterday" => (today.AddDays(-1), today.AddSeconds(-1)),
+            "week" => (today.AddDays(-(int)today.DayOfWeek), today.AddDays(1).AddSeconds(-1)),
+            "month" => (new DateTime(today.Year, today.Month, 1), today.AddDays(1).AddSeconds(-1)),
+            "year" => (new DateTime(today.Year, 1, 1), today.AddDays(1).AddSeconds(-1)),
+            "custom" => ((paymentsCustomStartDate ?? today), (paymentsCustomEndDate ?? today.AddDays(1).AddSeconds(-1))),
+            _ => (today, today.AddDays(1).AddSeconds(-1))
+        };
+    }
+
     private void ApplyPaymentsFilter()
     {
         if (recentSubscriptions == null)
@@ -895,15 +1010,18 @@
             return;
         }
 
-        var term = (paymentsSearchQuery ?? string.Empty).Trim().ToLower();
-        if (string.IsNullOrEmpty(term))
-        {
-            filteredSubscriptions = recentSubscriptions.ToList();
-            return;
-        }
+        var (start, end) = GetPaymentsDateRange();
 
-        filteredSubscriptions = recentSubscriptions
-            .Where(p =>
+        var query = recentSubscriptions.Where(p =>
+        {
+            var joinDate = p.Member?.JoinDate.Date ?? DateTime.MinValue;
+            return joinDate >= start && joinDate <= end;
+        });
+
+        var term = (paymentsSearchQuery ?? string.Empty).Trim().ToLower();
+        if (!string.IsNullOrEmpty(term))
+        {
+            query = query.Where(p =>
             {
                 var name = p.Member != null
                     ? $"{p.Member.FirstName} {p.Member.LastName}"
@@ -911,8 +1029,10 @@
                 var paymentType = p.PaymentType ?? string.Empty;
                 return name.ToLower().Contains(term) ||
                        paymentType.ToLower().Contains(term);
-            })
-            .ToList();
+            });
+        }
+
+        filteredSubscriptions = query.ToList();
     }
 
     private void CloseSubscriptionModal()
@@ -1008,7 +1128,7 @@
             var promoMessage = selectedPromotion != null 
                 ? $" with {selectedPromotion.DiscountRate}% discount" 
                 : "";
-            await JSRuntime.InvokeVoidAsync("alert", $"Subscription created for {subscriptionMember.FullName}{promoMessage}.");
+            ToastService.ShowSuccess($"Subscription created for {subscriptionMember.FullName}{promoMessage}.");
         }
         catch (Exception ex)
         {

@@ -16,6 +16,9 @@ namespace project.Models
         public virtual Trainer? Trainer { get; set; }
         public virtual TrainerSchedule? TrainerSchedule { get; set; }
         public bool IsArchived { get; set; } = false;
+
+        // Lead Source - tracks how walk-in customer discovered the gym
+        public string? LeadSource { get; set; }  // Facebook, Instagram, Referral, Walk-in, Promotion, Google, Website, Other
         
         // PayMongo payment fields
         public string? PayMongoPaymentId { get; set; }

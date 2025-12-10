@@ -72,9 +72,11 @@
                                 </td>
                                 <td>@(user.CreatedAt.HasValue ? user.CreatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
                                 <td class="account-actions">
-                                    <button class="btn-secondary" @onclick="() => OpenPasswordModal(user)">Change Password</button>
-                                    <button class="btn-archive" @onclick="() => ArchiveAccount(user)">
-                                        Archive
+                                    <button class="action-btn edit-btn" @onclick="() => OpenPasswordModal(user)" title="Change Password">
+                                        <img src="/Newedit_icon.svg" class="action-icon" alt="Change Password" />
+                                    </button>
+                                    <button class="action-btn archive-btn" @onclick="() => ArchiveAccount(user)" title="Archive">
+                                        <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </td>
                             </tr>
@@ -239,7 +241,7 @@
     }
 
     .btn-primary {
-        background: #234060;
+        background: #5cb85c;
         color: white;
         border: none;
         padding: 10px 18px;
@@ -250,8 +252,9 @@
     }
 
     .btn-primary:hover {
-        background: #1a3450;
+        background: #4cae4c;
         transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
     }
 
     .btn-secondary {
@@ -303,6 +306,34 @@
         display: flex;
         gap: 8px;
         align-items: center;
+    }
+
+    .action-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 6px 8px;
+        border-radius: 4px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .action-icon {
+        width: 18px;
+        height: 18px;
+        object-fit: contain;
+    }
+
+    .edit-btn:hover {
+        background: #e3f2fd;
+        transform: scale(1.1);
+    }
+
+    .archive-btn:hover {
+        background: #fff3e0;
+        transform: scale(1.1);
     }
 
     .table-container {

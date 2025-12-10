@@ -374,7 +374,7 @@
                             Financial Statement (Balance Sheet)
                             @if (Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m)
                             {
-                                <span style="color: #28a745; font-size: 0.9rem; margin-left: 10px;">✓ BALANCED</span>
+                                <span style="color: #5cb85c; font-size: 0.9rem; margin-left: 10px;">✓ BALANCED</span>
                             }
                             else
                             {
@@ -470,7 +470,7 @@
                         </div>
 
                         <!-- Accounting Equation Note -->
-                        <div style="margin-top: 20px; padding: 15px; background: @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#e8f5e9" : "#ffebee"); border-left: 4px solid @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#28a745" : "#dc3545"); border-radius: 4px;">
+                        <div style="margin-top: 20px; padding: 15px; background: @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#e8f5e9" : "#ffebee"); border-left: 4px solid @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#5cb85c" : "#dc3545"); border-radius: 4px;">
                             <p style="margin: 0; font-size: 0.9rem; color: @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#2e7d32" : "#c62828");">
                                 <strong>Accounting Equation:</strong> Assets (₱@(totalAssets.ToString("N2"))) = Liabilities (₱@(totalLiabilities.ToString("N2"))) + Equity (₱@(totalEquity.ToString("N2")))
                             </p>
@@ -1436,7 +1436,11 @@
     private async Task LoadRevenueByPaymentMethod(DateTime startDate, DateTime endDate)
     {
         var memberPayments = await Context.Payments
-            .Where(p => p.PaymentDate >= startDate && p.PaymentDate <= endDate)
+            .Include(p => p.Member)
+            .Where(p => p.PaymentDate >= startDate && 
+                        p.PaymentDate <= endDate && 
+                        p.Member != null && 
+                        !p.Member.IsArchived)
             .ToListAsync();
 
         cashRevenue = memberPayments.Where(p => p.PaymentType == "Cash").Sum(p => p.Amount);
@@ -1459,7 +1463,10 @@
         var payments = await Context.Payments
             .Include(p => p.Member)
             .ThenInclude(m => m!.MembershipType)
-            .Where(p => p.PaymentDate >= startDate && p.PaymentDate <= endDate)
+            .Where(p => p.PaymentDate >= startDate && 
+                        p.PaymentDate <= endDate && 
+                        p.Member != null && 
+                        !p.Member.IsArchived)
             .ToListAsync();
 
         revenueByMembershipType = payments
@@ -1477,7 +1484,11 @@
     private async Task LoadRevenueBySource(DateTime startDate, DateTime endDate)
     {
         memberIncome = await Context.Payments
-            .Where(p => p.PaymentDate >= startDate && p.PaymentDate <= endDate)
+            .Include(p => p.Member)
+            .Where(p => p.PaymentDate >= startDate && 
+                        p.PaymentDate <= endDate && 
+                        p.Member != null && 
+                        !p.Member.IsArchived)
             .SumAsync(p => p.Amount);
 
         walkinIncome = await Context.WalkIns
@@ -1496,14 +1507,22 @@
         var previousEndDate = startDate.AddSeconds(-1);
 
         currentPeriodRevenue = await Context.Payments
-            .Where(p => p.PaymentDate >= startDate && p.PaymentDate <= endDate)
+            .Include(p => p.Member)
+            .Where(p => p.PaymentDate >= startDate && 
+                        p.PaymentDate <= endDate && 
+                        p.Member != null && 
+                        !p.Member.IsArchived)
             .SumAsync(p => p.Amount);
         currentPeriodRevenue += await Context.WalkIns
             .Where(w => w.VisitDate >= startDate && w.VisitDate <= endDate && !w.IsArchived)
             .SumAsync(w => w.PaymentAmount);
 
         previousPeriodRevenue = await Context.Payments
-            .Where(p => p.PaymentDate >= previousStartDate && p.PaymentDate <= previousEndDate)
+            .Include(p => p.Member)
+            .Where(p => p.PaymentDate >= previousStartDate && 
+                        p.PaymentDate <= previousEndDate && 
+                        p.Member != null && 
+                        !p.Member.IsArchived)
             .SumAsync(p => p.Amount);
         previousPeriodRevenue += await Context.WalkIns
             .Where(w => w.VisitDate >= previousStartDate && w.VisitDate <= previousEndDate && !w.IsArchived)
@@ -1583,7 +1602,7 @@
     {
         var members = await Context.Members
             .Include(m => m.Payments)
-            .Where(m => !m.IsArchived)
+            .Where(m => !m.IsArchived && m.Status == "Active")
             .ToListAsync();
 
         if (!members.Any())

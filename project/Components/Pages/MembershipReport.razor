@@ -51,7 +51,6 @@
                             <h3>Active Members</h3>
                             <div class="stat-breakdown">
                                 <span>New @GetPeriodLabel(): @newMembers</span>
-                                <span>Upcoming Renewals: @expiringMembers</span>
                             </div>
                         </div>
                         <div class="stat-number">@activeMembers</div>
@@ -269,6 +268,29 @@
                                 <span>Most Active Day:</span>
                                 <span>@mostActiveDay</span>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Lead Source Analytics -->
+                    <div class="report-card">
+                        <h3>Lead Source Analytics</h3>
+                        <div class="report-content">
+                            @if (!leadSourceBreakdown.Any())
+                            {
+                                <div class="report-item">
+                                    <span class="text-muted">No lead source data available yet.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var source in leadSourceBreakdown)
+                                {
+                                    <div class="report-item">
+                                        <span>@source.Source:</span>
+                                        <span>@source.Count members (@source.Percentage.ToString("F1")%)</span>
+                                    </div>
+                                }
+                            }
                         </div>
                     </div>
 
@@ -683,7 +705,7 @@
     }
 
     .print-btn {
-        background: #27ae60;
+        background: #5cb85c;
     }
 
     .print-header {
@@ -914,6 +936,7 @@
     private List<InactiveMemberRow> inactiveMembersReport = new();
     private List<ChurnMemberRow> churnMembersReport = new();
     private List<Member> expiredMembersTable = new();
+    private List<LeadSourceData> leadSourceBreakdown = new();
 
     private class MembershipPopularity
     {
@@ -961,6 +984,13 @@
         public DateTime? ExpirationDate { get; set; }
         public int DaysSinceExpiration { get; set; }
         public string MembershipType { get; set; } = string.Empty;
+    }
+
+    private class LeadSourceData
+    {
+        public string Source { get; set; } = string.Empty;
+        public int Count { get; set; }
+        public decimal Percentage { get; set; }
     }
 
     protected override async Task OnInitializedAsync()
@@ -1018,6 +1048,7 @@
             await LoadInactiveMembersReport();
             await LoadChurnMembersReport();
             await LoadExpiredMembersTable();
+            await LoadLeadSourceAnalytics(startDate, endDate);
         }
         catch (Exception ex)
         {
@@ -1332,6 +1363,41 @@
                         m.ExpirationDate.Value.Date < today)
             .OrderByDescending(m => m.ExpirationDate)
             .ToListAsync();
+    }
+
+    private async Task LoadLeadSourceAnalytics(DateTime startDate, DateTime endDate)
+    {
+        var today = DateTime.Today;
+        
+        // Load only active members (exclude archived and expired)
+        var members = await Context.Members
+            .Where(m => !m.IsArchived && 
+                       m.Status == "Active" && 
+                       (!m.ExpirationDate.HasValue || m.ExpirationDate >= today))
+            .ToListAsync();
+
+        // Load only walk-ins that have a lead source specified (exclude old ones without lead source)
+        var walkins = await Context.WalkIns
+            .Where(w => !w.IsArchived && !string.IsNullOrEmpty(w.LeadSource))
+            .ToListAsync();
+
+        // Combine lead sources from both members and walk-ins
+        var memberSources = members.Select(m => string.IsNullOrEmpty(m.LeadSource) ? "Not Specified" : m.LeadSource);
+        var walkinSources = walkins.Select(w => w.LeadSource!);
+        var allSources = memberSources.Concat(walkinSources).ToList();
+
+        var total = allSources.Count;
+
+        leadSourceBreakdown = allSources
+            .GroupBy(s => s)
+            .Select(g => new LeadSourceData
+            {
+                Source = g.Key,
+                Count = g.Count(),
+                Percentage = total > 0 ? (g.Count() * 100m / total) : 0
+            })
+            .OrderByDescending(x => x.Count)
+            .ToList();
     }
 
     private async Task PrintMembershipReports()
