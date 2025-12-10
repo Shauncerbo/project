@@ -35,13 +35,13 @@
         <div class="summary-card">
             <h3>TOTAL LIABILITIES</h3>
             <div class="summary-card-content">
-                <p class="summary-amount" style="color: #dc3545;">₱@totalLiability.ToString("N2")</p>
+                <p class="summary-amount">₱@totalLiability.ToString("N2")</p>
             </div>
         </div>
         <div class="summary-card">
             <h3>NET WORTH</h3>
             <div class="summary-card-content">
-                <p class="summary-amount" style="color: @((totalCapital + totalInvestment - totalLiability) >= 0 ? "#28a745" : "#dc3545");">₱@((totalCapital + totalInvestment - totalLiability).ToString("N2"))</p>
+                <p class="summary-amount">₱@((totalCapital + totalInvestment - totalLiability).ToString("N2"))</p>
             </div>
         </div>
     </div>
@@ -586,7 +586,7 @@
     }
 
     .add-btn {
-        background: #234060;
+        background: #5cb85c;
         color: white;
         border: none;
         padding: 10px 20px;
@@ -598,9 +598,9 @@
     }
 
     .add-btn:hover {
-        background: #1a365d;
+        background: #4cae4c;
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(35, 64, 96, 0.3);
+        box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
     }
 
     .table-container {
