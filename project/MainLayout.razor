@@ -129,6 +129,22 @@
                     </div>
                 }
 
+                <!-- FINANCE GROUP -->
+                @if (ShowNavItem("Finance"))
+                {
+                    <div class="sidebar-group">
+                        <div class="sidebar-group-title">FINANCE</div>
+                        <ul>
+                            <li>
+                                <NavLink href="/finance" class="nav-link" activeClass="active">
+                                    <img src="/payment_icon.svg" class="sidebar-icon" alt="Capital & Investments" />
+                                    Capital & Investments
+                                </NavLink>
+                            </li>
+                        </ul>
+                    </div>
+                }
+
                 <!-- REPORTS GROUP -->
                 @if (ShowNavItem("Reports"))
                 {
@@ -167,6 +183,12 @@
                                 <NavLink href="/administration/archived" class="nav-link" activeClass="active" Match="NavLinkMatch.All">
                                     <img src="/archived_icon.svg" class="sidebar-icon" alt="Archived Users" />
                                     Archived Users
+                                </NavLink>
+                            </li>
+                            <li>
+                                <NavLink href="/settings" class="nav-link" activeClass="active">
+                                    <img src="/settings_icon.svg" class="sidebar-icon" alt="Archived Items" />
+                                    Archived Items
                                 </NavLink>
                             </li>
                         </ul>
@@ -222,12 +244,6 @@
                                     <NavLink href="/sync-database" class="nav-link" activeClass="active">
                                         <img src="/database_icon.svg" class="sidebar-icon" alt="Database Sync" />
                                         Database Sync
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink href="/settings" class="nav-link" activeClass="active">
-                                        <img src="/settings_icon.svg" class="sidebar-icon" alt="System Archive" />
-                                        System Archive
                                     </NavLink>
                                 </li>
                             }
@@ -393,7 +409,39 @@
         overflow-x: hidden;
         min-height: 0;
         box-sizing: border-box;
+        /* Custom scrollbar styling - inside the sidebar */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
     }
+
+        /* WebKit browsers (Chrome, Safari, Edge) */
+        .sidebar-nav::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
+            margin: 4px 0;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            transition: background 0.2s ease;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.45);
+            background-clip: padding-box;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-thumb:active {
+            background: rgba(255, 255, 255, 0.5);
+            background-clip: padding-box;
+        }
 
         .sidebar-nav ul {
             list-style: none;
@@ -423,23 +471,6 @@
         align-items: center;
         gap: 6px;
     }
-
-            .sidebar-nav ul::-webkit-scrollbar {
-                width: 8px;
-            }
-
-            .sidebar-nav ul::-webkit-scrollbar-track {
-                background: rgba(255, 255, 255, 0.1);
-            }
-
-            .sidebar-nav ul::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.4);
-                border-radius: 4px;
-            }
-
-                .sidebar-nav ul::-webkit-scrollbar-thumb:hover {
-                    background: rgba(255, 255, 255, 0.6);
-                }
 
         .sidebar-nav li {
             margin: 2px 6px;
@@ -745,6 +776,7 @@
         // Staff: limited navigation
         // Allowed: Dashboard (handled separately), Members, Trainers, Walkins,
         // Member Verification (Attendance), Membership Payments, and Logout (always visible).
+        // Finance is admin-only.
         if (role == "staff")
         {
             switch (feature)

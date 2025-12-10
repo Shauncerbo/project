@@ -22,14 +22,6 @@
 
     <!-- Tabs Navigation -->
     <div class="tabs-container">
-        <button class="tab-btn @(activeTab == "members" ? "active" : "")" @onclick='() => SwitchTab("members")'>
-            <span class="tab-icon"></span>
-            Archived Members
-            @if (archivedMembersCount > 0)
-            {
-                <span class="badge">@archivedMembersCount</span>
-            }
-        </button>
         <button class="tab-btn @(activeTab == "promotions" ? "active" : "")" @onclick='() => SwitchTab("promotions")'>
             <span class="tab-icon"></span>
             Archived Promotions
@@ -58,69 +50,6 @@
         }
         else
         {
-            <!-- Archived Members Tab -->
-            @if (activeTab == "members")
-            {
-                <div class="archived-section">
-                    <div class="section-header">
-                        <h2>Archived Members</h2>
-                        <input type="text"
-                               class="search-bar"
-                               placeholder="Search archived members..."
-                               @bind="memberSearchQuery"
-                               @bind:event="oninput"
-                               @onkeyup="FilterArchivedMembers" />
-                    </div>
-
-                    @if (filteredArchivedMembers == null || !filteredArchivedMembers.Any())
-                    {
-                        <div class="empty-state">
-                            <h3>No Archived Members</h3>
-                            <p>There are no archived members to display.</p>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="table-container">
-                            <table class="archived-table">
-                                <thead>
-                                    <tr>
-                                        <th>NAME</th>
-                                        <th>CONTACT</th>
-                                        <th>EMAIL</th>
-                                        <th>MEMBERSHIP TYPE</th>
-                                        <th>ARCHIVED DATE</th>
-                                        <th>ACTIONS</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var member in filteredArchivedMembers)
-                                    {
-                                        <tr>
-                                            <td>
-                                                <div class="member-info">
-                                                    <div class="member-avatar">@GetInitials(member.FirstName, member.LastName)</div>
-                                                    <span>@GetDisplayName(member.FirstName, member.MiddleInitial, member.LastName)</span>
-                                                </div>
-                                            </td>
-                                            <td>@member.ContactNumber</td>
-                                            <td>@member.Email</td>
-                                            <td>@(member.MembershipType?.TypeName ?? "N/A")</td>
-                                            <td>-</td>
-                                            <td>
-                                                <button class="btn-restore" @onclick="() => RestoreMember(member)">
-                                                    <span class="restore-icon"></span> Restore
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
-            }
-
             <!-- Archived Promotions Tab -->
             @if (activeTab == "promotions")
             {
@@ -236,32 +165,6 @@
             }
         }
     </div>
-
-    <!-- Restore Member Confirmation Modal -->
-    @if (showRestoreMemberConfirmation && selectedRestoreMember != null)
-    {
-        <div class="modal-overlay" @onclick="CloseRestoreMemberConfirmation">
-            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
-                <div class="modal-header">
-                    <h2>Restore Member</h2>
-                    <button class="close-btn" @onclick="CloseRestoreMemberConfirmation">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="confirmation-content text-only">
-                        <h3>Restore Member</h3>
-                        <p>You are about to restore <strong>@GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName)</strong>.</p>
-                        <p class="confirmation-warning">This will reactivate the member and make them available again. Continue?</p>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-cancel" @onclick="CloseRestoreMemberConfirmation">Cancel</button>
-                    <button class="btn btn-danger" @onclick="ConfirmRestoreMember" disabled="@isRestoringMember">
-                        @(isRestoringMember ? "Restoring..." : "Yes, Restore Member")
-                    </button>
-                </div>
-            </div>
-        </div>
-    }
 
     <!-- Restore Promotion Confirmation Modal -->
     @if (showRestorePromotionConfirmation && selectedRestorePromotion != null)
@@ -500,26 +403,6 @@
         background: #f8f9fa;
     }
 
-    .member-info {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .member-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 14px;
-        flex-shrink: 0;
-    }
-
     .btn-restore {
         display: flex;
         align-items: center;
@@ -729,32 +612,24 @@
 </style>
 
 @code {
-    private string activeTab = "members";
+    private string activeTab = "promotions";
     private bool isLoading = false;
     
     // Search queries
-    private string memberSearchQuery = "";
     private string promotionSearchQuery = "";
     private string membershipTypeSearchQuery = "";
 
     // Archived data
-    private List<Member> archivedMembers = new List<Member>();
-    private List<Member> filteredArchivedMembers = new List<Member>();
     private List<Promotion> archivedPromotions = new List<Promotion>();
     private List<Promotion> filteredArchivedPromotions = new List<Promotion>();
     private List<project.Models.MembershipType> archivedMembershipTypes = new List<project.Models.MembershipType>();
     private List<project.Models.MembershipType> filteredArchivedMembershipTypes = new List<project.Models.MembershipType>();
 
     // Counts
-    private int archivedMembersCount = 0;
     private int archivedPromotionsCount = 0;
     private int archivedMembershipTypesCount = 0;
 
     // Restore confirmation modals
-    private bool showRestoreMemberConfirmation = false;
-    private Member? selectedRestoreMember;
-    private bool isRestoringMember = false;
-
     private bool showRestorePromotionConfirmation = false;
     private Promotion? selectedRestorePromotion;
     private bool isRestoringPromotion = false;
@@ -775,14 +650,6 @@
 
         try
         {
-            // Load archived members
-            archivedMembers = await Context.Members
-                .Where(m => m.IsArchived == true)
-                .Include(m => m.MembershipType)
-                .ToListAsync();
-            filteredArchivedMembers = archivedMembers;
-            archivedMembersCount = archivedMembers.Count;
-
             // Load archived promotions
             archivedPromotions = await Context.Promotions
                 .Where(p => p.IsArchived == true)
@@ -811,25 +678,6 @@
     private void SwitchTab(string tab)
     {
         activeTab = tab;
-        StateHasChanged();
-    }
-
-    private void FilterArchivedMembers()
-    {
-        if (string.IsNullOrWhiteSpace(memberSearchQuery))
-        {
-            filteredArchivedMembers = archivedMembers;
-        }
-        else
-        {
-            var query = memberSearchQuery.ToLower();
-            filteredArchivedMembers = archivedMembers
-                .Where(m => m.FirstName.ToLower().Contains(query) ||
-                           m.LastName.ToLower().Contains(query) ||
-                           m.Email.ToLower().Contains(query) ||
-                           m.ContactNumber.Contains(query))
-                .ToList();
-        }
         StateHasChanged();
     }
 
@@ -867,54 +715,6 @@
                 .ToList();
         }
         StateHasChanged();
-    }
-
-    private void RestoreMember(Member member)
-    {
-        selectedRestoreMember = member;
-        showRestoreMemberConfirmation = true;
-    }
-
-    private void CloseRestoreMemberConfirmation()
-    {
-        showRestoreMemberConfirmation = false;
-        selectedRestoreMember = null;
-        isRestoringMember = false;
-    }
-
-    private async Task ConfirmRestoreMember()
-    {
-        if (selectedRestoreMember == null || isRestoringMember)
-            return;
-
-        isRestoringMember = true;
-        StateHasChanged();
-
-        try
-        {
-            var memberName = GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName);
-            var memberId = selectedRestoreMember.MemberID;
-
-            selectedRestoreMember.IsArchived = false;
-            Context.Members.Update(selectedRestoreMember);
-            await Context.SaveChangesAsync();
-            await LogAuditAction("Member Restored", "Member", memberId, memberName, $"Restored member {memberName} from archive");
-            await LoadArchivedData();
-            CloseRestoreMemberConfirmation();
-            ToastService.ShowSuccess($"Member '{memberName}' restored successfully!");
-        }
-        catch (Exception ex)
-        {
-            var memberName = selectedRestoreMember != null ? GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName) : "Unknown";
-            var memberId = selectedRestoreMember?.MemberID;
-            await LogAuditAction("Member Restore Failed", "Member", memberId, memberName, $"Failed to restore member: {ex.Message}", "Failed", ex.Message);
-            ToastService.ShowError($"Error restoring member: {ex.Message}");
-        }
-        finally
-        {
-            isRestoringMember = false;
-            StateHasChanged();
-        }
     }
 
     private void RestorePromotion(Promotion promotion)
@@ -1013,45 +813,12 @@
         }
     }
 
-    private string GetInitials(string firstName, string lastName)
-    {
-        var firstInitial = !string.IsNullOrEmpty(firstName) ? firstName[0].ToString().ToUpper() : "";
-        var lastInitial = !string.IsNullOrEmpty(lastName) ? lastName[0].ToString().ToUpper() : "";
-        return $"{firstInitial}{lastInitial}";
-    }
-
-    private string GetDisplayName(string firstName, string middleInitial, string lastName)
-    {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(firstName))
-            parts.Add(CapitalizeName(firstName));
-        if (!string.IsNullOrWhiteSpace(middleInitial))
-            parts.Add(CapitalizeName(middleInitial));
-        if (!string.IsNullOrWhiteSpace(lastName))
-            parts.Add(CapitalizeName(lastName));
-        
-        return string.Join(" ", parts);
-    }
-
-    private string CapitalizeName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return "";
-        
-        return name.Substring(0, 1).ToUpper() + name.Substring(1).ToLower();
-    }
-
     private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
     {
         try
         {
             var username = await AuthService.GetCurrentUsername();
-            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
-            int? userId = null;
-            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
-            {
-                userId = parsedUserId;
-            }
+            var userId = await AuthService.GetCurrentUserId();
 
             var auditLog = new AuditLog
             {

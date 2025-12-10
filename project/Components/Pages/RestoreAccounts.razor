@@ -252,12 +252,7 @@
         try
         {
             var username = await AuthService.GetCurrentUsername();
-            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
-            int? userId = null;
-            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
-            {
-                userId = parsedUserId;
-            }
+            var userId = await AuthService.GetCurrentUserId();
 
             var auditLog = new AuditLog
             {

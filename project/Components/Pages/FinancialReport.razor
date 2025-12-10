@@ -239,89 +239,6 @@
                         </div>
                     </div>
 
-                    <!-- KPI Trend Chart -->
-                    <div class="report-card full-width">
-                        <h3>KPI Trend Chart</h3>
-                        <div class="report-content">
-                            <div class="kpi-trend-container">
-                                <div class="kpi-trend-grid">
-                                    @foreach (var kpi in kpiTrends)
-                                    {
-                                        <div class="kpi-trend-item">
-                                            <div class="kpi-trend-label">@kpi.Label</div>
-                                            <div class="kpi-trend-bar">
-                                                <div class="kpi-trend-fill" style="width: @(Math.Min(100, Math.Max(0, kpi.NormalizedValue)))%"></div>
-                                            </div>
-                                            <div class="kpi-trend-value @(kpi.ChangePercent >= 0 ? "success" : "danger")">
-                                                @kpi.CurrentValue
-                                                @if (kpi.ChangePercent != 0)
-                                                {
-                                                    <span class="kpi-change">(@(kpi.ChangePercent >= 0 ? "+" : "")@(kpi.ChangePercent.ToString("F1"))%)</span>
-                                                }
-                                            </div>
-                                        </div>
-                                    }
-                                </div>
-                                <div class="kpi-summary">
-                                    <div class="kpi-summary-item">
-                                        <span>Business Health:</span>
-                                        <span class="@(overallBusinessHealth == "Healthy" ? "success" : overallBusinessHealth == "At Risk" ? "danger" : "warning")">@overallBusinessHealth</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Customer Lifetime Value -->
-                    <div class="report-card" id="customer-lifetime-value">
-                        <h3>Customer Lifetime Value</h3>
-                        <div class="report-content">
-                            <div class="report-item">
-                                <span>Average CLV:</span>
-                                <span class="amount">₱@(averageCLV.ToString("N2"))</span>
-                            </div>
-                            <div class="report-item">
-                                <span>Total CLV:</span>
-                                <span class="amount">₱@(totalCLV.ToString("N2"))</span>
-                            </div>
-                            <div class="report-item">
-                                <span>Top 10% CLV:</span>
-                                <span class="amount">₱@(top10PercentCLV.ToString("N2"))</span>
-                            </div>
-                            <div class="report-item">
-                                <span>Avg. Revenue/Member:</span>
-                                <span class="amount">₱@(averageRevenuePerMember.ToString("N2"))</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Marketing ROI -->
-                    <div class="report-card">
-                        <h3>Marketing ROI</h3>
-                        <div class="report-content">
-                            <div class="report-item">
-                                <span>Promotions Used:</span>
-                                <span>@promotionsUsed</span>
-                            </div>
-                            <div class="report-item">
-                                <span>Revenue from Promos:</span>
-                                <span class="amount">₱@(revenueFromPromotions.ToString("N2"))</span>
-                            </div>
-                            <div class="report-item">
-                                <span>Total Discount Given:</span>
-                                <span class="amount">₱@(totalDiscountGiven.ToString("N2"))</span>
-                            </div>
-                            <div class="report-item">
-                                <span>Net Revenue (After Discount):</span>
-                                <span class="amount">₱@(netRevenueAfterDiscount.ToString("N2"))</span>
-                            </div>
-                            <div class="report-item">
-                                <span>ROI:</span>
-                                <span class="@(marketingROI >= 100 ? "success" : "warning")">@(marketingROI.ToString("F1"))%</span>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Daily/Weekly/Monthly Income Report -->
                     <div class="report-card full-width">
                         <h3>Daily / Weekly / Monthly Income Report</h3>
@@ -450,6 +367,126 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Financial Statement -->
+                    <div class="report-card full-width" style="background: #f8f9fa; border: 2px solid #234060;">
+                        <h3 style="color: #234060; border-bottom: 2px solid #234060; padding-bottom: 10px; margin-bottom: 20px;">
+                            Financial Statement (Balance Sheet)
+                            @if (Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m)
+                            {
+                                <span style="color: #28a745; font-size: 0.9rem; margin-left: 10px;">✓ BALANCED</span>
+                            }
+                            else
+                            {
+                                <span style="color: #dc3545; font-size: 0.9rem; margin-left: 10px;">✗ UNBALANCED</span>
+                            }
+                        </h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                            <!-- Assets Section -->
+                            <div>
+                                <h4 style="color: #234060; margin-bottom: 15px; font-size: 1.1rem; font-weight: 600;">ASSETS</h4>
+                                <div class="report-content">
+                                    <div class="report-item">
+                                        <span>Cash:</span>
+                                        <span class="amount @(totalCash >= 0 ? "success" : "danger")">₱@(totalCash.ToString("N2"))</span>
+                                    </div>
+                                    <div class="report-item">
+                                        <span>Equipment & Assets:</span>
+                                        <span class="amount">₱@(totalEquipmentValue.ToString("N2"))</span>
+                                    </div>
+                                    <div class="report-item" style="border-top: 2px solid #234060; padding-top: 10px; margin-top: 10px;">
+                                        <span><strong>Total Assets:</strong></span>
+                                        <span class="amount total"><strong>₱@(totalAssets.ToString("N2"))</strong></span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Liabilities & Equity Section -->
+                            <div>
+                                <!-- Liabilities -->
+                                <h4 style="color: #234060; margin-bottom: 15px; font-size: 1.1rem; font-weight: 600;">LIABILITIES</h4>
+                                <div class="report-content" style="margin-bottom: 20px;">
+                                    <div class="report-item">
+                                        <span>Total Liabilities:</span>
+                                        <span class="amount" style="color: #dc3545;">₱@(totalLiabilities.ToString("N2"))</span>
+                                    </div>
+                                    <div style="font-size: 0.8rem; color: #666; font-style: italic; margin-top: 5px;">
+                                        Manage liabilities in <a href="/finance" style="color: #234060;">Capital & Investments</a>
+                                    </div>
+                                </div>
+
+                                <!-- Equity -->
+                                <h4 style="color: #234060; margin-bottom: 15px; font-size: 1.1rem; font-weight: 600;">EQUITY</h4>
+                                <div class="report-content">
+                                    <div class="report-item">
+                                        <span>Owner's Capital:</span>
+                                        <span class="amount">₱@(totalOwnersCapital.ToString("N2"))</span>
+                                    </div>
+                                    <div class="report-item">
+                                        <span>Total Revenue:</span>
+                                        <span class="amount success">₱@(totalAllTimeRevenue.ToString("N2"))</span>
+                                    </div>
+                                    <div class="report-item">
+                                        <span>Less: Total Expenses (Paid):</span>
+                                        <span class="amount" style="color: #dc3545;">(₱@(totalExpenses.ToString("N2")))</span>
+                                    </div>
+                                    <div class="report-item" style="padding-left: 20px;">
+                                        <span><em>Retained Earnings (Revenue - Expenses):</em></span>
+                                        <span class="amount @(retainedEarnings >= 0 ? "success" : "danger")">₱@(retainedEarnings.ToString("N2"))</span>
+                                    </div>
+                                    <div class="report-item" style="border-top: 2px solid #234060; padding-top: 10px; margin-top: 10px;">
+                                        <span><strong>Total Equity:</strong></span>
+                                        <span class="amount total"><strong>₱@(totalEquity.ToString("N2"))</strong></span>
+                                    </div>
+                                </div>
+
+                                <!-- Total Liabilities + Equity -->
+                                <div class="report-content" style="margin-top: 15px;">
+                                    <div class="report-item" style="border-top: 3px double #234060; padding-top: 10px;">
+                                        <span><strong>Total Liabilities + Equity:</strong></span>
+                                        <span class="amount total"><strong>₱@((totalLiabilities + totalEquity).ToString("N2"))</strong></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Income Summary -->
+                        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e1e8ed;">
+                            <h4 style="color: #234060; margin-bottom: 15px; font-size: 1.1rem; font-weight: 600;">INCOME STATEMENT SUMMARY</h4>
+                            <div class="report-content">
+                                <div class="report-item">
+                                    <span>Total Revenue (All-time):</span>
+                                    <span class="amount success">₱@(totalAllTimeRevenue.ToString("N2"))</span>
+                                </div>
+                                <div class="report-item">
+                                    <span>Total Expenses (Paid Liabilities):</span>
+                                    <span class="amount" style="color: #dc3545;">(₱@(totalExpenses.ToString("N2")))</span>
+                                </div>
+                                <div class="report-item" style="border-top: 2px solid #234060; padding-top: 10px; margin-top: 10px;">
+                                    <span><strong>Net Income (Retained Earnings):</strong></span>
+                                    <span class="amount @(retainedEarnings >= 0 ? "success" : "danger")"><strong>₱@(retainedEarnings.ToString("N2"))</strong></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Accounting Equation Note -->
+                        <div style="margin-top: 20px; padding: 15px; background: @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#e8f5e9" : "#ffebee"); border-left: 4px solid @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#28a745" : "#dc3545"); border-radius: 4px;">
+                            <p style="margin: 0; font-size: 0.9rem; color: @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#2e7d32" : "#c62828");">
+                                <strong>Accounting Equation:</strong> Assets (₱@(totalAssets.ToString("N2"))) = Liabilities (₱@(totalLiabilities.ToString("N2"))) + Equity (₱@(totalEquity.ToString("N2")))
+                            </p>
+                            <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: @(Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m ? "#388e3c" : "#d32f2f");">
+                                ₱@(totalAssets.ToString("N2")) = ₱@((totalLiabilities + totalEquity).ToString("N2"))
+                                @if (Math.Abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01m)
+                                {
+                                    <span>✓</span>
+                                }
+                                else
+                                {
+                                    <span>(Difference: ₱@(Math.Abs(totalAssets - (totalLiabilities + totalEquity)).ToString("N2")))</span>
+                                }
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -524,12 +561,11 @@
         display: flex;
         align-items: center;
         gap: 15px;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition: box-shadow 0.2s ease;
         min-height: 120px;
     }
 
     .stat-card:hover {
-        transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
 
@@ -633,45 +669,318 @@
 
     @@media print {
         @@page {
-            margin: 0.5cm;
+            margin: 1cm;
+            size: A4;
         }
 
+        /* Hide non-printable elements */
         .reports-header,
-        .section-header,
-        .export-buttons,
-        .date-filter {
+        .section-header .export-buttons,
+        .date-filter,
+        button,
+        .no-print {
             display: none !important;
         }
 
+        /* Show and style print header */
         .print-header {
             display: block !important;
             margin-bottom: 30px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #000;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #234060;
+            page-break-after: avoid;
         }
 
         .print-header-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
 
         .print-gym-name {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: bold;
-            color: #000;
+            color: #234060;
+            letter-spacing: 1px;
         }
 
         .print-date-time {
-            font-size: 14px;
-            color: #000;
+            font-size: 12px;
+            color: #666;
         }
 
         .print-footer {
-            font-size: 12px;
+            font-size: 11px;
             color: #666;
             text-align: left;
+            font-style: italic;
+        }
+
+        /* Section headers */
+        .section-header {
+            display: block !important;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #234060;
+            page-break-after: avoid;
+        }
+
+        .section-header h2 {
+            color: #234060 !important;
+            font-size: 18px !important;
+            margin: 0 !important;
+        }
+
+        /* Stats grid - make it fit better on print */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+            page-break-inside: avoid;
+        }
+
+        .stat-card {
+            background: white !important;
+            border: 1px solid #ddd;
+            box-shadow: none !important;
+            padding: 15px;
+            page-break-inside: avoid;
+        }
+
+        .stat-info h3 {
+            font-size: 14px !important;
+            color: #234060 !important;
+        }
+
+        .stat-amount {
+            font-size: 20px !important;
+            color: #234060 !important;
+        }
+
+        .stat-breakdown {
+            font-size: 11px !important;
+            color: #666 !important;
+        }
+
+        /* Performance cards */
+        .performance-overview {
+            page-break-inside: avoid;
+            margin-bottom: 20px;
+        }
+
+        .performance-card {
+            border: 1px solid #ddd;
+            box-shadow: none !important;
+            page-break-inside: avoid;
+        }
+
+        /* Reports grid */
+        .reports-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            page-break-inside: avoid;
+        }
+
+        .report-card {
+            background: white !important;
+            border: 1px solid #ddd;
+            padding: 15px;
+            page-break-inside: avoid;
+            box-shadow: none !important;
+        }
+
+        .report-card.full-width {
+            grid-column: 1 / -1;
+            page-break-before: auto;
+            page-break-inside: avoid;
+        }
+
+        .report-card h3 {
+            font-size: 14px !important;
+            color: #234060 !important;
+            margin-bottom: 12px !important;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 8px;
+        }
+
+        .report-content {
+            font-size: 12px;
+        }
+
+        .report-item {
+            padding: 6px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .amount {
+            font-weight: 600;
+            color: #000 !important;
+        }
+
+        .amount.total {
+            font-size: 14px !important;
+        }
+
+        /* Financial Statement special styling */
+        .report-card[style*="background: #f8f9fa"] {
+            background: white !important;
+            border: 2px solid #234060 !important;
+            padding: 20px !important;
+        }
+
+        .report-card[style*="background: #f8f9fa"] h3 {
+            font-size: 16px !important;
+            border-bottom: 2px solid #234060 !important;
+        }
+
+        .report-card[style*="background: #f8f9fa"] h4 {
+            font-size: 13px !important;
+            color: #234060 !important;
+            font-weight: 600 !important;
+        }
+
+        /* Tables */
+        .reports-table-wrapper {
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        .reports-table,
+        .members-table {
+            width: 100%;
+            font-size: 11px;
+            border-collapse: collapse;
+        }
+
+        .reports-table th,
+        .members-table th {
+            background: #234060 !important;
+            color: white !important;
+            padding: 8px;
+            font-size: 11px;
+            border: 1px solid #ddd;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .reports-table td,
+        .members-table td {
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            font-size: 11px;
+        }
+
+        .reports-table tbody tr:nth-child(even),
+        .members-table tbody tr:nth-child(even) {
+            background: #f9f9f9 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* Growth items */
+        .growth-grid {
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        }
+
+        .growth-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            page-break-inside: avoid;
+        }
+
+        .growth-value {
+            font-size: 24px !important;
+            color: #234060 !important;
+        }
+
+        /* Color adjustments for print */
+        .success {
+            color: #2c7a2c !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .danger {
+            color: #c62828 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .warning {
+            color: #d68910 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* Performance indicators */
+        .performance-indicator {
+            font-size: 11px !important;
+            padding: 3px 8px !important;
+        }
+
+        .performance-indicator.success {
+            background: #e8f5e9 !important;
+            color: #2c7a2c !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .performance-indicator.danger {
+            background: #ffebee !important;
+            color: #c62828 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .performance-indicator.warning {
+            background: #fff3e0 !important;
+            color: #d68910 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* Accounting equation box */
+        div[style*="background: #e8f5e9"],
+        div[style*="background: #ffebee"] {
+            border: 1px solid #ddd !important;
+            page-break-inside: avoid;
+        }
+
+        /* Income report filters - hide in print */
+        div[style*="background: #f8fafc"][style*="Filter Period"] {
+            display: none !important;
+        }
+
+        /* Daily/Weekly/Monthly tables container */
+        div[style*="display: flex"][style*="gap: 20px"] > div {
+            flex: 1;
+            page-break-inside: avoid;
+        }
+
+        /* Page breaks */
+        .reports-section {
+            page-break-inside: avoid;
+            margin-bottom: 20px;
+        }
+
+        /* Ensure financial statement stays together */
+        #financial-reports-section {
+            page-break-before: auto;
+        }
+
+        /* Remove box shadows and fancy effects */
+        * {
+            box-shadow: none !important;
+            text-shadow: none !important;
+        }
+
+        /* Ensure backgrounds print */
+        body {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
         }
     }
 
@@ -1010,6 +1319,17 @@
     private List<PeriodIncome> weeklyIncome = new();
     private List<PeriodIncome> monthlyIncome = new();
 
+    // Financial Statement Variables
+    private decimal totalEquipmentValue = 0;
+    private decimal totalOwnersCapital = 0;
+    private decimal totalAllTimeRevenue = 0;
+    private decimal totalCash = 0;
+    private decimal totalLiabilities = 0;
+    private decimal totalExpenses = 0;
+    private decimal retainedEarnings = 0;
+    private decimal totalAssets = 0;
+    private decimal totalEquity = 0;
+
     private class MembershipTypeRevenue
     {
         public string TypeName { get; set; } = string.Empty;
@@ -1100,6 +1420,7 @@
             await LoadCustomerLifetimeValue();
             await LoadMarketingROI(startDate, endDate);
             await LoadPeriodIncomeReports(GetIncomeReportDateRange().start, GetIncomeReportDateRange().end);
+            await LoadFinancialStatement();
         }
         catch (Exception ex)
         {
@@ -1321,8 +1642,10 @@
 
             netRevenueAfterDiscount = revenueFromPromotions - totalDiscountGiven;
 
+            // Marketing ROI = ((Revenue - Cost) / Cost) * 100
+            // Where Cost = Discount Given (the "investment" in marketing)
             marketingROI = totalDiscountGiven > 0 
-                ? (double)((netRevenueAfterDiscount / totalDiscountGiven) * 100) 
+                ? (double)(((revenueFromPromotions - totalDiscountGiven) / totalDiscountGiven)) * 100 
                 : revenueFromPromotions > 0 ? 100 : 0;
         }
         catch (Exception)
@@ -1428,6 +1751,62 @@
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         var calendar = culture.Calendar;
         return calendar.GetWeekOfYear(date, culture.DateTimeFormat.CalendarWeekRule, culture.DateTimeFormat.FirstDayOfWeek);
+    }
+
+    private async Task LoadFinancialStatement()
+    {
+        try
+        {
+            // 1. Load Equipment Value (Fixed Assets)
+            var investments = await Context.Investments.AsNoTracking().ToListAsync();
+            totalEquipmentValue = investments.Sum(i => i.Price * i.Quantity);
+
+            // 2. Load Owner's Capital (Money invested by owner)
+            var capitals = await Context.Capitals.AsNoTracking().ToListAsync();
+            totalOwnersCapital = capitals.Sum(c => c.Amount);
+
+            // 3. Load Total All-Time Revenue (Income earned)
+            var allPayments = await Context.Payments.AsNoTracking().ToListAsync();
+            var allWalkIns = await Context.WalkIns.AsNoTracking().Where(w => !w.IsArchived).ToListAsync();
+            totalAllTimeRevenue = allPayments.Sum(p => p.Amount) + allWalkIns.Sum(w => w.PaymentAmount);
+
+            // 4. Load Total Liabilities (Unpaid debts/loans)
+            var unpaidLiabilities = await Context.Liabilities.AsNoTracking().Where(l => !l.IsArchived && !l.IsPaid).ToListAsync();
+            totalLiabilities = unpaidLiabilities.Sum(l => l.Amount);
+
+            // 5. Load Total Expenses (Paid liabilities - money already spent)
+            var paidLiabilities = await Context.Liabilities.AsNoTracking().Where(l => !l.IsArchived && l.IsPaid).ToListAsync();
+            totalExpenses = paidLiabilities.Sum(l => l.Amount);
+
+            // 6. Calculate Retained Earnings (Revenue - Expenses)
+            retainedEarnings = totalAllTimeRevenue - totalExpenses;
+
+            // 7. Calculate Cash (Capital + Revenue - Equipment - Expenses)
+            // Cash = Money invested + Money earned - Money spent on equipment - Money spent on expenses
+            totalCash = totalOwnersCapital + totalAllTimeRevenue - totalEquipmentValue - totalExpenses;
+
+            // 8. Calculate Total Assets (Cash + Equipment)
+            totalAssets = totalCash + totalEquipmentValue;
+
+            // 9. Calculate Total Equity (Owner's Capital + Retained Earnings)
+            totalEquity = totalOwnersCapital + retainedEarnings;
+
+            // Accounting Equation: Assets = Liabilities + Equity
+            // This should balance when all entries are correct
+        }
+        catch (Exception ex)
+        {
+            // Set defaults on error
+            totalEquipmentValue = 0;
+            totalOwnersCapital = 0;
+            totalAllTimeRevenue = 0;
+            totalCash = 0;
+            totalLiabilities = 0;
+            totalExpenses = 0;
+            retainedEarnings = 0;
+            totalAssets = 0;
+            totalEquity = 0;
+        }
     }
 
     private async Task PrintFinancialReports()

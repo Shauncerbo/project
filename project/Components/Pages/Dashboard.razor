@@ -130,8 +130,8 @@
                             <div class="css-chart-container">
                                 <div class="line-chart">
                                     <svg class="line-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                        <polyline class="line-chart-line" points="@GetLineChartPoints(revenueData)" fill="none" stroke="#234060" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                                        <polyline class="line-chart-area" points="@GetLineChartAreaPoints(revenueData)" fill="rgba(35, 64, 96, 0.1)" stroke="none"/>
+                                        <polyline class="line-chart-line" points="@GetLineChartPoints(revenueData)" fill="none" stroke="#1a365d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <polyline class="line-chart-area" points="@GetLineChartAreaPoints(revenueData)" fill="rgba(26, 54, 93, 0.1)" stroke="none"/>
                                     </svg>
                                     <div class="line-chart-labels">
                                         @for (int i = 0; i < revenueLabels.Count; i++)
@@ -254,7 +254,7 @@
                                         <div class="bar-chart-item">
                                             <div class="bar-label-small">@checkinsLabels[i]</div>
                                             <div class="bar-wrapper">
-                                                <div class="bar-fill" style="width: @percentage%; background: #27ae60;">
+                                                <div class="bar-fill" style="width: @percentage%; background: #1a365d;">
                                                     <span class="bar-value">@checkinsData[i]</span>
                                                 </div>
                                             </div>
@@ -303,7 +303,7 @@
                                         <div class="bar-chart-item">
                                             <div class="bar-label-small">@memberGrowthLabels[i]</div>
                                             <div class="bar-wrapper">
-                                                <div class="bar-fill" style="width: @percentage%; background: #3b82f6;">
+                                                <div class="bar-fill" style="width: @percentage%; background: #1a365d;">
                                                     <span class="bar-value">@memberGrowthData[i]</span>
                                                 </div>
                                             </div>
@@ -962,7 +962,7 @@
     .point-dot {
         width: 8px;
         height: 8px;
-        background: #234060;
+        background: #1a365d;
         border: 2px solid white;
         border-radius: 50%;
         box-shadow: 0 2px 4px rgba(0,0,0,0.2);
@@ -975,7 +975,7 @@
         bottom: 15px;
         left: 50%;
         transform: translateX(-50%);
-        background: #234060;
+        background: #1a365d;
         color: white;
         padding: 6px 10px;
         border-radius: 4px;
@@ -1007,7 +1007,7 @@
         left: 50%;
         transform: translateX(-50%);
         border: 4px solid transparent;
-        border-top-color: #234060;
+        border-top-color: #1a365d;
     }
 
     /* X-axis date labels */
@@ -1558,8 +1558,8 @@
     // Helper method for bar chart colors
     private string GetBarColor(int index)
     {
-        var colors = new[] { "#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#0ea5e9" };
-        return colors[index % colors.Length];
+        // All bars use navy blue for clean UI
+        return "#1a365d";
     }
 
     // === Inline SVG chart helpers (offline, no JS) ===

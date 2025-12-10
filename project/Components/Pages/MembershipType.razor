@@ -87,6 +87,34 @@
         </table>
     </div>
 
+    <!-- Walk-in Price Configuration Section -->
+    <div class="table-container" style="margin-top: 30px;">
+        <div class="table-toolbar">
+            <span class="table-title">Walk-in Price Configuration</span>
+        </div>
+        <div style="padding: 20px;">
+            <div class="form-group" style="max-width: 400px;">
+                <label class="required">Walk-in Price (₱)</label>
+                <input type="number"
+                       step="0.01"
+                       min="0"
+                       class="form-control @(walkInPriceError ? "error" : "")"
+                       @bind="walkInPrice"
+                       placeholder="Enter walk-in price" />
+                <small style="color: #666; font-size: 12px; margin-top: 5px; display: block; margin-bottom: 15px;">
+                    This price will be automatically applied when adding new walk-in customers.
+                </small>
+                @if (walkInPriceError)
+                {
+                    <div class="error-message">Walk-in price must be greater than 0</div>
+                }
+                <button class="btn btn-save" @onclick="SaveWalkInPrice" style="margin-top: 10px;">
+                    Save Walk-in Price
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Add/Edit Membership Type Modal -->
     @if (showModal)
     {
@@ -624,10 +652,13 @@
     private List<project.Models.MembershipType> membershipTypes = new List<project.Models.MembershipType>();
     private List<project.Models.MembershipType> filteredMembershipTypes = new List<project.Models.MembershipType>();
     private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
+    private decimal walkInPrice = 0;
+    private bool walkInPriceError = false;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadMembershipTypesFromDatabase();
+        await LoadWalkInPrice();
     }
 
     private async Task LoadMembershipTypesFromDatabase()
@@ -809,6 +840,94 @@
         currentMembershipType = new project.Models.MembershipType();
         validationErrors.Clear();
         StateHasChanged();
+    }
+
+    private async Task LoadWalkInPrice()
+    {
+        try
+        {
+            var setting = await Context.SystemSettings
+                .FirstOrDefaultAsync(s => s.SettingKey == "WalkInPrice");
+            
+            if (setting != null && decimal.TryParse(setting.SettingValue, out decimal price))
+            {
+                walkInPrice = price;
+            }
+            else
+            {
+                walkInPrice = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Silently handle errors - table might not exist yet
+            // Don't show error toast on page load, just set default value
+            if (ex.Message.Contains("Invalid object name 'SystemSettings'") || 
+                ex.Message.Contains("does not exist"))
+            {
+                // Table doesn't exist yet - this is expected if script hasn't been run
+                System.Diagnostics.Debug.WriteLine("SystemSettings table does not exist yet. Please run CreateSystemSettingsTable.sql");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading walk-in price: {ex.Message}");
+            }
+            walkInPrice = 0;
+        }
+    }
+
+    private async Task SaveWalkInPrice()
+    {
+        walkInPriceError = false;
+        
+        if (walkInPrice < 0)
+        {
+            walkInPriceError = true;
+            ToastService.ShowError("Walk-in price must be greater than 0");
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            var setting = await Context.SystemSettings
+                .FirstOrDefaultAsync(s => s.SettingKey == "WalkInPrice");
+
+            if (setting == null)
+            {
+                setting = new project.Models.SystemSetting
+                {
+                    SettingKey = "WalkInPrice",
+                    SettingValue = walkInPrice.ToString("F2"),
+                    UpdatedAt = DateTime.Now
+                };
+                Context.SystemSettings.Add(setting);
+            }
+            else
+            {
+                setting.SettingValue = walkInPrice.ToString("F2");
+                setting.UpdatedAt = DateTime.Now;
+                Context.SystemSettings.Update(setting);
+            }
+
+            await Context.SaveChangesAsync();
+            ToastService.ShowSuccess("Walk-in price saved successfully");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("Invalid object name 'SystemSettings'") || 
+                ex.Message.Contains("does not exist") ||
+                ex.InnerException?.Message.Contains("SystemSettings") == true)
+            {
+                ToastService.ShowError("SystemSettings table does not exist. Please run the CreateSystemSettingsTable.sql script in your database first. The script is located in the Database folder.");
+            }
+            else
+            {
+                ToastService.ShowError($"Error saving walk-in price: {ex.Message}");
+            }
+            StateHasChanged();
+        }
     }
 }
 

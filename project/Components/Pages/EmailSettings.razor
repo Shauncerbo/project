@@ -220,6 +220,7 @@
 @code {
     private string gmailAddress = "";
     private string gmailAppPassword = "";
+    private string? storedGmailPassword = null; // Cache the actual password
     private bool showGmailPassword = false;
     private bool isSavingGmail = false;
     private bool isTestingGmail = false;
@@ -245,6 +246,7 @@
             if (hasGmailConfig)
             {
                 gmailAddress = email ?? "";
+                storedGmailPassword = password; // Store the actual password
                 gmailAppPassword = !string.IsNullOrEmpty(password) && password.Length > 4 
                     ? password.Substring(0, 4) + "••••••••" 
                     : "••••••••";
@@ -259,19 +261,30 @@
     private void ToggleGmailPasswordVisibility()
     {
         showGmailPassword = !showGmailPassword;
-        if (!showGmailPassword && hasGmailConfig)
+        
+        // Use cached password instead of reading from SecureStorage
+        if (hasGmailConfig && !string.IsNullOrEmpty(storedGmailPassword))
         {
-            var password = SecureStorage.Default.GetAsync("gmail_app_password").GetAwaiter().GetResult();
-            if (!string.IsNullOrEmpty(password))
+            if (showGmailPassword)
             {
-                gmailAppPassword = password.Length > 4 ? password.Substring(0, 4) + "••••••••" : "••••••••";
+                // Show the full password
+                gmailAppPassword = storedGmailPassword;
+            }
+            else
+            {
+                // Mask the password
+                gmailAppPassword = storedGmailPassword.Length > 4 
+                    ? storedGmailPassword.Substring(0, 4) + "••••••••" 
+                    : "••••••••";
             }
         }
-        else if (showGmailPassword && hasGmailConfig)
+        else if (!hasGmailConfig)
         {
-            var password = SecureStorage.Default.GetAsync("gmail_app_password").GetAwaiter().GetResult();
-            gmailAppPassword = password ?? "";
+            // If no password is stored, just toggle the input type
+            // The user is entering a new password
         }
+        
+        StateHasChanged();
     }
 
     private async Task SaveGmailConfig()
@@ -310,14 +323,16 @@
 
         try
         {
+            var passwordToSave = gmailAppPassword.Trim();
             await SecureStorage.Default.SetAsync("gmail_address", gmailAddress.Trim());
-            await SecureStorage.Default.SetAsync("gmail_app_password", gmailAppPassword.Trim());
+            await SecureStorage.Default.SetAsync("gmail_app_password", passwordToSave);
             hasGmailConfig = true;
+            storedGmailPassword = passwordToSave; // Update cached password
             gmailConfigSuccess = "Gmail configuration saved successfully!";
             await LogAuditAction("Gmail Configuration Updated", "Settings", null, "Email", "Gmail email configuration was updated in settings");
             
-            var maskedPassword = gmailAppPassword.Length > 4 
-                ? gmailAppPassword.Substring(0, 4) + "••••••••" 
+            var maskedPassword = passwordToSave.Length > 4 
+                ? passwordToSave.Substring(0, 4) + "••••••••" 
                 : "••••••••";
             gmailAppPassword = maskedPassword;
             showGmailPassword = false;
@@ -471,12 +486,7 @@
         try
         {
             var username = await AuthService.GetCurrentUsername();
-            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
-            int? userId = null;
-            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
-            {
-                userId = parsedUserId;
-            }
+            var userId = await AuthService.GetCurrentUserId();
 
             var auditLog = new AuditLog
             {

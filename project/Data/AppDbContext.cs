@@ -32,6 +32,10 @@ namespace project.Data
         public DbSet<TrainerSchedule> TrainerSchedules { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
         public DbSet<RolePermission> RolePermissions { get; set; }
+        public DbSet<SystemSetting> SystemSettings { get; set; }
+        public DbSet<Capital> Capitals { get; set; }
+        public DbSet<Investment> Investments { get; set; }
+        public DbSet<Liability> Liabilities { get; set; }
 
         // ✅ ADD OnModelCreating for relationships
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -115,26 +119,6 @@ namespace project.Data
                     .IsRequired(false);
                 
                 entity.Property(w => w.IsOnlinePayment)
-                    .HasColumnName("IsOnlinePayment")
-                    .IsRequired(false)
-                    .HasDefaultValue(false);
-            });
-            
-            // Configure Payment entity - map PayMongo columns
-            modelBuilder.Entity<Payment>(entity =>
-            {
-                // Map PayMongo payment fields
-                entity.Property(p => p.PayMongoPaymentId)
-                    .HasColumnName("PayMongoPaymentId")
-                    .HasMaxLength(255)
-                    .IsRequired(false);
-                
-                entity.Property(p => p.PayMongoStatus)
-                    .HasColumnName("PayMongoStatus")
-                    .HasMaxLength(50)
-                    .IsRequired(false);
-                
-                entity.Property(p => p.IsOnlinePayment)
                     .HasColumnName("IsOnlinePayment")
                     .IsRequired(false)
                     .HasDefaultValue(false);

@@ -1,20 +1,18 @@
 ﻿@page "/payment"
 @layout MainLayout
 @using System.Linq
+@using System.ComponentModel.DataAnnotations
 @using Microsoft.EntityFrameworkCore
 @using project.Data
 @using project.Models
-@using project.Services
 @using MemberModel = project.Models.Member
 @using MembershipTypeModel = project.Models.MembershipType
 @using PaymentModel = project.Models.Payment
 @using TrainerModel = project.Models.Trainer
 @using TrainerScheduleModel = project.Models.TrainerSchedule
 @using MemberPromo = project.Models.MemberPromo
-@inject IDbContextFactory<AppDbContext> DbContextFactory
+@inject AppDbContext Context
 @inject IJSRuntime JSRuntime
-@inject IToastService ToastService
-@inject IPayMongoService PayMongoService
 
 <div class="payments-container">
     <div class="payments-header">
@@ -145,7 +143,7 @@
                         </div>
                         <div class="form-group">
                             <label class="required">Email</label>
-                            <input type="email" class="form-control @(GetErrorClass("Email"))" @bind="subscriptionMember.Email" placeholder="name@email.com" />
+                            <input type="email" class="form-control @(GetErrorClass("Email"))" @bind="subscriptionMember.Email" placeholder="Enter email address (e.g., name@example.com)" />
                             @DisplayError("Email")
                         </div>
                     </div>
@@ -235,19 +233,13 @@
                         <div class="form-group">
                             <label class="required">Payment Method</label>
                             <div class="select-wrapper">
-                                <select class="form-control select-dropdown @(GetErrorClass("PaymentMethod"))" @bind="selectedPaymentMethod" @bind:after="OnPaymentMethodChanged">
+                                <select class="form-control select-dropdown @(GetErrorClass("PaymentMethod"))" @bind="selectedPaymentMethod">
                                     <option value="Cash">Cash</option>
-                                    <option value="PayMongo">Pay Online (PayMongo)</option>
+                                    <option value="Ewallet">Ewallet</option>
                                 </select>
                                 <span class="dropdown-arrow">▼</span>
                             </div>
                             @DisplayError("PaymentMethod")
-                            @if (selectedPaymentMethod == "PayMongo")
-                            {
-                                <div class="paymongo-info">
-                                    <p><strong>Online Payment:</strong> Customer will be redirected to PayMongo to complete payment via GCash, PayMaya, Credit Card, or other methods.</p>
-                                </div>
-                            }
                         </div>
                     </div>
 
@@ -301,37 +293,9 @@
             </div>
 
             <div class="modal-footer">
-                <button class="btn btn-cancel" @onclick="CloseSubscriptionModal" disabled="@(isSaving || isVerifyingPayment)">Cancel</button>
-                @if (showVerifyPaymentButton && !string.IsNullOrEmpty(pendingPaymentIntentId))
-                {
-                    <button class="btn btn-verify" @onclick="VerifyAndSaveSubscriptionPayment" disabled="@(isSaving || isVerifyingPayment)">
-                        @if (isVerifyingPayment)
-                        {
-                            <span>Verifying Payment...</span>
-                        }
-                        else
-                        {
-                            <span>Verify Payment</span>
-                        }
-                    </button>
-                }
-                <button class="btn btn-primary" disabled="@(isSaving || isVerifyingPayment || showVerifyPaymentButton)" @onclick="SaveSubscriptionAsync">
-                    @if (isProcessingPayment)
-                    {
-                        <span>Processing Payment...</span>
-                    }
-                    else if (selectedPaymentMethod == "PayMongo" && !showVerifyPaymentButton)
-                    {
-                        <span>Proceed to Payment</span>
-                    }
-                    else if (isSaving)
-                    {
-                        <span>Saving...</span>
-                    }
-                    else
-                    {
-                        <span>Complete Subscription</span>
-                    }
+                <button class="btn btn-cancel" @onclick="CloseSubscriptionModal">Cancel</button>
+                <button class="btn btn-primary" disabled="@isSaving" @onclick="SaveSubscriptionAsync">
+                    @(isSaving ? "Saving..." : "Complete Subscription")
                 </button>
             </div>
         </div>
@@ -763,41 +727,6 @@
         margin-top: 25px;
     }
 
-    .paymongo-info {
-        background: #e3f2fd;
-        border: 1px solid #90caf9;
-        border-radius: 6px;
-        padding: 12px;
-        margin-top: 8px;
-    }
-
-    .paymongo-info p {
-        margin: 0;
-        font-size: 13px;
-        color: #1976d2;
-        line-height: 1.4;
-    }
-
-    .paymongo-info strong {
-        color: #1565c0;
-    }
-
-    .btn-verify {
-        background: #2196F3;
-        color: white;
-    }
-
-    .btn-verify:hover {
-        background: #1976D2;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
-    }
-
-    .btn-verify:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
     @@media (max-width: 640px) {
         .payments-header {
             flex-direction: column;
@@ -834,15 +763,6 @@
     private List<PaymentModel> recentSubscriptions = new();
     private List<PaymentModel> filteredSubscriptions = new();
     private string paymentsSearchQuery = string.Empty;
-    
-    // PayMongo payment variables
-    private bool isProcessingPayment = false;
-    private bool isVerifyingPayment = false;
-    private string? payMongoCheckoutUrl = null;
-    private string? pendingPaymentIntentId = null;
-    private string? pendingPaymentLinkId = null;
-    private bool showVerifyPaymentButton = false;
-    private System.Threading.Timer? paymentCheckTimer = null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -852,20 +772,18 @@
 
     private async Task LoadReferenceDataAsync()
     {
-        await using var db = await DbContextFactory.CreateDbContextAsync();
-
-        membershipTypes = await db.MembershipTypes
+        membershipTypes = await Context.MembershipTypes
             .Where(mt => !mt.IsArchived)
             .OrderBy(mt => mt.TypeName)
             .ToListAsync();
 
-        availableTrainers = await db.Trainers
+        availableTrainers = await Context.Trainers
             .AsNoTracking()
             .OrderBy(t => t.LastName)
             .ThenBy(t => t.FirstName)
             .ToListAsync();
 
-        trainerSchedules = await db.TrainerSchedules
+        trainerSchedules = await Context.TrainerSchedules
             .AsNoTracking()
             .Include(ts => ts.Trainer)
             .Where(ts => ts.IsAvailable)
@@ -883,9 +801,7 @@
         // Doing the GroupBy client-side avoids LINQ-to-SQL translation issues with Date and anonymous keys.
 
         // First, load a reasonable window of recent payments from the database
-        await using var db = await DbContextFactory.CreateDbContextAsync();
-
-        var rawPayments = await db.Payments
+        var rawPayments = await Context.Payments
             .Include(p => p.Member)
             .AsNoTracking()
             .OrderByDescending(p => p.PaymentDate)
@@ -915,12 +831,10 @@
     {
         try
         {
-            await using var db = await DbContextFactory.CreateDbContextAsync();
-
             var today = DateTime.Today;
             // Show promotions that haven't expired yet (EndDate >= today)
             // This includes both active and upcoming promotions
-            activePromotions = await db.Promotions
+            activePromotions = await Context.Promotions
                 .AsNoTracking()
                 .Where(p => p.EndDate >= today)
                 .OrderByDescending(p => p.DiscountRate)
@@ -962,15 +876,6 @@
         visibleSchedules = new();
         generalError = null;
         fieldErrors.Clear();
-        // Reset PayMongo payment state
-        showVerifyPaymentButton = false;
-        pendingPaymentIntentId = null;
-        pendingPaymentLinkId = null;
-        payMongoCheckoutUrl = null;
-        isProcessingPayment = false;
-        isVerifyingPayment = false;
-        paymentCheckTimer?.Dispose();
-        paymentCheckTimer = null;
         await LoadActivePromotions();
         showSubscriptionModal = true;
         StateHasChanged();
@@ -1012,35 +917,15 @@
 
     private void CloseSubscriptionModal()
     {
-        if (isSaving || isVerifyingPayment)
+        if (isSaving)
             return;
 
         showSubscriptionModal = false;
-        // Reset PayMongo payment state
-        showVerifyPaymentButton = false;
-        pendingPaymentIntentId = null;
-        pendingPaymentLinkId = null;
-        payMongoCheckoutUrl = null;
-        isProcessingPayment = false;
-        isVerifyingPayment = false;
-        paymentCheckTimer?.Dispose();
-        paymentCheckTimer = null;
-    }
-
-    private void OnPaymentMethodChanged()
-    {
-        if (selectedPaymentMethod != "PayMongo")
-        {
-            showVerifyPaymentButton = false;
-            pendingPaymentIntentId = null;
-            pendingPaymentLinkId = null;
-            payMongoCheckoutUrl = null;
-        }
     }
 
     private async Task SaveSubscriptionAsync()
     {
-        if (isSaving || isVerifyingPayment)
+        if (isSaving)
             return;
 
         generalError = null;
@@ -1048,13 +933,6 @@
 
         if (!ValidateForm())
             return;
-
-        // If PayMongo payment, process payment first
-        if (selectedPaymentMethod == "PayMongo")
-        {
-            await ProcessSubscriptionPayMongoPayment();
-            return;
-        }
 
         try
         {
@@ -1073,17 +951,15 @@
                 subscriptionMember.TrainerID = null;
             }
 
-            await using var db = await DbContextFactory.CreateDbContextAsync();
-
-            db.Members.Add(subscriptionMember);
-            await db.SaveChangesAsync();
+            Context.Members.Add(subscriptionMember);
+            await Context.SaveChangesAsync();
 
             // Use final price (with discount if promotion applied)
             var paymentAmount = finalPrice > 0 ? finalPrice : (selectedMembershipType?.Price ?? 0);
 
             // Prevent duplicate payments for the same member / amount / method on the same day
             var today = DateTime.Today;
-            var existingPayment = await db.Payments
+            var existingPayment = await Context.Payments
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p =>
                     p.MemberID == subscriptionMember.MemberID &&
@@ -1098,12 +974,11 @@
                     MemberID = subscriptionMember.MemberID,
                     Amount = paymentAmount,
                     PaymentDate = DateTime.Now,
-                    PaymentType = selectedPaymentMethod,
-                    IsOnlinePayment = false
+                    PaymentType = selectedPaymentMethod
                 };
 
-                db.Payments.Add(payment);
-                await db.SaveChangesAsync();
+                Context.Payments.Add(payment);
+                await Context.SaveChangesAsync();
             }
 
             // Save promotion usage if a promotion was selected
@@ -1117,8 +992,8 @@
                         PromotionID = selectedPromotion.PromoID,
                         DateUsed = DateTime.Now
                     };
-                    db.MemberPromos.Add(memberPromo);
-                    await db.SaveChangesAsync();
+                    Context.MemberPromos.Add(memberPromo);
+                    await Context.SaveChangesAsync();
                 }
                 catch (Exception ex)
                 {
@@ -1130,11 +1005,10 @@
             await LoadRecentSubscriptionsAsync();
 
             showSubscriptionModal = false;
-            var promoMessage = selectedPromotion != null
-                ? $" with {selectedPromotion.DiscountRate}% discount"
-                : string.Empty;
-            var toastMessage = $"Subscription created for {subscriptionMember.FullName}{promoMessage}.";
-            ToastService.ShowSuccess(toastMessage);
+            var promoMessage = selectedPromotion != null 
+                ? $" with {selectedPromotion.DiscountRate}% discount" 
+                : "";
+            await JSRuntime.InvokeVoidAsync("alert", $"Subscription created for {subscriptionMember.FullName}{promoMessage}.");
         }
         catch (Exception ex)
         {
@@ -1169,6 +1043,42 @@
 
         if (string.IsNullOrWhiteSpace(subscriptionMember.Email))
             AddError("Email", "Email is required.");
+        else
+        {
+            // Validate email format - must contain @ symbol and domain
+            var email = subscriptionMember.Email.Trim();
+            if (!email.Contains("@") || email.IndexOf("@") == 0 || email.IndexOf("@") == email.Length - 1)
+            {
+                // Email must have @ symbol, and it can't be at the start or end
+                AddError("Email", "Please enter a valid email address with @ symbol and domain (e.g., name@example.com, not just 'gmail' or 'name')");
+            }
+            else
+            {
+                // Split by @ and check domain part exists
+                var parts = email.Split('@');
+                if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    AddError("Email", "Please enter a valid email address with @ symbol and domain (e.g., name@example.com, not just 'gmail' or 'name')");
+                }
+                else
+                {
+                    // Check if domain part contains at least a dot (e.g., gmail.com)
+                    if (!parts[1].Contains("."))
+                    {
+                        AddError("Email", "Please enter a valid email address with @ symbol and domain (e.g., name@example.com, not just 'gmail' or 'name')");
+                    }
+                    else
+                    {
+                        // Final validation using EmailAddressAttribute
+                        var emailAttribute = new EmailAddressAttribute();
+                        if (!emailAttribute.IsValid(email))
+                        {
+                            AddError("Email", "Please enter a valid email address with @ symbol and domain (e.g., name@example.com, not just 'gmail' or 'name')");
+                        }
+                    }
+                }
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(subscriptionMember.Address))
             AddError("Address", "Address is required.");
@@ -1316,290 +1226,6 @@
         var end = DateTime.Today.Add(schedule.EndTime).ToString("hh\\:mm tt");
         var trainerName = schedule.Trainer?.FullName ?? $"Trainer #{schedule.TrainerID}";
         return $"{trainerName} - {day} {start} - {end}";
-    }
-
-    private async Task ProcessSubscriptionPayMongoPayment()
-    {
-        isProcessingPayment = true;
-        isSaving = true;
-        StateHasChanged();
-
-        try
-        {
-            var memberName = $"{subscriptionMember.FirstName} {subscriptionMember.LastName}".Trim();
-            var description = $"New subscription for {memberName} - {selectedMembershipType?.TypeName ?? "Membership"}";
-            var referenceId = $"SUBSCRIPTION-{DateTime.Now:yyyyMMddHHmmss}";
-            var paymentAmount = finalPrice > 0 ? finalPrice : (selectedMembershipType?.Price ?? 0);
-
-            var paymentResponse = await PayMongoService.CreatePaymentLinkAsync(
-                paymentAmount,
-                description,
-                referenceId
-            );
-
-            if (!paymentResponse.Success)
-            {
-                generalError = $"Failed to create payment link: {paymentResponse.Message}";
-                ToastService.ShowError($"Payment error: {paymentResponse.Message}");
-                isProcessingPayment = false;
-                isSaving = false;
-                StateHasChanged();
-                return;
-            }
-
-            // Store payment info temporarily (DO NOT save to database yet)
-            pendingPaymentIntentId = paymentResponse.PaymentIntentId;
-            pendingPaymentLinkId = paymentResponse.PaymentLinkId;
-            payMongoCheckoutUrl = paymentResponse.CheckoutUrl;
-            showVerifyPaymentButton = true;
-
-            // Open PayMongo checkout in new window/tab
-            await JSRuntime.InvokeVoidAsync("window.open", payMongoCheckoutUrl, "_blank");
-
-            ToastService.ShowInfo("Payment page opened. After completing payment, return here - it will verify automatically.");
-            
-            // Start automatic payment checking (every 2 seconds)
-            StartAutoPaymentVerification();
-            
-            // Also set up focus event to check immediately when user returns
-            await SetupFocusCheck();
-            
-            // Check immediately after a short delay
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(2000);
-                await InvokeAsync(async () => await CheckPaymentStatusAutomatically());
-            });
-            
-            // Keep modal open so user can verify payment
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error processing subscription PayMongo payment: {ex.Message}");
-            generalError = $"Error processing payment: {ex.Message}";
-            ToastService.ShowError($"Payment error: {ex.Message}");
-        }
-        finally
-        {
-            isProcessingPayment = false;
-            isSaving = false;
-            StateHasChanged();
-        }
-    }
-
-    private void StartAutoPaymentVerification()
-    {
-        // Stop any existing timer
-        paymentCheckTimer?.Dispose();
-        
-        // Start checking payment status every 2 seconds
-        paymentCheckTimer = new System.Threading.Timer(async _ =>
-        {
-            await CheckPaymentStatusAutomatically();
-        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
-    }
-
-    private async Task CheckPaymentStatusAutomatically()
-    {
-        if (string.IsNullOrEmpty(pendingPaymentIntentId) || !showVerifyPaymentButton || isVerifyingPayment || !showSubscriptionModal)
-            return;
-
-        try
-        {
-            // Check payment status - try link ID first, then intent ID
-            var paymentIdToCheck = !string.IsNullOrEmpty(pendingPaymentLinkId) ? pendingPaymentLinkId : pendingPaymentIntentId;
-            var paymentStatus = await PayMongoService.CheckPaymentStatusAsync(paymentIdToCheck ?? "");
-            System.Diagnostics.Debug.WriteLine($"Auto-check subscription payment status (ID: {paymentIdToCheck}): {paymentStatus.Status}");
-            
-            // PayMongo uses various status values - check for all possible "paid" statuses
-            var statusLower = paymentStatus.Status?.ToLower() ?? "";
-            var isPaid = statusLower == "succeeded" || 
-                        statusLower == "paid" ||
-                        statusLower == "paid_off" ||
-                        statusLower == "paidoff";
-
-            if (isPaid)
-            {
-                System.Diagnostics.Debug.WriteLine("Subscription payment detected as paid, auto-verifying...");
-                // Automatically verify and save
-                await InvokeAsync(async () =>
-                {
-                    await VerifyAndSaveSubscriptionPayment();
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Auto-check subscription payment error: {ex.Message}");
-        }
-    }
-
-    private async Task SetupFocusCheck()
-    {
-        // Set up JavaScript to check payment when window regains focus
-        await JSRuntime.InvokeVoidAsync("eval", @"
-            (function() {
-                if (window.paymongoSubscriptionAutoVerifySetup) return;
-                window.paymongoSubscriptionAutoVerifySetup = true;
-                
-                window.addEventListener('focus', function() {
-                    setTimeout(function() {
-                        window.dispatchEvent(new Event('checkSubscriptionPaymentStatus'));
-                    }, 500);
-                });
-                
-                window.addEventListener('visibilitychange', function() {
-                    if (!document.hidden) {
-                        setTimeout(function() {
-                            window.dispatchEvent(new Event('checkSubscriptionPaymentStatus'));
-                        }, 500);
-                    }
-                });
-            })();
-        ");
-        
-        // Also check immediately when setting up
-        await Task.Delay(1000);
-        await CheckPaymentStatusAutomatically();
-    }
-
-    private async Task VerifyAndSaveSubscriptionPayment()
-    {
-        if (string.IsNullOrEmpty(pendingPaymentIntentId))
-        {
-            ToastService.ShowError("No payment to verify.");
-            return;
-        }
-
-        isVerifyingPayment = true;
-        StateHasChanged();
-
-        try
-        {
-            // Check payment status with PayMongo - try link ID first, then intent ID
-            var paymentIdToCheck = !string.IsNullOrEmpty(pendingPaymentLinkId) ? pendingPaymentLinkId : pendingPaymentIntentId;
-            var paymentStatus = await PayMongoService.CheckPaymentStatusAsync(paymentIdToCheck ?? "");
-
-            // Check if payment is completed
-            var statusLower = paymentStatus.Status?.ToLower() ?? "";
-            var isPaid = statusLower == "succeeded" || 
-                        statusLower == "paid" ||
-                        statusLower == "paid_off" ||
-                        statusLower == "paidoff";
-            
-            System.Diagnostics.Debug.WriteLine($"Manual verify subscription - Payment status: {paymentStatus.Status}, IsPaid: {isPaid}");
-
-            if (isPaid)
-            {
-                // Payment confirmed - now save to database
-                isSaving = true;
-                generalError = null;
-                fieldErrors.Clear();
-
-                subscriptionMember.JoinDate = subscriptionJoinDate;
-                subscriptionMember.ExpirationDate = subscriptionExpiration;
-                subscriptionMember.MembershipTypeID = selectedMembershipTypeId;
-                if (subscriptionMember.TrainerID.HasValue && selectedTrainerScheduleId > 0)
-                {
-                    subscriptionMember.TrainerScheduleID = selectedTrainerScheduleId;
-                }
-                else
-                {
-                    subscriptionMember.TrainerScheduleID = null;
-                    subscriptionMember.TrainerID = null;
-                }
-
-                await using var db = await DbContextFactory.CreateDbContextAsync();
-
-                db.Members.Add(subscriptionMember);
-                await db.SaveChangesAsync();
-
-                // Use final price (with discount if promotion applied)
-                var paymentAmount = finalPrice > 0 ? finalPrice : (selectedMembershipType?.Price ?? 0);
-
-                // Create payment record with PayMongo info
-                var payment = new PaymentModel
-                {
-                    MemberID = subscriptionMember.MemberID,
-                    Amount = paymentAmount,
-                    PaymentDate = DateTime.Now,
-                    PaymentType = "PayMongo",
-                    PayMongoPaymentId = pendingPaymentIntentId,
-                    PayMongoStatus = "paid",
-                    IsOnlinePayment = true
-                };
-
-                db.Payments.Add(payment);
-                await db.SaveChangesAsync();
-
-                // Save promotion usage if a promotion was selected
-                if (selectedPromotion != null && selectedPromotionId > 0)
-                {
-                    try
-                    {
-                        var memberPromo = new MemberPromo
-                        {
-                            MemberID = subscriptionMember.MemberID,
-                            PromotionID = selectedPromotion.PromoID,
-                            DateUsed = DateTime.Now
-                        };
-                        db.MemberPromos.Add(memberPromo);
-                        await db.SaveChangesAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error saving promotion usage: {ex.Message}");
-                    }
-                }
-
-                await LoadRecentSubscriptionsAsync();
-
-                ToastService.ShowSuccess("Payment verified! Subscription created successfully.");
-                
-                // Stop auto-verification timer
-                paymentCheckTimer?.Dispose();
-                paymentCheckTimer = null;
-                
-                // Reset payment verification state
-                showVerifyPaymentButton = false;
-                pendingPaymentIntentId = null;
-                pendingPaymentLinkId = null;
-                payMongoCheckoutUrl = null;
-
-                showSubscriptionModal = false;
-                var promoMessage = selectedPromotion != null
-                    ? $" with {selectedPromotion.DiscountRate}% discount"
-                    : string.Empty;
-                var toastMessage = $"Subscription created for {subscriptionMember.FullName}{promoMessage}.";
-                ToastService.ShowSuccess(toastMessage);
-            }
-            else
-            {
-                // Payment not completed
-                var statusMessage = paymentStatus.Status?.ToLower() ?? "unknown";
-                if (statusMessage == "pending" || statusMessage == "awaiting_payment_method")
-                {
-                    ToastService.ShowWarning("Payment is still pending. Please complete the payment first, then verify again.");
-                }
-                else
-                {
-                    ToastService.ShowError($"Payment not completed. Status: {paymentStatus.Status ?? "Unknown"}. Please complete the payment or cancel.");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error verifying subscription payment: {ex.Message}");
-            generalError = $"Error verifying payment: {ex.Message}";
-            ToastService.ShowError($"Error verifying payment: {ex.Message}");
-        }
-        finally
-        {
-            isVerifyingPayment = false;
-            isSaving = false;
-            StateHasChanged();
-        }
     }
 }
 

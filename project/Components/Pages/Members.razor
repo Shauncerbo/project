@@ -4,6 +4,7 @@
 @using System.Linq
 @using System.Collections.Generic
 @using System.Threading.Tasks
+@using System.ComponentModel.DataAnnotations
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
 @inject IDbContextFactory<AppDbContext> DbContextFactory
@@ -505,10 +506,10 @@
                         </div>
                         <div class="form-group">
                             <label class="required">Email</label>
-                            <input type="email" class="form-control @(HasError("Email") ? "error" : "")" @bind="currentMember.Email" placeholder="Enter email address" />
+                            <input type="email" class="form-control @(HasError("Email") ? "error" : "")" @bind="currentMember.Email" placeholder="Enter email address (e.g., name@example.com)" />
                             @if (HasError("Email"))
                             {
-                                <div class="field-error">Email is required</div>
+                                <div class="field-error">@(string.IsNullOrWhiteSpace(currentMember.Email) ? "Email is required" : "Please enter a valid email address with @ symbol and domain (e.g., name@example.com, not just 'gmail' or 'name')")</div>
                             }
                         </div>
                     </div>
@@ -2425,6 +2426,42 @@
 
         if (string.IsNullOrWhiteSpace(currentMember.Email))
             validationErrors.Add("Email");
+        else
+        {
+            // Validate email format - must contain @ symbol and domain
+            var email = currentMember.Email.Trim();
+            if (!email.Contains("@") || email.IndexOf("@") == 0 || email.IndexOf("@") == email.Length - 1)
+            {
+                // Email must have @ symbol, and it can't be at the start or end
+                validationErrors.Add("Email");
+            }
+            else
+            {
+                // Split by @ and check domain part exists
+                var parts = email.Split('@');
+                if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    validationErrors.Add("Email");
+                }
+                else
+                {
+                    // Check if domain part contains at least a dot (e.g., gmail.com)
+                    if (!parts[1].Contains("."))
+                    {
+                        validationErrors.Add("Email");
+                    }
+                    else
+                    {
+                        // Final validation using EmailAddressAttribute
+                        var emailAttribute = new EmailAddressAttribute();
+                        if (!emailAttribute.IsValid(email))
+                        {
+                            validationErrors.Add("Email");
+                        }
+                    }
+                }
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(currentMember.Address))
             validationErrors.Add("Address");

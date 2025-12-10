@@ -175,6 +175,7 @@
 
 @code {
     private string payMongoSecretKey = "";
+    private string? storedApiKey = null; // Cache the actual API key
     private bool showPayMongoKey = false;
     private bool isSavingPayMongo = false;
     private string payMongoConfigError = "";
@@ -194,6 +195,7 @@
             hasPayMongoKey = !string.IsNullOrEmpty(apiKey);
             if (hasPayMongoKey)
             {
+                storedApiKey = apiKey; // Store the actual key
                 payMongoSecretKey = apiKey.Length > 8 ? apiKey.Substring(0, 8) + "..." : "••••••••";
             }
         }
@@ -206,19 +208,28 @@
     private void TogglePayMongoKeyVisibility()
     {
         showPayMongoKey = !showPayMongoKey;
-        if (!showPayMongoKey && hasPayMongoKey)
+        
+        // Use cached key instead of reading from SecureStorage
+        if (hasPayMongoKey && !string.IsNullOrEmpty(storedApiKey))
         {
-            var apiKey = SecureStorage.Default.GetAsync("paymongo_secret_key").GetAwaiter().GetResult();
-            if (!string.IsNullOrEmpty(apiKey))
+            if (showPayMongoKey)
             {
-                payMongoSecretKey = apiKey.Length > 8 ? apiKey.Substring(0, 8) + "..." : "••••••••";
+                // Show the full key
+                payMongoSecretKey = storedApiKey;
+            }
+            else
+            {
+                // Mask the key
+                payMongoSecretKey = storedApiKey.Length > 8 ? storedApiKey.Substring(0, 8) + "..." : "••••••••";
             }
         }
-        else if (showPayMongoKey && hasPayMongoKey)
+        else if (!hasPayMongoKey)
         {
-            var apiKey = SecureStorage.Default.GetAsync("paymongo_secret_key").GetAwaiter().GetResult();
-            payMongoSecretKey = apiKey ?? "";
+            // If no key is stored, just toggle the input type
+            // The user is entering a new key
         }
+        
+        StateHasChanged();
     }
 
     private async Task SavePayMongoConfig()
@@ -245,12 +256,14 @@
 
         try
         {
-            await SecureStorage.Default.SetAsync("paymongo_secret_key", payMongoSecretKey.Trim());
+            var keyToSave = payMongoSecretKey.Trim();
+            await SecureStorage.Default.SetAsync("paymongo_secret_key", keyToSave);
             hasPayMongoKey = true;
+            storedApiKey = keyToSave; // Update cached key
             payMongoConfigSuccess = "PayMongo API key saved successfully!";
             await LogAuditAction("PayMongo API Key Updated", "Settings", null, "PayMongo", "PayMongo API key was updated in settings");
             
-            var maskedKey = payMongoSecretKey.Length > 8 ? payMongoSecretKey.Substring(0, 8) + "..." : "••••••••";
+            var maskedKey = keyToSave.Length > 8 ? keyToSave.Substring(0, 8) + "..." : "••••••••";
             payMongoSecretKey = maskedKey;
             showPayMongoKey = false;
         }
@@ -271,12 +284,7 @@
         try
         {
             var username = await AuthService.GetCurrentUsername();
-            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
-            int? userId = null;
-            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
-            {
-                userId = parsedUserId;
-            }
+            var userId = await AuthService.GetCurrentUserId();
 
             var auditLog = new AuditLog
             {

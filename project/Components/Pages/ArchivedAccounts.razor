@@ -15,53 +15,148 @@
 <div class="settings-container">
     <!-- Page Header -->
     <div class="page-header">
-        <h1 class="page-title">Archived Accounts</h1>
-        <p class="page-subtitle">View and manage archived staff/trainer accounts.</p>
+        <h1 class="page-title">Archived Users</h1>
+        <p class="page-subtitle">View and manage archived staff, trainers, and members.</p>
     </div>
 
-    <div class="account-management-card">
-        @if (accountIsLoading)
+    <!-- Tabs Navigation -->
+    <div class="tabs-container">
+        <button class="tab-btn @(activeTab == "accounts" ? "active" : "")" @onclick='() => SwitchTab("accounts")'>
+            <span class="tab-icon"></span>
+            Staff & Trainers
+            @if (archivedUsersCount > 0)
+            {
+                <span class="badge">@archivedUsersCount</span>
+            }
+        </button>
+        <button class="tab-btn @(activeTab == "members" ? "active" : "")" @onclick='() => SwitchTab("members")'>
+            <span class="tab-icon"></span>
+            Members
+            @if (archivedMembersCount > 0)
+            {
+                <span class="badge">@archivedMembersCount</span>
+            }
+        </button>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="tab-content">
+        @if (isLoading)
         {
-            <div class="account-loading">Loading archived accounts...</div>
-        }
-        else if (archivedUsers == null || !archivedUsers.Any())
-        {
-            <div class="empty-state">
-                <h3>No Archived Accounts</h3>
-                <p>There are no archived accounts to display.</p>
+            <div class="loading-overlay">
+                <div class="loading-spinner">Loading archived items...</div>
             </div>
         }
         else
         {
-            <div class="table-container">
-                <table class="archived-table">
-                    <thead>
-                        <tr>
-                            <th>USERNAME</th>
-                            <th>ROLE</th>
-                            <th>ARCHIVED ON</th>
-                            <th>ACTIONS</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var user in archivedUsers)
-                        {
-                            <tr>
-                                <td>@user.Username</td>
-                                <td>@user.Role?.RoleName</td>
-                                <td>@(user.UpdatedAt.HasValue ? user.UpdatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
-                                <td class="account-actions">
-                                    <button class="btn-restore" @onclick="() => RestoreAccount(user)">Restore</button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+            <!-- Staff & Trainers Tab -->
+            @if (activeTab == "accounts")
+            {
+                <div class="archived-section">
+                    @if (archivedUsers == null || !archivedUsers.Any())
+                    {
+                        <div class="empty-state">
+                            <h3>No Archived Accounts</h3>
+                            <p>There are no archived staff or trainer accounts to display.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-container">
+                            <table class="archived-table">
+                                <thead>
+                                    <tr>
+                                        <th>USERNAME</th>
+                                        <th>ROLE</th>
+                                        <th>ARCHIVED ON</th>
+                                        <th>ACTIONS</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var user in archivedUsers)
+                                    {
+                                        <tr>
+                                            <td>@user.Username</td>
+                                            <td>@user.Role?.RoleName</td>
+                                            <td>@(user.UpdatedAt.HasValue ? user.UpdatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
+                                            <td class="account-actions">
+                                                <button class="btn-restore" @onclick="() => RestoreAccount(user)">Restore</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Members Tab -->
+            @if (activeTab == "members")
+            {
+                <div class="archived-section">
+                    <div class="section-header">
+                        <h2>Archived Members</h2>
+                        <input type="text"
+                               class="search-bar"
+                               placeholder="Search archived members..."
+                               @bind="memberSearchQuery"
+                               @bind:event="oninput"
+                               @onkeyup="FilterArchivedMembers" />
+                    </div>
+
+                    @if (filteredArchivedMembers == null || !filteredArchivedMembers.Any())
+                    {
+                        <div class="empty-state">
+                            <h3>No Archived Members</h3>
+                            <p>There are no archived members to display.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-container">
+                            <table class="archived-table">
+                                <thead>
+                                    <tr>
+                                        <th>NAME</th>
+                                        <th>CONTACT</th>
+                                        <th>EMAIL</th>
+                                        <th>MEMBERSHIP TYPE</th>
+                                        <th>ARCHIVED DATE</th>
+                                        <th>ACTIONS</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var member in filteredArchivedMembers)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="member-info">
+                                                    <div class="member-avatar">@GetInitials(member.FirstName, member.LastName)</div>
+                                                    <span>@GetDisplayName(member.FirstName, member.MiddleInitial, member.LastName)</span>
+                                                </div>
+                                            </td>
+                                            <td>@member.ContactNumber</td>
+                                            <td>@member.Email</td>
+                                            <td>@(member.MembershipType?.TypeName ?? "N/A")</td>
+                                            <td>-</td>
+                                            <td>
+                                                <button class="btn-restore" @onclick="() => RestoreMember(member)">
+                                                    <span class="restore-icon"></span> Restore
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
         }
     </div>
 
-    <!-- Restore Confirmation Modal -->
+    <!-- Restore Account Confirmation Modal -->
     @if (showRestoreConfirmation && selectedRestoreUser != null)
     {
         <div class="modal-overlay" @onclick="CloseRestoreConfirmation">
@@ -81,6 +176,32 @@
                     <button class="btn btn-cancel" @onclick="CloseRestoreConfirmation">Cancel</button>
                     <button class="btn btn-danger" @onclick="ConfirmRestoreAccount" disabled="@isRestoringAccount">
                         @(isRestoringAccount ? "Restoring..." : "Yes, Restore Account")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Restore Member Confirmation Modal -->
+    @if (showRestoreMemberConfirmation && selectedRestoreMember != null)
+    {
+        <div class="modal-overlay" @onclick="CloseRestoreMemberConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Restore Member</h2>
+                    <button class="close-btn" @onclick="CloseRestoreMemberConfirmation">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Restore Member</h3>
+                        <p>You are about to restore <strong>@GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName)</strong>.</p>
+                        <p class="confirmation-warning">This will reactivate the member and make them available again. Continue?</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseRestoreMemberConfirmation">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmRestoreMember" disabled="@isRestoringMember">
+                        @(isRestoringMember ? "Restoring..." : "Yes, Restore Member")
                     </button>
                 </div>
             </div>
@@ -109,6 +230,128 @@
         color: #666;
         font-size: 14px;
         margin: 0;
+    }
+
+    .tabs-container {
+        display: flex;
+        gap: 10px;
+        background: white;
+        padding: 10px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        overflow-x: auto;
+    }
+
+    .tab-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border: none;
+        background: transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        color: #666;
+        transition: all 0.3s;
+        white-space: nowrap;
+        position: relative;
+    }
+
+    .tab-btn:hover {
+        background: #f8f9fa;
+        color: #234060;
+    }
+
+    .tab-btn.active {
+        background: #234060;
+        color: white;
+    }
+
+    .tab-icon {
+        font-size: 18px;
+    }
+
+    .badge {
+        background: #e74c3c;
+        color: white;
+        border-radius: 12px;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        margin-left: 4px;
+    }
+
+    .tab-btn.active .badge {
+        background: rgba(255,255,255,0.3);
+    }
+
+    .tab-content {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 25px;
+        min-height: 400px;
+        position: relative;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.9);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+        border-radius: 10px;
+    }
+
+    .loading-spinner {
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .archived-section {
+        width: 100%;
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    .section-header h2 {
+        font-size: 22px;
+        font-weight: 600;
+        color: #234060;
+        margin: 0;
+    }
+
+    .search-bar {
+        padding: 10px 15px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
+        width: 300px;
+        transition: border-color 0.3s;
+    }
+
+    .search-bar:focus {
+        outline: none;
+        border-color: #234060;
     }
 
     .account-management-card {
@@ -183,6 +426,45 @@
         background: #ff8c00;
         transform: translateY(-1px);
         box-shadow: 0 4px 12px rgba(255,165,0,0.3);
+    }
+
+    .restore-icon {
+        font-size: 16px;
+    }
+
+    .member-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .member-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    @@media (max-width: 768px) {
+        .section-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .search-bar {
+            width: 100%;
+        }
+
+        .tabs-container {
+            flex-wrap: wrap;
+        }
     }
 
     .empty-state {
@@ -354,29 +636,46 @@
 </style>
 
 @code {
+    private string activeTab = "accounts";
+    private bool isLoading = false;
+    
+    // Staff/Trainer accounts
     private List<User> archivedUsers = new();
-    private bool accountIsLoading = false;
+    private int archivedUsersCount = 0;
+    
+    // Members
+    private string memberSearchQuery = "";
+    private List<Member> archivedMembers = new List<Member>();
+    private List<Member> filteredArchivedMembers = new List<Member>();
+    private int archivedMembersCount = 0;
+    
+    // Restore confirmations
     private bool showRestoreConfirmation = false;
     private User? selectedRestoreUser;
     private bool isRestoringAccount = false;
+    
+    private bool showRestoreMemberConfirmation = false;
+    private Member? selectedRestoreMember;
+    private bool isRestoringMember = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadArchivedAccounts();
+        await LoadArchivedData();
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        await LoadArchivedAccounts();
+        await LoadArchivedData();
     }
 
-    private async Task LoadArchivedAccounts()
+    private async Task LoadArchivedData()
     {
-        accountIsLoading = true;
+        isLoading = true;
         StateHasChanged();
 
         try
         {
+            // Load archived staff/trainer accounts
             var availableRoles = await Context.Roles
                 .Where(r => r.RoleName.ToLower() == "staff" || r.RoleName.ToLower() == "trainer")
                 .Select(r => r.RoleID)
@@ -388,18 +687,51 @@
                 .OrderBy(u => u.Username)
                 .ToListAsync();
 
-            // Filter for archived users (IsActive == false, null means active for backward compatibility)
             archivedUsers = managedUsers.Where(u => u.IsActive == false).ToList();
+            archivedUsersCount = archivedUsers.Count;
+
+            // Load archived members
+            archivedMembers = await Context.Members
+                .Where(m => m.IsArchived == true)
+                .Include(m => m.MembershipType)
+                .ToListAsync();
+            filteredArchivedMembers = archivedMembers;
+            archivedMembersCount = archivedMembers.Count;
         }
         catch (Exception ex)
         {
-            ToastService.ShowError($"Error loading archived accounts: {ex.Message}");
+            ToastService.ShowError($"Error loading archived data: {ex.Message}");
         }
         finally
         {
-            accountIsLoading = false;
+            isLoading = false;
             StateHasChanged();
         }
+    }
+
+    private void SwitchTab(string tab)
+    {
+        activeTab = tab;
+        StateHasChanged();
+    }
+
+    private void FilterArchivedMembers()
+    {
+        if (string.IsNullOrWhiteSpace(memberSearchQuery))
+        {
+            filteredArchivedMembers = archivedMembers;
+        }
+        else
+        {
+            var query = memberSearchQuery.ToLower();
+            filteredArchivedMembers = archivedMembers
+                .Where(m => m.FirstName.ToLower().Contains(query) ||
+                           m.LastName.ToLower().Contains(query) ||
+                           m.Email.ToLower().Contains(query) ||
+                           m.ContactNumber.Contains(query))
+                .ToList();
+        }
+        StateHasChanged();
     }
 
     private void RestoreAccount(User user)
@@ -434,7 +766,7 @@
             Context.Users.Update(selectedRestoreUser);
             await Context.SaveChangesAsync();
             await LogAuditAction("Account Restored", "User", userId, username, $"Restored account: {username}");
-            await LoadArchivedAccounts();
+            await LoadArchivedData();
             CloseRestoreConfirmation();
             ToastService.ShowSuccess($"Account '{username}' restored successfully!");
         }
@@ -452,17 +784,88 @@
         }
     }
 
+    private void RestoreMember(Member member)
+    {
+        selectedRestoreMember = member;
+        showRestoreMemberConfirmation = true;
+    }
+
+    private void CloseRestoreMemberConfirmation()
+    {
+        showRestoreMemberConfirmation = false;
+        selectedRestoreMember = null;
+        isRestoringMember = false;
+    }
+
+    private async Task ConfirmRestoreMember()
+    {
+        if (selectedRestoreMember == null || isRestoringMember)
+            return;
+
+        isRestoringMember = true;
+        StateHasChanged();
+
+        try
+        {
+            var memberName = GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName);
+            var memberId = selectedRestoreMember.MemberID;
+
+            selectedRestoreMember.IsArchived = false;
+            Context.Members.Update(selectedRestoreMember);
+            await Context.SaveChangesAsync();
+            await LogAuditAction("Member Restored", "Member", memberId, memberName, $"Restored member {memberName} from archive");
+            await LoadArchivedData();
+            CloseRestoreMemberConfirmation();
+            ToastService.ShowSuccess($"Member '{memberName}' restored successfully!");
+        }
+        catch (Exception ex)
+        {
+            var memberName = selectedRestoreMember != null ? GetDisplayName(selectedRestoreMember.FirstName, selectedRestoreMember.MiddleInitial, selectedRestoreMember.LastName) : "Unknown";
+            var memberId = selectedRestoreMember?.MemberID;
+            await LogAuditAction("Member Restore Failed", "Member", memberId, memberName, $"Failed to restore member: {ex.Message}", "Failed", ex.Message);
+            ToastService.ShowError($"Error restoring member: {ex.Message}");
+        }
+        finally
+        {
+            isRestoringMember = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetInitials(string firstName, string lastName)
+    {
+        var firstInitial = !string.IsNullOrEmpty(firstName) ? firstName[0].ToString().ToUpper() : "";
+        var lastInitial = !string.IsNullOrEmpty(lastName) ? lastName[0].ToString().ToUpper() : "";
+        return $"{firstInitial}{lastInitial}";
+    }
+
+    private string GetDisplayName(string firstName, string middleInitial, string lastName)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(firstName))
+            parts.Add(CapitalizeName(firstName));
+        if (!string.IsNullOrWhiteSpace(middleInitial))
+            parts.Add(CapitalizeName(middleInitial));
+        if (!string.IsNullOrWhiteSpace(lastName))
+            parts.Add(CapitalizeName(lastName));
+        
+        return string.Join(" ", parts);
+    }
+
+    private string CapitalizeName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "";
+        
+        return name.Substring(0, 1).ToUpper() + name.Substring(1).ToLower();
+    }
+
     private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
     {
         try
         {
             var username = await AuthService.GetCurrentUsername();
-            var userIdStr = await SecureStorage.Default.GetAsync("user_id");
-            int? userId = null;
-            if (!string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out int parsedUserId))
-            {
-                userId = parsedUserId;
-            }
+            var userId = await AuthService.GetCurrentUserId();
 
             var auditLog = new AuditLog
             {

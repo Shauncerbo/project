@@ -15,6 +15,7 @@ namespace project.Services
         Task<SyncResult> SyncBidirectionalAsync();
         Task<bool> SyncToLocalAsync();
         Task<bool> SyncToOnlineAsync();
+        Task<SyncResult> SyncOnlineToLocalAsync();
         Task<string> GetCurrentDatabaseTypeAsync();
         Task<Dictionary<string, int>> GetLocalCountsAsync();
         Task<Dictionary<string, int>> GetOnlineCountsAsync();
@@ -52,6 +53,99 @@ namespace project.Services
         {
             var result = await SyncBidirectionalAsync();
             return result.Success;
+        }
+
+        public async Task<SyncResult> SyncOnlineToLocalAsync()
+        {
+            var result = new SyncResult
+            {
+                SyncTime = DateTime.Now
+            };
+
+            try
+            {
+                var localOptions = new DbContextOptionsBuilder<AppDbContext>()
+                    .UseSqlServer(LOCAL_CONNECTION_STRING)
+                    .Options;
+
+                var onlineOptions = new DbContextOptionsBuilder<AppDbContext>()
+                    .UseSqlServer(ONLINE_CONNECTION_STRING)
+                    .Options;
+
+                using var localContext = new AppDbContext(localOptions);
+                using var onlineContext = new AppDbContext(onlineOptions);
+
+                if (!await localContext.Database.CanConnectAsync())
+                {
+                    throw new Exception("Cannot connect to local database");
+                }
+
+                // Test online connection
+                try
+                {
+                    if (!await onlineContext.Database.CanConnectAsync())
+                    {
+                        throw new Exception("Cannot connect to online database");
+                    }
+                }
+                catch (Exception connEx)
+                {
+                    throw new Exception($"Cannot connect to online database: {connEx.Message}", connEx);
+                }
+
+                // Only download from online to local (no upload)
+                await SyncTableOnlineToLocal<Role>(localContext, onlineContext, result);
+                await SyncTableOnlineToLocal<RolePermission>(localContext, onlineContext, result);
+                await SyncTableOnlineToLocal<MembershipType>(localContext, onlineContext, result);
+                await SyncTableOnlineToLocal<Promotion>(localContext, onlineContext, result);
+                
+                // Clean up duplicate trainers before syncing
+                await CleanupDuplicateTrainers(localContext, result);
+                
+                await SyncTableOnlineToLocal<Trainer>(localContext, onlineContext, result);
+                await SyncTableOnlineToLocal<User>(localContext, onlineContext, result);
+                await SyncTableOnlineToLocal<TrainerSchedule>(localContext, onlineContext, result);
+                
+                // Clean up duplicate members before syncing
+                await CleanupDuplicateMembers(localContext, result);
+                
+                await SyncTableOnlineToLocal<Member>(localContext, onlineContext, result);
+                
+                // Clean up duplicate walk-ins before syncing
+                await CleanupDuplicateWalkIns(localContext, result);
+                
+                await SyncTableOnlineToLocal<WalkIn>(localContext, onlineContext, result);
+                await SyncTableOnlineToLocal<Attendance>(localContext, onlineContext, result);
+                await SyncTableOnlineToLocal<Payment>(localContext, onlineContext, result);
+                
+                // Sync MemberPromo AFTER Members and Promotions
+                await SyncTableOnlineToLocal<MemberPromo>(localContext, onlineContext, result);
+                
+                // Sync MemberTrainer AFTER Members and Trainers
+                await SyncTableOnlineToLocal<MemberTrainer>(localContext, onlineContext, result);
+                
+                // Sync Notifications AFTER Members
+                await SyncTableOnlineToLocal<Notification>(localContext, onlineContext, result);
+                
+                // Sync AuditLogs last
+                await SyncTableOnlineToLocal<AuditLog>(localContext, onlineContext, result);
+
+                await localContext.SaveChangesAsync();
+
+                result.Success = true;
+                result.Message = $"Successfully downloaded {result.TotalDownloaded} records and updated {result.TotalUpdated} records from online to local database.";
+
+                // Save sync time
+                await SecureStorage.Default.SetAsync("last_sync_time", DateTime.Now.ToString());
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.Message = $"Sync failed: {ex.Message}";
+                System.Diagnostics.Debug.WriteLine($"SyncOnlineToLocalAsync error: {ex.Message}");
+            }
+
+            return result;
         }
 
         public async Task<SyncResult> SyncBidirectionalAsync()
@@ -1197,6 +1291,300 @@ namespace project.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error syncing table {typeof(T).Name}: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
+                throw;
+            }
+        }
+
+        private async Task SyncTableOnlineToLocal<T>(AppDbContext localContext, AppDbContext onlineContext, SyncResult result) where T : class
+        {
+            try
+            {
+                var tableName = typeof(T).Name;
+                var summary = new TableSyncSummary { TableName = tableName };
+
+                // Clear the change tracker before starting
+                localContext.ChangeTracker.Clear();
+                onlineContext.ChangeTracker.Clear();
+                System.Diagnostics.Debug.WriteLine($"Cleared change tracker before starting {tableName} download");
+
+                // Detach all composite key entities
+                DetachAllCompositeKeyEntities(localContext);
+                DetachAllCompositeKeyEntities(onlineContext);
+
+                var localSet = localContext.Set<T>();
+                var onlineSet = onlineContext.Set<T>();
+
+                var localRecords = await localSet.AsNoTracking().ToListAsync();
+                var onlineRecords = await onlineSet.AsNoTracking().ToListAsync();
+
+                // Group by ID to handle duplicates
+                var localDict = localRecords
+                    .GroupBy(r => GetId(r))
+                    .Where(g => g.Key > 0)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                var onlineDict = onlineRecords
+                    .GroupBy(r => GetId(r))
+                    .Where(g => g.Key > 0)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                // Download missing online data to local
+                foreach (var onlineRecord in onlineRecords)
+                {
+                    var id = GetId(onlineRecord);
+                    
+                    if (id <= 0)
+                    {
+                        continue;
+                    }
+                    
+                    // Fix any invalid foreign key references BEFORE validation
+                    await FixForeignKeys(onlineRecord, localContext);
+                    
+                    if (!await ValidateForeignKeys(onlineRecord, localContext))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Skipping {tableName} record ID {id} - foreign key validation failed");
+                        continue;
+                    }
+                    
+                    var existingByUniqueKey = await FindByUniqueKey<T>(onlineRecord, localContext);
+                    
+                    if (!localDict.ContainsKey(id))
+                    {
+                        if (existingByUniqueKey != null)
+                        {
+                            try
+                            {
+                                var existingId = GetId(existingByUniqueKey);
+                                if (typeof(T) == typeof(Member))
+                                {
+                                    var member = onlineRecord as Member;
+                                    if (member != null)
+                                    {
+                                        await FixForeignKeys(onlineRecord, localContext);
+                                        if (await UpdateMemberDirectly(member, localContext, existingId))
+                                        {
+                                            summary.Updated++;
+                                            result.TotalUpdated++;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    var existing = await GetEntityForUpdateAsync(localSet, localContext, existingId);
+                                    if (existing != null)
+                                    {
+                                        localContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                        await UpdateEntityValues(existing, onlineRecord, localContext);
+                                        summary.Updated++;
+                                        result.TotalUpdated++;
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error updating {tableName} by unique key: {ex.Message}");
+                            }
+                        }
+                        else
+                        {
+                            // Record exists only in online - download to local
+                            // Check for unique key conflicts
+                            if (typeof(T) == typeof(User))
+                            {
+                                var user = onlineRecord as User;
+                                if (user != null && !string.IsNullOrEmpty(user.Username))
+                                {
+                                    var existingUser = await FindByUniqueKeyValue(user.Username, localContext);
+                                    if (existingUser != null)
+                                    {
+                                        try
+                                        {
+                                            var existingId = GetId(existingUser);
+                                            var existing = await GetEntityForUpdateAsync(localSet, localContext, existingId);
+                                            if (existing != null)
+                                            {
+                                                await FixForeignKeys(onlineRecord, localContext);
+                                                localContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                                await UpdateEntityValues(existing, onlineRecord, localContext);
+                                                summary.Updated++;
+                                                result.TotalUpdated++;
+                                                continue;
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Error updating User by unique key: {ex.Message}");
+                                        }
+                                    }
+                                }
+                            }
+                            else if (typeof(T) == typeof(Trainer))
+                            {
+                                var trainer = onlineRecord as Trainer;
+                                if (trainer != null)
+                                {
+                                    var existingTrainer = await FindTrainerByUniqueFields(trainer, localContext);
+                                    if (existingTrainer != null)
+                                    {
+                                        try
+                                        {
+                                            var existingId = GetId(existingTrainer);
+                                            var existing = await GetEntityForUpdateAsync(localSet, localContext, existingId);
+                                            if (existing != null)
+                                            {
+                                                localContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                                UpdateEntityValues(existing, onlineRecord, localContext);
+                                                summary.Updated++;
+                                                result.TotalUpdated++;
+                                                continue;
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Error updating Trainer by unique fields: {ex.Message}");
+                                        }
+                                    }
+                                }
+                            }
+                            else if (typeof(T) == typeof(Member))
+                            {
+                                var member = onlineRecord as Member;
+                                if (member != null)
+                                {
+                                    var existingMember = await FindMemberByUniqueFields(member, localContext);
+                                    if (existingMember != null)
+                                    {
+                                        try
+                                        {
+                                            var existingId = GetId(existingMember);
+                                            await FixForeignKeys(onlineRecord, localContext);
+                                            if (await UpdateMemberDirectly(member, localContext, existingId))
+                                            {
+                                                summary.Updated++;
+                                                result.TotalUpdated++;
+                                                continue;
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Error updating Member by unique fields: {ex.Message}");
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // If no unique key conflict found, proceed with insert
+                            try
+                            {
+                                if (typeof(T) == typeof(Member))
+                                {
+                                    var member = onlineRecord as Member;
+                                    if (member != null)
+                                    {
+                                        await FixForeignKeys(onlineRecord, localContext);
+                                        if (await InsertMemberDirectly(member, localContext))
+                                        {
+                                            summary.Downloaded++;
+                                            result.TotalDownloaded++;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    var newRecord = CloneEntityForAdd(onlineRecord);
+                                    localSet.Add(newRecord);
+                                    summary.Downloaded++;
+                                    result.TotalDownloaded++;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error adding {tableName} record ID {id} to local: {ex.Message}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Record exists in both - update local with online data (one-way sync)
+                        try
+                        {
+                            if (typeof(T) == typeof(Member))
+                            {
+                                var member = onlineRecord as Member;
+                                if (member != null)
+                                {
+                                    await FixForeignKeys(onlineRecord, localContext);
+                                    if (await UpdateMemberDirectly(member, localContext, id))
+                                    {
+                                        summary.Updated++;
+                                        result.TotalUpdated++;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                var existing = await GetEntityForUpdateAsync(localSet, localContext, id);
+                                if (existing != null)
+                                {
+                                    await FixForeignKeys(onlineRecord, localContext);
+                                    if (await ValidateForeignKeys(onlineRecord, localContext))
+                                    {
+                                        localContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                        await UpdateEntityValues(existing, onlineRecord, localContext);
+                                        summary.Updated++;
+                                        result.TotalUpdated++;
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error updating {tableName} record ID {id}: {ex.Message}");
+                        }
+                    }
+                }
+
+                // Save changes for this table
+                if (typeof(T) != typeof(Member))
+                {
+                    if (typeof(T) == typeof(User))
+                    {
+                        try
+                        {
+                            await SaveChangesWithUniqueKeyHandling(localContext, localSet, summary, result, tableName, "local");
+                        }
+                        catch (Exception userLocalEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"⚠ User sync failed for local database: {userLocalEx.Message}");
+                        }
+                    }
+                    else
+                    {
+                        await SaveChangesWithUniqueKeyHandling(localContext, localSet, summary, result, tableName, "local");
+                    }
+                }
+                else
+                {
+                    DetachAllCompositeKeyEntities(localContext);
+                    System.Diagnostics.Debug.WriteLine("Skipped SaveChanges for Members (using direct SQL operations)");
+                }
+
+                // Clear the change tracker after sync
+                localContext.ChangeTracker.Clear();
+                onlineContext.ChangeTracker.Clear();
+                System.Diagnostics.Debug.WriteLine($"Cleared change tracker after {tableName} download");
+
+                result.TableSummaries[tableName] = summary;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error downloading table {typeof(T).Name}: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 if (ex.InnerException != null)
                 {

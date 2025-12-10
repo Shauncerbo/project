@@ -311,6 +311,32 @@ namespace project.Services
             {
                 System.Diagnostics.Debug.WriteLine("=== STARTING LOGOUT PROCESS ===");
 
+                // Save PayMongo API key and Gmail credentials before clearing storage
+                string? payMongoKey = null;
+                string? gmailAddress = null;
+                string? gmailPassword = null;
+                
+                try
+                {
+                    payMongoKey = await SecureStorage.Default.GetAsync("paymongo_secret_key");
+                    System.Diagnostics.Debug.WriteLine($"PayMongo key found: {!string.IsNullOrEmpty(payMongoKey)}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error reading PayMongo key: {ex.Message}");
+                }
+                
+                try
+                {
+                    gmailAddress = await SecureStorage.Default.GetAsync("gmail_address");
+                    gmailPassword = await SecureStorage.Default.GetAsync("gmail_app_password");
+                    System.Diagnostics.Debug.WriteLine($"Gmail config found: {!string.IsNullOrEmpty(gmailAddress) && !string.IsNullOrEmpty(gmailPassword)}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error reading Gmail config: {ex.Message}");
+                }
+
                 // Method 1: Remove individual keys with verification
                 var keys = new[] { "is_authenticated", "username", "user_role", "user_id", "trainer_id" };
                 foreach (var key in keys)
@@ -318,12 +344,27 @@ namespace project.Services
                     await RemoveSecureStorageKey(key);
                 }
 
-                // Method 2: Clear all storage as backup
+                // Method 2: Clear all storage as backup (but preserve PayMongo key)
                 try
                 {
                     SecureStorage.Default.RemoveAll();
                     await Task.Delay(50);
                     System.Diagnostics.Debug.WriteLine("All secure storage cleared");
+                    
+                    // Restore PayMongo API key if it existed
+                    if (!string.IsNullOrEmpty(payMongoKey))
+                    {
+                        await SecureStorage.Default.SetAsync("paymongo_secret_key", payMongoKey);
+                        System.Diagnostics.Debug.WriteLine("PayMongo API key restored after logout");
+                    }
+                    
+                    // Restore Gmail credentials if they existed
+                    if (!string.IsNullOrEmpty(gmailAddress) && !string.IsNullOrEmpty(gmailPassword))
+                    {
+                        await SecureStorage.Default.SetAsync("gmail_address", gmailAddress);
+                        await SecureStorage.Default.SetAsync("gmail_app_password", gmailPassword);
+                        System.Diagnostics.Debug.WriteLine("Gmail credentials restored after logout");
+                    }
                 }
                 catch (Exception clearEx)
                 {

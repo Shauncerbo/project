@@ -24,6 +24,10 @@ namespace project.Models
 
         public int? PerformedByUserID { get; set; }
 
+        // Navigation property to User
+        [ForeignKey("PerformedByUserID")]
+        public virtual User? PerformedByUser { get; set; }
+
         public string? Description { get; set; }
 
         [Required]
@@ -35,6 +39,8 @@ namespace project.Models
         public string? ErrorMessage { get; set; }
     }
 }
+
+
 
 
 
