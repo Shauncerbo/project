@@ -70,12 +70,21 @@
                                         @(user.IsActive == true ? "Active" : "Inactive")
                                     </span>
                                 </td>
-                                <td>@(user.CreatedAt.HasValue ? user.CreatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
+                                <td>@GetUserCreatedDate(user)</td>
                                 <td class="account-actions">
-                                    <button class="action-btn edit-btn" @onclick="() => OpenPasswordModal(user)" title="Change Password">
-                                        <img src="/Newedit_icon.svg" class="action-icon" alt="Change Password" />
-                                    </button>
-                                    <button class="action-btn archive-btn" @onclick="() => ArchiveAccount(user)" title="Archive">
+                                    @if (IsTrainerUser(user))
+                                    {
+                                        <button type="button" class="action-btn profile-btn" @onclick="() => OpenPasswordModal(user)" title="Trainer Profile - Change Password">
+                                            <img src="/trainer_icon.svg" class="action-icon" alt="Trainer Profile" />
+                                        </button>
+                                    }
+                                    else if (CanChangePassword(user))
+                                    {
+                                        <button type="button" class="action-btn edit-btn" @onclick="() => OpenPasswordModal(user)" title="Change Password">
+                                            <img src="/Newedit_icon.svg" class="action-icon" alt="Change Password" />
+                                        </button>
+                                    }
+                                    <button type="button" class="action-btn archive-btn" @onclick="() => ArchiveAccount(user)" title="Archive">
                                         <img src="/archived_icon.svg" class="action-icon" alt="Archive" />
                                     </button>
                                 </td>
@@ -241,9 +250,11 @@
     }
 
     .btn-primary {
-        background: #5cb85c;
-        color: white;
-        border: none;
+        background: #3498DB !important;
+        background-color: #3498DB !important;
+        color: white !important;
+        border: none !important;
+        border-color: #3498DB !important;
         padding: 10px 18px;
         border-radius: 8px;
         cursor: pointer;
@@ -252,9 +263,10 @@
     }
 
     .btn-primary:hover {
-        background: #4cae4c;
+        background: #2980b9 !important;
+        background-color: #2980b9 !important;
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
     }
 
     .btn-secondary {
@@ -324,11 +336,32 @@
         width: 18px;
         height: 18px;
         object-fit: contain;
+        pointer-events: none;
     }
 
     .edit-btn:hover {
         background: #e3f2fd;
         transform: scale(1.1);
+    }
+
+    .profile-btn {
+        background: transparent !important;
+        color: #333;
+        cursor: pointer;
+        pointer-events: auto;
+    }
+
+    .profile-btn:hover {
+        background: transparent !important;
+        transform: scale(1.1);
+    }
+
+    .profile-btn:hover .action-icon {
+        filter: brightness(1.15);
+    }
+
+    .profile-btn:active {
+        transform: scale(0.95);
     }
 
     .archive-btn:hover {
@@ -633,9 +666,13 @@
     private bool showArchiveConfirmation = false;
     private User? selectedArchiveUser;
     private bool isArchivingAccount = false;
+    private string? currentUserRole;
+    private int? currentUserId;
 
     protected override async Task OnInitializedAsync()
     {
+        currentUserRole = await AuthService.GetCurrentUserRole();
+        currentUserId = await AuthService.GetCurrentUserId();
         await LoadAccountData();
     }
 
@@ -766,14 +803,98 @@
         }
     }
 
-    private void OpenPasswordModal(User user)
+    private bool IsAdminUser(User user)
     {
-        selectedPasswordUser = user;
-        passwordInput = "";
-        passwordConfirm = "";
-        passwordModalError = "";
-        isSavingPassword = false;
-        showPasswordModal = true;
+        return user.Role != null && string.Equals(user.Role.RoleName, "Admin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsTrainerUser(User user)
+    {
+        return user.Role != null && string.Equals(user.Role.RoleName, "Trainer", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsAdmin()
+    {
+        return !string.IsNullOrEmpty(currentUserRole) && string.Equals(currentUserRole, "Admin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool CanChangePassword(User user)
+    {
+        // Admin users cannot change passwords through this interface
+        if (IsAdminUser(user))
+        {
+            return false;
+        }
+
+        // If current user is Admin, they can change any trainer/staff password
+        if (IsAdmin())
+        {
+            return IsTrainerUser(user) || (user.Role != null && string.Equals(user.Role.RoleName, "Staff", StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Staff/Trainer can only change their own password
+        if (currentUserId.HasValue && user.UserID == currentUserId.Value)
+        {
+            // Check if current user is Staff or Trainer (not Admin)
+            if (!string.IsNullOrEmpty(currentUserRole) && 
+                (string.Equals(currentUserRole, "Staff", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(currentUserRole, "Trainer", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task OpenPasswordModal(User user)
+    {
+        if (user == null)
+            return;
+
+        // Prevent changing admin passwords
+        if (IsAdminUser(user))
+        {
+            ToastService.ShowError("Admin passwords cannot be changed through this interface.");
+            return;
+        }
+
+        // If current user is Admin, allow changing trainer/staff passwords
+        if (IsAdmin())
+        {
+            if (IsTrainerUser(user) || (user.Role != null && string.Equals(user.Role.RoleName, "Staff", StringComparison.OrdinalIgnoreCase)))
+            {
+                selectedPasswordUser = user;
+                passwordInput = "";
+                passwordConfirm = "";
+                passwordModalError = "";
+                isSavingPassword = false;
+                showPasswordModal = true;
+                StateHasChanged();
+                return;
+            }
+        }
+
+        // Staff/Trainer can only change their own password
+        if (currentUserId.HasValue && user.UserID == currentUserId.Value)
+        {
+            if (!string.IsNullOrEmpty(currentUserRole) && 
+                (string.Equals(currentUserRole, "Staff", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(currentUserRole, "Trainer", StringComparison.OrdinalIgnoreCase)))
+            {
+                selectedPasswordUser = user;
+                passwordInput = "";
+                passwordConfirm = "";
+                passwordModalError = "";
+                isSavingPassword = false;
+                showPasswordModal = true;
+                StateHasChanged();
+                return;
+            }
+        }
+
+        // If we get here, user doesn't have permission
+        ToastService.ShowError("You do not have permission to change this password.");
     }
 
     private void ClosePasswordModal()
@@ -792,6 +913,36 @@
             return;
 
         passwordModalError = "";
+
+        // Prevent Admin users from changing passwords
+        if (IsAdminUser(selectedPasswordUser))
+        {
+            passwordModalError = "Admin passwords cannot be changed through this interface.";
+            ToastService.ShowError("Admin passwords cannot be changed through this interface.");
+            return;
+        }
+
+        // If current user is Admin, allow changing trainer/staff passwords
+        if (IsAdmin())
+        {
+            if (!IsTrainerUser(selectedPasswordUser) && 
+                !(selectedPasswordUser.Role != null && string.Equals(selectedPasswordUser.Role.RoleName, "Staff", StringComparison.OrdinalIgnoreCase)))
+            {
+                passwordModalError = "You can only change trainer or staff passwords.";
+                ToastService.ShowError("You can only change trainer or staff passwords.");
+                return;
+            }
+        }
+        else
+        {
+            // Staff/Trainer can only change their own password
+            if (currentUserId.HasValue && selectedPasswordUser.UserID != currentUserId.Value)
+            {
+                passwordModalError = "You can only change your own password.";
+                ToastService.ShowError("You can only change your own password.");
+                return;
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(passwordInput) || string.IsNullOrWhiteSpace(passwordConfirm))
         {
@@ -861,6 +1012,63 @@
             // Store username before closing modal (which sets selectedArchiveUser to null)
             var username = selectedArchiveUser.Username;
             var userId = selectedArchiveUser.UserID;
+            var trainerId = selectedArchiveUser.TrainerID;
+
+            // If this is a trainer account, also archive/delete the trainer
+            if (trainerId.HasValue && IsTrainerUser(selectedArchiveUser))
+            {
+                var trainer = await Context.Trainers.FindAsync(trainerId.Value);
+                if (trainer != null)
+                {
+                    // 1) Detach trainer from members (do NOT delete members)
+                    var members = await Context.Members
+                        .Where(m => m.TrainerID == trainerId.Value)
+                        .ToListAsync();
+                    foreach (var member in members)
+                    {
+                        member.TrainerID = null;
+                        member.TrainerScheduleID = null;
+                    }
+
+                    // 2) Detach trainer from walk-ins (do NOT delete walk-ins)
+                    var walkins = await Context.WalkIns
+                        .Where(w => w.TrainerID == trainerId.Value)
+                        .ToListAsync();
+                    foreach (var walkin in walkins)
+                    {
+                        walkin.TrainerID = null;
+                        walkin.TrainerScheduleID = null;
+                    }
+
+                    // 3) Remove any MemberTrainer join records for this trainer
+                    var memberTrainers = await Context.MemberTrainers
+                        .Where(mt => mt.TrainerID == trainerId.Value)
+                        .ToListAsync();
+                    if (memberTrainers.Any())
+                    {
+                        Context.MemberTrainers.RemoveRange(memberTrainers);
+                    }
+
+                    // 4) Remove any trainer schedules
+                    var schedules = await Context.TrainerSchedules
+                        .Where(ts => ts.TrainerID == trainerId.Value)
+                        .ToListAsync();
+                    if (schedules.Any())
+                    {
+                        Context.TrainerSchedules.RemoveRange(schedules);
+                    }
+
+                    // Save dependency removals first
+                    await Context.SaveChangesAsync();
+
+                    // 5) Finally remove the trainer record itself
+                    var trainerName = $"{trainer.FirstName} {trainer.LastName}";
+                    Context.Trainers.Remove(trainer);
+                    await Context.SaveChangesAsync();
+                    
+                    await LogAuditAction("Trainer Archived", "Trainer", trainerId.Value, trainerName, $"Archived trainer '{trainerName}' when user account '{username}' was archived");
+                }
+            }
 
             selectedArchiveUser.IsActive = false;
             selectedArchiveUser.UpdatedAt = DateTime.Now;
@@ -884,6 +1092,30 @@
             isArchivingAccount = false;
             StateHasChanged();
         }
+    }
+
+    private string GetUserCreatedDate(User user)
+    {
+        // Use CreatedAt if available
+        if (user.CreatedAt.HasValue)
+        {
+            return user.CreatedAt.Value.ToString("MMM dd, yyyy");
+        }
+        
+        // Fallback to UpdatedAt if CreatedAt is null
+        if (user.UpdatedAt.HasValue)
+        {
+            return user.UpdatedAt.Value.ToString("MMM dd, yyyy");
+        }
+        
+        // Fallback to LastLogin if both are null
+        if (user.LastLogin.HasValue)
+        {
+            return user.LastLogin.Value.ToString("MMM dd, yyyy");
+        }
+        
+        // If no date available, show "-"
+        return "-";
     }
 
     private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")

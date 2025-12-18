@@ -147,7 +147,9 @@
                             <input type="date"
                                    class="form-control @(validationErrors.ContainsKey("StartDate") ? "error" : "")"
                                    @bind="currentPromo.StartDate"
-                                   format="yyyy-MM-dd" />
+                                   @bind:after="OnStartDateChanged"
+                                   format="yyyy-MM-dd"
+                                   min="@(DateTime.Today.ToString("yyyy-MM-dd"))" />
                             @if (validationErrors.ContainsKey("StartDate"))
                             {
                                 <div class="error-message">@validationErrors["StartDate"]</div>
@@ -158,7 +160,8 @@
                             <input type="date"
                                    class="form-control @(validationErrors.ContainsKey("EndDate") ? "error" : "")"
                                    @bind="currentPromo.EndDate"
-                                   format="yyyy-MM-dd" />
+                                   format="yyyy-MM-dd"
+                                   min="@(currentPromo.StartDate.ToString("yyyy-MM-dd"))" />
                             @if (validationErrors.ContainsKey("EndDate"))
                             {
                                 <div class="error-message">@validationErrors["EndDate"]</div>
@@ -252,12 +255,12 @@
 
         .search-bar:focus {
             outline: none;
-            border-color: #5cb85c;
-            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
         }
 
     .add-member-btn {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
         border: none;
         padding: 10px 20px;
@@ -269,9 +272,9 @@
     }
 
         .add-member-btn:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     /* Table Container */
@@ -556,8 +559,8 @@
 
         .form-control:focus {
             outline: none;
-            border-color: #5cb85c;
-            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
         }
 
         /* Error state for form controls */
@@ -676,14 +679,14 @@
         }
 
     .btn-save {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
     }
 
         .btn-save:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     /* Additional CSS for the modified modal */
@@ -733,6 +736,7 @@
 @code {
     [Inject] private AppDbContext Context { get; set; } = null!;
     [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+    [Inject] private IAuthService AuthService { get; set; } = null!;
 
     private string searchQuery = "";
     private bool showPromoModal = false;
@@ -794,8 +798,8 @@
         isEditMode = false;
         currentPromo = new Promotion
         {
-            StartDate = DateTime.Now,
-            EndDate = DateTime.Now.AddDays(30)
+            StartDate = DateTime.Today,
+            EndDate = DateTime.Today.AddDays(30)
         };
         validationErrors.Clear();
         showPromoModal = true;
@@ -842,8 +846,13 @@
         try
         {
             selectedPromotion.IsArchived = true;
+            selectedPromotion.ArchivedDate = DateTime.Now;
             Context.Promotions.Update(selectedPromotion);
             await Context.SaveChangesAsync();
+            
+            // Log audit action
+            await LogAuditAction("Promotion Archived", "Promotion", selectedPromotion.PromoID, selectedPromotion.PromoName, $"Archived promotion: {selectedPromotion.PromoName}");
+            
             await LoadPromotions();
             CloseArchiveConfirmation();
             ToastService.ShowWarning("Promotion archived successfully");
@@ -913,6 +922,10 @@
                     existingPromo.StartDate = currentPromo.StartDate;
                     existingPromo.EndDate = currentPromo.EndDate;
                     await Context.SaveChangesAsync();
+                    
+                    // Log audit action
+                    await LogAuditAction("Promotion Updated", "Promotion", existingPromo.PromoID, existingPromo.PromoName, $"Updated promotion: {existingPromo.PromoName}");
+                    
                     ToastService.ShowSuccess("Updated successfully");
                 }
                 else
@@ -924,6 +937,10 @@
             {
                 Context.Promotions.Add(currentPromo);
                 await Context.SaveChangesAsync();
+                
+                // Log audit action
+                await LogAuditAction("Promotion Created", "Promotion", currentPromo.PromoID, currentPromo.PromoName, $"Created promotion: {currentPromo.PromoName} ({currentPromo.DiscountRate}% discount)");
+                
                 ToastService.ShowSuccess("Added successfully");
             }
 
@@ -941,6 +958,21 @@
         showPromoModal = false;
         currentPromo = new Promotion();
         validationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private void OnStartDateChanged()
+    {
+        // If End Date is before or equal to Start Date, adjust it to be one day after Start Date
+        if (currentPromo.EndDate <= currentPromo.StartDate)
+        {
+            currentPromo.EndDate = currentPromo.StartDate.AddDays(1);
+        }
+        // Clear any EndDate validation errors when Start Date changes
+        if (validationErrors.ContainsKey("EndDate"))
+        {
+            validationErrors.Remove("EndDate");
+        }
         StateHasChanged();
     }
 
@@ -964,5 +996,35 @@
             return "Expired";
         else
             return "Active";
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userId = await AuthService.GetCurrentUserId();
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
     }
 }

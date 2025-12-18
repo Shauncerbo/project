@@ -80,7 +80,9 @@
                                             <td>@user.Role?.RoleName</td>
                                             <td>@(user.UpdatedAt.HasValue ? user.UpdatedAt.Value.ToString("MMM dd, yyyy") : "-")</td>
                                             <td class="account-actions">
-                                                <button class="btn-restore" @onclick="() => RestoreAccount(user)">Restore</button>
+                                                <button class="btn-restore" @onclick="() => RestoreAccount(user)" title="Restore">
+                                                    <img src="/restore_icon.svg" alt="Restore" class="restore-icon" />
+                                                </button>
                                             </td>
                                         </tr>
                                     }
@@ -140,9 +142,9 @@
                                             <td>@member.Email</td>
                                             <td>@(member.MembershipType?.TypeName ?? "N/A")</td>
                                             <td>-</td>
-                                            <td>
-                                                <button class="btn-restore" @onclick="() => RestoreMember(member)">
-                                                    <span class="restore-icon"></span> Restore
+                                            <td class="account-actions">
+                                                <button class="btn-restore" @onclick="() => RestoreMember(member)" title="Restore">
+                                                    <img src="/restore_icon.svg" alt="Restore" class="restore-icon" />
                                                 </button>
                                             </td>
                                         </tr>
@@ -174,7 +176,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-cancel" @onclick="CloseRestoreConfirmation">Cancel</button>
-                    <button class="btn btn-danger" @onclick="ConfirmRestoreAccount" disabled="@isRestoringAccount">
+                    <button class="btn btn-primary" @onclick="ConfirmRestoreAccount" disabled="@isRestoringAccount">
                         @(isRestoringAccount ? "Restoring..." : "Yes, Restore Account")
                     </button>
                 </div>
@@ -200,7 +202,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-cancel" @onclick="CloseRestoreMemberConfirmation">Cancel</button>
-                    <button class="btn btn-danger" @onclick="ConfirmRestoreMember" disabled="@isRestoringMember">
+                    <button class="btn btn-primary" @onclick="ConfirmRestoreMember" disabled="@isRestoringMember">
                         @(isRestoringMember ? "Restoring..." : "Yes, Restore Member")
                     </button>
                 </div>
@@ -371,6 +373,7 @@
         display: flex;
         gap: 8px;
         align-items: center;
+        justify-content: center;
     }
 
     .table-container {
@@ -410,16 +413,16 @@
     .btn-restore {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 8px 16px;
+        justify-content: center;
+        padding: 8px;
         background: #FFA500;
         color: white;
         border: none;
         border-radius: 6px;
         cursor: pointer;
-        font-size: 13px;
-        font-weight: 600;
         transition: all 0.3s;
+        width: 36px;
+        height: 36px;
     }
 
     .btn-restore:hover {
@@ -429,7 +432,9 @@
     }
 
     .restore-icon {
-        font-size: 16px;
+        width: 20px;
+        height: 20px;
+        filter: brightness(0) invert(1);
     }
 
     .member-info {
@@ -578,18 +583,18 @@
         background: #e0e4e8;
     }
 
-    .btn-danger {
-        background: #e74c3c;
-        color: white;
+    .btn-primary {
+        background: #0066cc !important;
+        color: white !important;
     }
 
-    .btn-danger:hover:not([disabled]) {
-        background: #c0392b;
+    .btn-primary:hover:not([disabled]) {
+        background: #0052a3 !important;
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+        box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
     }
 
-    .btn-danger[disabled] {
+    .btn-primary[disabled] {
         opacity: 0.7;
         cursor: not-allowed;
     }

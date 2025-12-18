@@ -14,5 +14,6 @@ namespace project.Models
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public bool IsArchived { get; set; } = false;
+        public DateTime? ArchivedDate { get; set; }
     }
 }

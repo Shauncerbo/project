@@ -225,21 +225,34 @@
                     <!-- Membership Type Popularity -->
                     <div class="report-card">
                         <h3>Membership Type Popularity</h3>
-                        <div class="report-content">
-                            @foreach (var pop in membershipPopularity)
+                        <div class="report-content" style="padding: 0;">
+                            @if (!membershipPopularity.Any())
                             {
-                                <div class="report-item">
-                                    <span>@pop.TypeName:</span>
-                                    <span>@pop.MemberCount members</span>
-                                </div>
-                                <div class="report-item sub-item">
-                                    <span>Revenue:</span>
-                                    <span class="amount">₱@(pop.Revenue.ToString("N2"))</span>
-                                </div>
-                                <div class="report-item sub-item">
-                                    <span>Popularity:</span>
-                                    <span>@(pop.PopularityPercentage.ToString("F1"))%</span>
-                                </div>
+                                <div class="no-data">No membership type data available.</div>
+                            }
+                            else
+                            {
+                                <table class="membership-popularity-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="col-type">Type</th>
+                                            <th class="col-members">Members</th>
+                                            <th class="col-revenue">Revenue</th>
+                                            <th class="col-popularity">Popularity</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var pop in membershipPopularity)
+                                        {
+                                            <tr>
+                                                <td class="col-type">@pop.TypeName</td>
+                                                <td class="col-members">@pop.MemberCount</td>
+                                                <td class="col-revenue">₱@(pop.Revenue.ToString("N2"))</td>
+                                                <td class="col-popularity">@(pop.PopularityPercentage.ToString("F1"))%</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
                             }
                         </div>
                     </div>
@@ -271,67 +284,17 @@
                         </div>
                     </div>
 
-                    <!-- Lead Source Analytics -->
-                    <div class="report-card">
-                        <h3>Lead Source Analytics</h3>
-                        <div class="report-content">
-                            @if (!leadSourceBreakdown.Any())
-                            {
-                                <div class="report-item">
-                                    <span class="text-muted">No lead source data available yet.</span>
-                                </div>
-                            }
-                            else
-                            {
-                                @foreach (var source in leadSourceBreakdown)
-                                {
-                                    <div class="report-item">
-                                        <span>@source.Source:</span>
-                                        <span>@source.Count members (@source.Percentage.ToString("F1")%)</span>
-                                    </div>
-                                }
-                            }
-                        </div>
-                    </div>
-
                     <!-- New Members Report -->
                     <div class="report-card full-width">
                         <h3>New Members Report</h3>
                         <div class="report-content">
-                            <div class="reports-table-wrapper">
-                                <table class="members-table reports-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Email</th>
-                                            <th>Contact</th>
-                                            <th>Join Date</th>
-                                            <th>Membership Type</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @if (!newMembersReport.Any())
-                                        {
-                                            <tr>
-                                                <td colspan="5" class="no-data">No new members found for this period.</td>
-                                            </tr>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var member in newMembersReport)
-                                            {
-                                                <tr>
-                                                    <td>@member.Name</td>
-                                                    <td>@member.Email</td>
-                                                    <td>@member.ContactNumber</td>
-                                                    <td>@member.JoinDate.ToString("MM/dd/yyyy")</td>
-                                                    <td>@member.MembershipType</td>
-                                                </tr>
-                                            }
-                                        }
-                                    </tbody>
-                                </table>
+                            <div class="chart-container" style="position: relative; height: 350px; margin-bottom: 20px;">
+                                <canvas id="newMembersChart"></canvas>
                             </div>
+                            @if (!newMembersChartLabels.Any() || !newMembersChartData.Any())
+                            {
+                                <div class="no-data" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">No new members data available for the selected period</div>
+                            }
                         </div>
                     </div>
 
@@ -339,215 +302,37 @@
                     <div class="report-card full-width">
                         <h3>Expired & Expiring Memberships Report</h3>
                         <div class="report-content">
-                            <h4 class="table-subtitle">Expiring Memberships (Next 30 Days)</h4>
-                            <div class="reports-table-wrapper">
-                                <table class="members-table reports-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Email</th>
-                                            <th>Expiration Date</th>
-                                            <th>Days Until Expiration</th>
-                                            <th>Membership Type</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @if (!expiringMembersReport.Any())
-                                        {
-                                            <tr>
-                                                <td colspan="5" class="no-data">No members expiring in the next 30 days.</td>
-                                            </tr>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var member in expiringMembersReport)
-                                            {
-                                                <tr>
-                                                    <td>@member.Name</td>
-                                                    <td>@member.Email</td>
-                                                    <td>@(member.ExpirationDate?.ToString("MM/dd/yyyy") ?? "N/A")</td>
-                                                    <td>
-                                                        <span class="@(member.DaysUntilExpiration <= 7 ? "danger" : member.DaysUntilExpiration <= 14 ? "warning" : "")">
-                                                            @member.DaysUntilExpiration days
-                                                        </span>
-                                                    </td>
-                                                    <td>@member.MembershipType</td>
-                                                </tr>
-                                            }
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                            <h4 class="table-subtitle" style="margin-top: 30px;">Expired Memberships</h4>
-                            <div class="reports-table-wrapper">
-                                <table class="members-table reports-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Email</th>
-                                            <th>Expiration Date</th>
-                                            <th>Days Since Expiration</th>
-                                            <th>Membership Type</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @if (expiredMembersTable == null || !expiredMembersTable.Any())
-                                        {
-                                            <tr>
-                                                <td colspan="5" class="no-data">No expired members found.</td>
-                                            </tr>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var member in expiredMembersTable.Take(50))
-                                            {
-                                                <tr>
-                                                    <td>@($"{member.FirstName} {member.LastName}")</td>
-                                                    <td>@member.Email</td>
-                                                    <td>@(member.ExpirationDate?.ToString("MM/dd/yyyy") ?? "N/A")</td>
-                                                    <td>
-                                                        <span class="danger">
-                                                            @(member.ExpirationDate.HasValue ? (DateTime.Today - member.ExpirationDate.Value.Date).Days : 0) days
-                                                        </span>
-                                                    </td>
-                                                    <td>@member.MembershipType?.TypeName</td>
-                                                </tr>
-                                            }
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Inactive Members Report -->
-                    <div class="report-card full-width">
-                        <h3>Inactive Members Report</h3>
-                        <div class="report-content">
-                            <div style="margin-bottom: 15px;">
-                                <label>Inactive Threshold: </label>
-                                <select @bind="inactiveDaysThreshold" @bind:after="OnPeriodChanged" style="padding: 5px; margin-left: 10px;">
-                                    <option value="30">30 days</option>
-                                    <option value="60">60 days</option>
-                                    <option value="90">90 days</option>
-                                </select>
-                                <span style="margin-left: 10px; color: #666;">Members who haven't checked in for @inactiveDaysThreshold+ days</span>
-                            </div>
-                            <div class="reports-table-wrapper">
-                                <table class="members-table reports-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Email</th>
-                                            <th>Last Check-in</th>
-                                            <th>Days Since Last Check-in</th>
-                                            <th>Membership Type</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @if (!inactiveMembersReport.Any())
-                                        {
-                                            <tr>
-                                                <td colspan="5" class="no-data">No inactive members found.</td>
-                                            </tr>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var member in inactiveMembersReport)
-                                            {
-                                                <tr>
-                                                    <td>@member.Name</td>
-                                                    <td>@member.Email</td>
-                                                    <td>@(member.LastCheckIn?.ToString("MM/dd/yyyy") ?? "Never")</td>
-                                                    <td>
-                                                        <span class="@(member.DaysSinceLastCheckIn >= 90 ? "danger" : member.DaysSinceLastCheckIn >= 60 ? "warning" : "")">
-                                                            @member.DaysSinceLastCheckIn days
-                                                        </span>
-                                                    </td>
-                                                    <td>@member.MembershipType</td>
-                                                </tr>
-                                            }
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Retention Rate Report -->
-                    <div class="report-card">
-                        <h3>Retention Rate Report</h3>
-                        <div class="report-content">
-                            <div class="report-item">
-                                <span>Renewal Rate:</span>
-                                <span class="@(renewalRate >= 70 ? "success" : renewalRate >= 50 ? "warning" : "danger")">
-                                    @(renewalRate.ToString("F1"))%
-                                </span>
-                            </div>
-                            <div class="report-item">
-                                <span>Active Members:</span>
-                                <span class="success">@activeMembers</span>
-                            </div>
-                            <div class="report-item">
-                                <span>Avg. Membership Duration:</span>
-                                <span>@averageMembershipDuration days</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Churn Rate Report -->
-                    <div class="report-card full-width">
-                        <h3>Churn Rate Report</h3>
-                        <div class="report-content">
-                            <div style="margin-bottom: 15px;">
-                                <div class="report-item">
-                                    <span>Churn Rate:</span>
-                                    <span class="@(churnRate < 10 ? "success" : churnRate < 20 ? "warning" : "danger")">
-                                        @(churnRate.ToString("F1"))%
-                                    </span>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 20px;">
+                                <div>
+                                    <h4 class="table-subtitle">Expiring Memberships (Next 30 Days)</h4>
+                                    @if (expiringMembersChartLabels.Any())
+                                    {
+                                        <div class="chart-container" style="position: relative; height: 300px;">
+                                            <canvas id="expiringMembersChart"></canvas>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="no-data">No expiring members data available</div>
+                                    }
                                 </div>
-                                <div class="report-item">
-                                    <span>Churned Members (Last 6 Months):</span>
-                                    <span class="danger">@churnMembersReport.Count</span>
+                                <div>
+                                    <h4 class="table-subtitle">Expired Memberships</h4>
+                                    @if (expiredMembersChartLabels.Any())
+                                    {
+                                        <div class="chart-container" style="position: relative; height: 300px;">
+                                            <canvas id="expiredMembersChart"></canvas>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="no-data">No expired members data available</div>
+                                    }
                                 </div>
                             </div>
-                            <h4 class="table-subtitle">Churned Members (Did Not Renew)</h4>
-                            <div class="reports-table-wrapper">
-                                <table class="members-table reports-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Email</th>
-                                            <th>Expiration Date</th>
-                                            <th>Days Since Expiration</th>
-                                            <th>Membership Type</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @if (!churnMembersReport.Any())
-                                        {
-                                            <tr>
-                                                <td colspan="5" class="no-data">No churned members found.</td>
-                                            </tr>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var member in churnMembersReport)
-                                            {
-                                                <tr>
-                                                    <td>@member.Name</td>
-                                                    <td>@member.Email</td>
-                                                    <td>@(member.ExpirationDate?.ToString("MM/dd/yyyy") ?? "N/A")</td>
-                                                    <td>@member.DaysSinceExpiration days</td>
-                                                    <td>@member.MembershipType</td>
-                                                </tr>
-                                            }
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
                         </div>
                     </div>
+
                 </div>
             </div>
         </div>
@@ -705,7 +490,11 @@
     }
 
     .print-btn {
-        background: #5cb85c;
+        background: #0066cc;
+    }
+
+    .print-btn:hover {
+        background: #0052a3;
     }
 
     .print-header {
@@ -727,15 +516,25 @@
 
     .reports-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        grid-template-columns: repeat(3, 1fr);
         gap: 20px;
+        align-items: stretch;
+    }
+
+    @@media (max-width: 1200px) {
+        .reports-grid {
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        }
     }
 
     .report-card {
         border: 1px solid #e1e8ed;
         border-radius: 8px;
-        padding: 20px;
+        padding: 24px;
         background: #fafbfc;
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
     }
 
     .report-card.full-width {
@@ -752,15 +551,24 @@
     .report-content {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 0;
+        flex: 1;
+        justify-content: flex-start;
+    }
+
+    #member-retention .report-content,
+    #attendance-patterns .report-content {
+        justify-content: space-between;
     }
 
     .report-item {
         display: flex;
         justify-content: space-between;
-        padding: 8px 0;
+        padding: 14px 0;
         border-bottom: 1px solid #ecf0f1;
         color: #000000;
+        min-height: 48px;
+        align-items: center;
     }
 
     .report-item.sub-item {
@@ -831,6 +639,18 @@
         gap: 4px;
     }
 
+    .performance-indicator.success {
+        color: #2e7d32;
+    }
+
+    .performance-indicator.danger {
+        color: #c62828;
+    }
+
+    .performance-indicator.warning {
+        color: #1976d2;
+    }
+
     .performance-content {
         display: flex;
         flex-direction: column;
@@ -876,6 +696,80 @@
         background: #f8f9fa;
     }
 
+    .membership-popularity-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0;
+        table-layout: fixed;
+    }
+
+    .membership-popularity-table thead {
+        background: #f8f9fa;
+        color: #000000;
+    }
+
+    .membership-popularity-table th {
+        padding: 14px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #e1e8ed;
+        height: 48px;
+        box-sizing: border-box;
+        vertical-align: middle;
+        line-height: 1.2;
+    }
+
+    .membership-popularity-table td {
+        padding: 14px 16px;
+        font-size: 14px;
+        border-bottom: 1px solid #e8eef4;
+        color: #333;
+        vertical-align: middle;
+        height: 48px;
+        box-sizing: border-box;
+        line-height: 1.2;
+    }
+
+    .membership-popularity-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .membership-popularity-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .membership-popularity-table .col-popularity {
+        vertical-align: middle !important;
+        padding: 14px 16px !important;
+        line-height: 1.2 !important;
+        display: table-cell;
+        height: 48px;
+    }
+
+    .membership-popularity-table thead .col-popularity {
+        vertical-align: middle !important;
+        padding: 14px 16px !important;
+        line-height: 1.2 !important;
+        display: table-cell;
+        height: 48px;
+    }
+
+    .membership-popularity-table .col-type,
+    .membership-popularity-table .col-members,
+    .membership-popularity-table .col-revenue {
+        vertical-align: middle;
+        line-height: 1.2;
+    }
+
+    .membership-popularity-table thead .col-type,
+    .membership-popularity-table thead .col-members,
+    .membership-popularity-table thead .col-revenue {
+        vertical-align: middle;
+        line-height: 1.2;
+    }
+
     .table-subtitle {
         margin-top: 16px;
         margin-bottom: 6px;
@@ -894,6 +788,10 @@
     .members-table {
         width: 100%;
         border-collapse: collapse;
+    }
+
+    .chart-container {
+        margin: 20px 0;
     }
 </style>
 
@@ -936,7 +834,17 @@
     private List<InactiveMemberRow> inactiveMembersReport = new();
     private List<ChurnMemberRow> churnMembersReport = new();
     private List<Member> expiredMembersTable = new();
-    private List<LeadSourceData> leadSourceBreakdown = new();
+
+    // Chart data variables
+    private List<string> newMembersChartLabels = new();
+    private List<int> newMembersChartData = new();
+    private List<string> expiringMembersChartLabels = new();
+    private List<int> expiringMembersChartData = new();
+    private List<string> expiredMembersChartLabels = new();
+    private List<int> expiredMembersChartData = new();
+    private bool newMembersChartInitialized = false;
+    private bool expiringMembersChartInitialized = false;
+    private bool expiredMembersChartInitialized = false;
 
     private class MembershipPopularity
     {
@@ -984,13 +892,6 @@
         public DateTime? ExpirationDate { get; set; }
         public int DaysSinceExpiration { get; set; }
         public string MembershipType { get; set; } = string.Empty;
-    }
-
-    private class LeadSourceData
-    {
-        public string Source { get; set; } = string.Empty;
-        public int Count { get; set; }
-        public decimal Percentage { get; set; }
     }
 
     protected override async Task OnInitializedAsync()
@@ -1044,11 +945,11 @@
             await LoadAttendancePatterns(startDate, endDate);
             await LoadBusinessPerformanceOverview(startDate, endDate);
             await LoadNewMembersReport(startDate, endDate);
+            await LoadNewMembersChartData(startDate, endDate);
             await LoadExpiringMembersReport();
-            await LoadInactiveMembersReport();
-            await LoadChurnMembersReport();
+            await LoadExpiringMembersChartData();
             await LoadExpiredMembersTable();
-            await LoadLeadSourceAnalytics(startDate, endDate);
+            await LoadExpiredMembersChartData();
         }
         catch (Exception ex)
         {
@@ -1365,39 +1266,243 @@
             .ToListAsync();
     }
 
-    private async Task LoadLeadSourceAnalytics(DateTime startDate, DateTime endDate)
+    private async Task LoadNewMembersChartData(DateTime startDate, DateTime endDate)
     {
-        var today = DateTime.Today;
-        
-        // Load only active members (exclude archived and expired)
-        var members = await Context.Members
-            .Where(m => !m.IsArchived && 
-                       m.Status == "Active" && 
-                       (!m.ExpirationDate.HasValue || m.ExpirationDate >= today))
-            .ToListAsync();
+        try
+        {
+            newMembersChartLabels.Clear();
+            newMembersChartData.Clear();
 
-        // Load only walk-ins that have a lead source specified (exclude old ones without lead source)
-        var walkins = await Context.WalkIns
-            .Where(w => !w.IsArchived && !string.IsNullOrEmpty(w.LeadSource))
-            .ToListAsync();
-
-        // Combine lead sources from both members and walk-ins
-        var memberSources = members.Select(m => string.IsNullOrEmpty(m.LeadSource) ? "Not Specified" : m.LeadSource);
-        var walkinSources = walkins.Select(w => w.LeadSource!);
-        var allSources = memberSources.Concat(walkinSources).ToList();
-
-        var total = allSources.Count;
-
-        leadSourceBreakdown = allSources
-            .GroupBy(s => s)
-            .Select(g => new LeadSourceData
+            var totalDays = (endDate - startDate).TotalDays;
+            
+            // Ensure we have at least one period
+            if (totalDays < 1)
             {
-                Source = g.Key,
-                Count = g.Count(),
-                Percentage = total > 0 ? (g.Count() * 100m / total) : 0
-            })
-            .OrderByDescending(x => x.Count)
-            .ToList();
+                totalDays = 1;
+            }
+
+            int numberOfPeriods;
+            string periodFormat;
+
+            if (totalDays <= 7)
+            {
+                numberOfPeriods = Math.Max(1, (int)Math.Ceiling(totalDays));
+                periodFormat = "MMM dd";
+            }
+            else if (totalDays <= 90)
+            {
+                numberOfPeriods = Math.Min(12, Math.Max(1, (int)Math.Ceiling(totalDays / 7)));
+                periodFormat = "MMM dd";
+            }
+            else
+            {
+                numberOfPeriods = Math.Min(12, Math.Max(1, (int)Math.Ceiling(totalDays / 30)));
+                periodFormat = "MMM yyyy";
+            }
+
+            for (int i = 0; i < numberOfPeriods; i++)
+            {
+                DateTime periodStart, periodEnd;
+                string periodLabel;
+
+                if (totalDays <= 7)
+                {
+                    periodStart = startDate.AddDays(i);
+                    periodEnd = i < numberOfPeriods - 1 ? periodStart.AddDays(1).AddSeconds(-1) : endDate;
+                    periodLabel = periodStart.ToString(periodFormat);
+                }
+                else if (totalDays <= 90)
+                {
+                    var weekStart = startDate.AddDays(i * 7);
+                    periodStart = weekStart;
+                    periodEnd = i < numberOfPeriods - 1 ? weekStart.AddDays(7).AddSeconds(-1) : endDate;
+                    if (periodEnd > endDate) periodEnd = endDate;
+                    periodLabel = $"{periodStart.ToString(periodFormat)} - {periodEnd.ToString(periodFormat)}";
+                }
+                else
+                {
+                    periodStart = startDate.AddMonths(i);
+                    periodEnd = i < numberOfPeriods - 1 ? periodStart.AddMonths(1).AddSeconds(-1) : endDate;
+                    if (periodEnd > endDate) periodEnd = endDate;
+                    periodLabel = periodStart.ToString(periodFormat);
+                }
+
+                var count = await Context.Members
+                    .CountAsync(m => !m.IsArchived && m.JoinDate >= periodStart && m.JoinDate <= periodEnd);
+
+                newMembersChartLabels.Add(periodLabel);
+                newMembersChartData.Add(count);
+            }
+
+            // Ensure we have at least one data point (even if 0)
+            if (!newMembersChartLabels.Any())
+            {
+                newMembersChartLabels.Add(startDate.ToString("MMM dd, yyyy"));
+                newMembersChartData.Add(0);
+            }
+
+            newMembersChartInitialized = false;
+            StateHasChanged();
+            await Task.Delay(500);
+            await InitializeNewMembersChart();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading new members chart data: {ex.Message}");
+            // Add fallback data
+            if (!newMembersChartLabels.Any())
+            {
+                newMembersChartLabels.Add("No Data");
+                newMembersChartData.Add(0);
+            }
+        }
+    }
+
+    private async Task LoadExpiringMembersChartData()
+    {
+        try
+        {
+            expiringMembersChartLabels.Clear();
+            expiringMembersChartData.Clear();
+
+            var today = DateTime.Today;
+            var thirtyDaysFromNow = today.AddDays(30);
+
+            // Group by days until expiration
+            var expiringGroups = expiringMembersReport
+                .GroupBy(m => m.DaysUntilExpiration)
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            foreach (var group in expiringGroups)
+            {
+                expiringMembersChartLabels.Add($"{group.Key} days");
+                expiringMembersChartData.Add(group.Count());
+            }
+
+            expiringMembersChartInitialized = false;
+            StateHasChanged();
+            await Task.Delay(200);
+            await InitializeExpiringMembersChart();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading expiring members chart data: {ex.Message}");
+        }
+    }
+
+    private async Task LoadExpiredMembersChartData()
+    {
+        try
+        {
+            expiredMembersChartLabels.Clear();
+            expiredMembersChartData.Clear();
+
+            var today = DateTime.Today;
+
+            // Group by months since expiration
+            var expiredGroups = expiredMembersTable
+                .Where(m => m.ExpirationDate.HasValue)
+                .GroupBy(m =>
+                {
+                    var daysSince = (today - m.ExpirationDate!.Value.Date).Days;
+                    if (daysSince <= 30) return "0-30 days";
+                    if (daysSince <= 60) return "31-60 days";
+                    if (daysSince <= 90) return "61-90 days";
+                    return "90+ days";
+                })
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            foreach (var group in expiredGroups)
+            {
+                expiredMembersChartLabels.Add(group.Key);
+                expiredMembersChartData.Add(group.Count());
+            }
+
+            expiredMembersChartInitialized = false;
+            StateHasChanged();
+            await Task.Delay(200);
+            await InitializeExpiredMembersChart();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading expired members chart data: {ex.Message}");
+        }
+    }
+
+
+    private async Task InitializeNewMembersChart()
+    {
+        // Always try to initialize, even with empty data (will show empty chart)
+        try
+        {
+            // Ensure DOM is updated
+            StateHasChanged();
+            await Task.Delay(600);
+            
+            var labels = newMembersChartLabels.Any() ? newMembersChartLabels.ToArray() : new[] { "No Data" };
+            var data = newMembersChartData.Any() ? newMembersChartData.ToArray() : new[] { 0 };
+            
+            System.Diagnostics.Debug.WriteLine($"Initializing new members chart with {labels.Length} labels and {data.Length} data points");
+            await JSRuntime.InvokeVoidAsync("initNewMembersChart", labels, data);
+            newMembersChartInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error initializing new members chart: {ex.Message}");
+            // Try alternative method with more retries
+            try
+            {
+                await Task.Delay(500);
+                var labels = newMembersChartLabels.Any() ? newMembersChartLabels.ToArray() : new[] { "No Data" };
+                var data = newMembersChartData.Any() ? newMembersChartData.ToArray() : new[] { 0 };
+                await JSRuntime.InvokeVoidAsync("dashboardCharts.initNewMembersChart", labels, data);
+                newMembersChartInitialized = true;
+            }
+            catch (Exception ex2)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error with alternative method: {ex2.Message}");
+            }
+        }
+    }
+
+    private async Task InitializeExpiringMembersChart()
+    {
+        if (!expiringMembersChartLabels.Any() || !expiringMembersChartData.Any())
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(300);
+            await JSRuntime.InvokeVoidAsync("initExpiringMembersChart", expiringMembersChartLabels.ToArray(), expiringMembersChartData.ToArray());
+            expiringMembersChartInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error initializing expiring members chart: {ex.Message}");
+        }
+    }
+
+    private async Task InitializeExpiredMembersChart()
+    {
+        if (!expiredMembersChartLabels.Any() || !expiredMembersChartData.Any())
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(300);
+            await JSRuntime.InvokeVoidAsync("initExpiredMembersChart", expiredMembersChartLabels.ToArray(), expiredMembersChartData.ToArray());
+            expiredMembersChartInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error initializing expired members chart: {ex.Message}");
+        }
     }
 
     private async Task PrintMembershipReports()
@@ -1414,6 +1519,47 @@
         {
             await JSRuntime.InvokeVoidAsync("alert", $"Error printing: {ex.Message}");
         }
+    }
+
+    private async Task PrintLeadsReports()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                (function() {
+                    window.print();
+                })();
+            ");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error printing: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Task.Delay(500);
+        }
+
+        if (newMembersChartLabels.Any() && newMembersChartData.Any() && !newMembersChartInitialized)
+        {
+            await InitializeNewMembersChart();
+        }
+
+        if (expiringMembersChartLabels.Any() && expiringMembersChartData.Any() && !expiringMembersChartInitialized)
+        {
+            await InitializeExpiringMembersChart();
+        }
+
+        if (expiredMembersChartLabels.Any() && expiredMembersChartData.Any() && !expiredMembersChartInitialized)
+        {
+            await InitializeExpiredMembersChart();
+        }
+
+        await base.OnAfterRenderAsync(firstRender);
     }
 }
 

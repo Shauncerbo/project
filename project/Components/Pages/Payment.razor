@@ -6,6 +6,7 @@
 @using project.Data
 @using project.Models
 @using project.Services
+@using Microsoft.AspNetCore.Components.Forms
 @using MemberModel = project.Models.Member
 @using MembershipTypeModel = project.Models.MembershipType
 @using PaymentModel = project.Models.Payment
@@ -15,6 +16,8 @@
 @inject AppDbContext Context
 @inject IJSRuntime JSRuntime
 @inject IToastService ToastService
+@inject NavigationManager NavigationManager
+@inject IAuthService AuthService
 
 <div class="payments-container">
     <div class="payments-header">
@@ -27,16 +30,6 @@
         </div>
     </div>
 
-    <div class="payments-content">
-        <div class="info-card">
-            <h3>How it works</h3>
-            <ul>
-                <li>Select the membership type the customer wants.</li>
-                <li>The form auto-fills the price and computes the expiration date.</li>
-                <li>Submitting the form creates the member record and records a payment entry.</li>
-            </ul>
-        </div>
-    </div>
 
     <!-- Detailed subscriptions datatable with search -->
     <div class="table-container payments-table-section">
@@ -91,7 +84,7 @@
                     }
                     else
                     {
-                        @foreach (var sub in filteredSubscriptions)
+                        @foreach (var sub in PaginatedSubscriptions)
                         {
                             var fullName = sub.Member != null
                                 ? $"{sub.Member.FirstName} {sub.Member.LastName}"
@@ -110,6 +103,42 @@
                 </tbody>
             </table>
         </div>
+        
+        <!-- Pagination Controls for Payments -->
+        @if (filteredSubscriptions != null && filteredSubscriptions.Any() && TotalPaymentsPages > 1)
+        {
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Showing @((currentPaymentsPage - 1) * itemsPerPage + 1) - @(Math.Min(currentPaymentsPage * itemsPerPage, filteredSubscriptions.Count)) of @filteredSubscriptions.Count
+                </div>
+                <div class="pagination-controls">
+                    <button class="pagination-btn" 
+                            @onclick="PreviousPaymentsPage" 
+                            disabled="@(currentPaymentsPage == 1)">
+                        Previous
+                    </button>
+                    @foreach (var pageNum in GetPaymentsPageNumbers(currentPaymentsPage, TotalPaymentsPages))
+                    {
+                        @if (pageNum == -1)
+                        {
+                            <span class="pagination-ellipsis">...</span>
+                        }
+                        else
+                        {
+                            <button class="pagination-btn @(pageNum == currentPaymentsPage ? "active" : "")" 
+                                    @onclick="() => GoToPaymentsPage(pageNum)">
+                                @pageNum
+                            </button>
+                        }
+                    }
+                    <button class="pagination-btn" 
+                            @onclick="NextPaymentsPage" 
+                            disabled="@(currentPaymentsPage == TotalPaymentsPages)">
+                        Next
+                    </button>
+                </div>
+            </div>
+        }
     </div>
 </div>
 
@@ -127,6 +156,14 @@
                 {
                     <div class="general-error">
                         ⚠️ @generalError
+                    </div>
+                }
+
+                @if (isConvertingFromWalkIn)
+                {
+                    <div class="conversion-banner">
+                        <span class="conversion-icon">🔄</span>
+                        <span>Converting walk-in customer to member - Information pre-filled</span>
                     </div>
                 }
 
@@ -259,7 +296,6 @@
                 </div>
 
                 <div class="form-section">
-                    <h4>Membership Plan</h4>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="required">Membership Type</label>
@@ -278,13 +314,19 @@
                         <div class="form-group">
                             <label class="required">Payment Method</label>
                             <div class="select-wrapper">
-                                <select class="form-control select-dropdown @(GetErrorClass("PaymentMethod"))" @bind="selectedPaymentMethod">
+                                <select class="form-control select-dropdown @(GetErrorClass("PaymentMethod"))" @bind="selectedPaymentMethod" @bind:after="OnPaymentMethodChanged">
                                     <option value="Cash">Cash</option>
-                                    <option value="Ewallet">Ewallet</option>
+                                    <option value="PayMongo">PayMongo</option>
                                 </select>
                                 <span class="dropdown-arrow">▼</span>
                             </div>
                             @DisplayError("PaymentMethod")
+                            @if (selectedPaymentMethod == "PayMongo")
+                            {
+                                <div class="paymongo-info">
+                                    <p><strong>Online Payment:</strong> Customer will be redirected to PayMongo to complete payment via GCash, PayMaya, Credit Card, or other methods.</p>
+                                </div>
+                            }
                         </div>
                     </div>
 
@@ -313,6 +355,50 @@
                         }
                     </div>
 
+                    @if (IsStudentMembership)
+                    {
+                        <div class="form-group">
+                            <label class="required">Student ID Image</label>
+                            <div class="file-upload-container">
+                                <InputFile OnChange="HandleStudentIDUpload" accept="image/*,.pdf" class="file-input" id="student-id-input" />
+                                <label for="student-id-input" class="file-upload-area @(studentIDImageBytes != null ? "has-file" : "")">
+                                    @if (studentIDImageBytes != null)
+                                    {
+                                        <div class="file-preview">
+                                            @if (studentIDFileName != null && studentIDFileName.ToLowerInvariant().EndsWith(".pdf"))
+                                            {
+                                                <div class="pdf-preview">
+                                                    <span class="pdf-icon">📄</span>
+                                                    <span class="file-name">@studentIDFileName</span>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <img src="data:image/jpeg;base64,@Convert.ToBase64String(studentIDImageBytes)" alt="Student ID Preview" class="preview-image" />
+                                            }
+                                            <div class="file-info">
+                                                <span class="file-name">✓ Student ID uploaded</span>
+                                                <button type="button" class="remove-file-btn" @onclick="RemoveStudentIDImage" @onclick:stopPropagation="true">Remove</button>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="file-upload-placeholder">
+                                            <span class="upload-icon">📷</span>
+                                            <span class="upload-text">Click to upload Student ID</span>
+                                            <span class="upload-hint">JPG, PNG or PDF (Max 5MB)</span>
+                                        </div>
+                                    }
+                                </label>
+                            </div>
+                            @if (fieldErrors.ContainsKey("StudentIDImage"))
+                            {
+                                <div class="field-error">@fieldErrors["StudentIDImage"]</div>
+                            }
+                        </div>
+                    }
+
                     @if (selectedMembershipType != null)
                     {
                         <div class="price-breakdown">
@@ -340,7 +426,18 @@
             <div class="modal-footer">
                 <button class="btn btn-cancel" @onclick="CloseSubscriptionModal">Cancel</button>
                 <button class="btn btn-primary" disabled="@isSaving" @onclick="SaveSubscriptionAsync">
-                    @(isSaving ? "Saving..." : "Complete Subscription")
+                    @if (isSaving)
+                    {
+                        <span>Saving...</span>
+                    }
+                    else if (selectedPaymentMethod == "PayMongo")
+                    {
+                        <span>Proceed to Payment</span>
+                    }
+                    else
+                    {
+                        <span>Complete Subscription</span>
+                    }
                 </button>
             </div>
         </div>
@@ -380,7 +477,7 @@
     }
 
     .primary-btn {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
         border: none;
         border-radius: 8px;
@@ -392,8 +489,8 @@
     }
 
     .primary-btn:hover {
-        background: #4aac4a;
-        box-shadow: 0 8px 20px rgba(92,184,92,0.35);
+        background: #2980b9;
+        box-shadow: 0 8px 20px rgba(52, 152, 219, 0.35);
         transform: translateY(-1px);
     }
 
@@ -661,8 +758,8 @@
     }
 
     .form-control:focus {
-        border-color: #4aac4a;
-        box-shadow: 0 0 0 3px rgba(92,184,92,0.12);
+        border-color: #3498db;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.12);
         outline: none;
     }
 
@@ -693,8 +790,8 @@
     }
 
     .select-dropdown:focus {
-        border-color: #4aac4a !important;
-        box-shadow: 0 0 0 3px rgba(92,184,92,0.12);
+        border-color: #3498db !important;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.12);
         outline: none;
     }
 
@@ -736,18 +833,21 @@
     }
 
     .btn-primary {
-        background: #5cb85c;
-        color: white;
+        background: #3498db !important;
+        color: white !important;
+        border-color: #3498db !important;
     }
 
     .btn-primary:hover:not([disabled]) {
-        background: #49a949;
-        box-shadow: 0 8px 20px rgba(92,184,92,0.35);
+        background: #2980b9 !important;
+        box-shadow: 0 8px 20px rgba(52, 152, 219, 0.35);
+        border-color: #2980b9 !important;
     }
 
     .btn-primary[disabled] {
         opacity: 0.7;
         cursor: not-allowed;
+        background: #3498db !important;
     }
 
     .field-error {
@@ -764,12 +864,48 @@
         margin-bottom: 15px;
     }
 
+    .conversion-banner {
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #1976d2;
+        font-weight: 500;
+    }
+
+    .conversion-icon {
+        font-size: 18px;
+    }
+
     .promo-description {
         display: block;
         margin-top: 5px;
         font-size: 12px;
         color: #666;
         font-style: italic;
+    }
+
+    .paymongo-info {
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 10px;
+    }
+
+    .paymongo-info p {
+        margin: 0;
+        color: #1976d2;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    .paymongo-info strong {
+        color: #1565c0;
     }
 
     .price-breakdown {
@@ -814,8 +950,192 @@
         font-size: 1.05em;
     }
 
+    /* Pagination Styles */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        border-top: 1px solid #f0f0f0;
+        background: white;
+    }
+
+    .pagination-info {
+        color: #666;
+        font-size: 14px;
+    }
+
+    .pagination-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .pagination-btn {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        background: white;
+        color: #333;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s;
+        min-width: 40px;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+        background: #f8f9fa;
+        border-color: #3498db;
+        color: #3498db;
+    }
+
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .pagination-btn.active {
+        background: #3498db;
+        color: white;
+        border-color: #3498db;
+    }
+
+    .pagination-ellipsis {
+        padding: 8px 4px;
+        color: #999;
+        font-size: 14px;
+    }
+
+    .conversion-banner {
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #1976d2;
+        font-weight: 500;
+    }
+
+    .conversion-icon {
+        font-size: 18px;
+    }
+
     .payments-table-section {
         margin-top: 25px;
+    }
+
+    /* File Upload Styles */
+    .file-upload-container {
+        position: relative;
+    }
+
+    .file-input {
+        display: none;
+    }
+
+    .file-upload-area {
+        display: block;
+        border: 2px dashed #dcdfe5;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: #fafafa;
+    }
+
+    .file-upload-area:hover {
+        border-color: #3498db;
+        background: #f0f8ff;
+    }
+
+    .file-upload-area.has-file {
+        border-color: #5cb85c;
+        background: #f0f9f0;
+    }
+
+    .file-upload-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .upload-icon {
+        font-size: 32px;
+        margin-bottom: 4px;
+    }
+
+    .upload-text {
+        font-weight: 600;
+        color: #333;
+        font-size: 14px;
+    }
+
+    .upload-hint {
+        font-size: 12px;
+        color: #666;
+    }
+
+    .file-preview {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .preview-image {
+        max-width: 100%;
+        max-height: 200px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+    }
+
+    .pdf-preview {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 20px;
+    }
+
+    .pdf-icon {
+        font-size: 48px;
+    }
+
+    .file-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .file-name {
+        font-size: 13px;
+        color: #5cb85c;
+        font-weight: 600;
+    }
+
+    .remove-file-btn {
+        background: #e74c3c;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .remove-file-btn:hover {
+        background: #c0392b;
+        transform: translateY(-1px);
     }
 
     @@media (max-width: 640px) {
@@ -857,11 +1177,177 @@
     private string paymentsSelectedPeriod = "today";
     private DateTime? paymentsCustomStartDate = DateTime.Today;
     private DateTime? paymentsCustomEndDate = DateTime.Today;
+    
+    // Pagination variables
+    private int currentPaymentsPage = 1;
+    private const int itemsPerPage = 10;
+    
+    // Walk-in conversion flag
+    private bool isConvertingFromWalkIn = false;
+    private int? walkInIdToConvert = null;
+    
+    // Lead conversion flag
+    private bool isConvertingFromLead = false;
+    private int? leadIdToConvert = null;
+    
+    // Student ID Image upload
+    private byte[]? studentIDImageBytes = null;
+    private string? studentIDFileName = null;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadReferenceDataAsync();
         await LoadRecentSubscriptionsAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Check if we're converting from a walk-in or lead
+        var uri = NavigationManager.Uri;
+        if (uri.Contains("walkInId="))
+        {
+            try
+            {
+                var uriObj = new Uri(uri);
+                var query = uriObj.Query;
+                if (query.StartsWith("?"))
+                {
+                    query = query.Substring(1);
+                }
+                var queryParams = query.Split('&');
+                foreach (var param in queryParams)
+                {
+                    var parts = param.Split('=');
+                    if (parts.Length == 2 && parts[0] == "walkInId" && int.TryParse(parts[1], out int walkInId))
+                    {
+                        walkInIdToConvert = walkInId;
+                        await LoadWalkInData(walkInId);
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error parsing walkInId parameter: {ex.Message}");
+            }
+        }
+        else if (uri.Contains("leadId="))
+        {
+            try
+            {
+                var uriObj = new Uri(uri);
+                var query = uriObj.Query;
+                if (query.StartsWith("?"))
+                {
+                    query = query.Substring(1);
+                }
+                var queryParams = query.Split('&');
+                foreach (var param in queryParams)
+                {
+                    var parts = param.Split('=');
+                    if (parts.Length == 2 && parts[0] == "leadId" && int.TryParse(parts[1], out int leadId))
+                    {
+                        leadIdToConvert = leadId;
+                        await LoadLeadData(leadId);
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error parsing leadId parameter: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task LoadWalkInData(int walkInId)
+    {
+        try
+        {
+            var walkin = await Context.WalkIns
+                .AsNoTracking()
+                .Include(w => w.Trainer)
+                .Include(w => w.TrainerSchedule)
+                .FirstOrDefaultAsync(w => w.WalkInID == walkInId);
+
+            if (walkin != null)
+            {
+                // Pre-populate member form with walk-in data
+                subscriptionMember.FirstName = walkin.FirstName;
+                subscriptionMember.MiddleInitial = walkin.MiddleName ?? string.Empty;
+                subscriptionMember.LastName = walkin.LastName;
+                subscriptionMember.LeadSource = "Walk-in";
+                
+                // Pre-populate trainer if walk-in had one
+                if (walkin.TrainerID.HasValue)
+                {
+                    subscriptionMember.TrainerID = walkin.TrainerID;
+                    selectedTrainerScheduleId = walkin.TrainerScheduleID ?? 0;
+                    OnTrainerChanged();
+                }
+                
+                isConvertingFromWalkIn = true;
+                
+                // Open the subscription modal automatically
+                showSubscriptionModal = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading walk-in data: {ex.Message}");
+            ToastService.ShowError($"Error loading walk-in information: {ex.Message}");
+        }
+    }
+
+    private async Task LoadLeadData(int leadId)
+    {
+        try
+        {
+            var lead = await Context.Leads
+                .AsNoTracking()
+                .FirstOrDefaultAsync(l => l.LeadID == leadId);
+
+            if (lead != null)
+            {
+                // Parse full name into first, middle, last
+                var nameParts = lead.FullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (nameParts.Length >= 2)
+                {
+                    subscriptionMember.FirstName = nameParts[0];
+                    subscriptionMember.LastName = nameParts[nameParts.Length - 1];
+                    if (nameParts.Length > 2)
+                    {
+                        subscriptionMember.MiddleInitial = string.Join(" ", nameParts.Skip(1).Take(nameParts.Length - 2));
+                    }
+                }
+                else if (nameParts.Length == 1)
+                {
+                    subscriptionMember.FirstName = nameParts[0];
+                    subscriptionMember.LastName = "";
+                }
+                else
+                {
+                    subscriptionMember.FirstName = lead.FullName;
+                    subscriptionMember.LastName = "";
+                }
+                
+                subscriptionMember.Email = lead.Email ?? "";
+                subscriptionMember.ContactNumber = lead.ContactNumber ?? "";
+                subscriptionMember.LeadSource = lead.LeadSource ?? "Other";
+                
+                isConvertingFromLead = true;
+                
+                // Open the subscription modal automatically
+                showSubscriptionModal = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading lead data: {ex.Message}");
+            ToastService.ShowError($"Error loading lead information: {ex.Message}");
+        }
     }
 
     private async Task LoadReferenceDataAsync()
@@ -926,11 +1412,11 @@
         try
         {
             var today = DateTime.Today;
-            // Show promotions that haven't expired yet (EndDate >= today)
+            // Show promotions that haven't expired yet (EndDate >= today) and are not archived
             // This includes both active and upcoming promotions
             activePromotions = await Context.Promotions
                 .AsNoTracking()
-                .Where(p => p.EndDate >= today)
+                .Where(p => p.EndDate >= today && !p.IsArchived)
                 .OrderByDescending(p => p.DiscountRate)
                 .ThenByDescending(p => p.StartDate)
                 .ToListAsync();
@@ -970,6 +1456,8 @@
         visibleSchedules = new();
         generalError = null;
         fieldErrors.Clear();
+        studentIDImageBytes = null;
+        studentIDFileName = null;
         await LoadActivePromotions();
         showSubscriptionModal = true;
         StateHasChanged();
@@ -978,11 +1466,13 @@
     private void OnPaymentsSearchChanged(ChangeEventArgs e)
     {
         paymentsSearchQuery = e.Value?.ToString() ?? string.Empty;
+        currentPaymentsPage = 1; // Reset to first page when search changes
         ApplyPaymentsFilter();
     }
 
     private void OnPaymentsPeriodChanged()
     {
+        currentPaymentsPage = 1; // Reset to first page when period changes
         ApplyPaymentsFilter();
     }
 
@@ -1035,8 +1525,110 @@
         filteredSubscriptions = query.ToList();
     }
 
+    // Pagination computed properties
+    private List<PaymentModel> PaginatedSubscriptions => 
+        filteredSubscriptions == null || !filteredSubscriptions.Any() 
+            ? new List<PaymentModel>() 
+            : filteredSubscriptions.Skip((currentPaymentsPage - 1) * itemsPerPage).Take(itemsPerPage).ToList();
+
+    private int TotalPaymentsPages => 
+        filteredSubscriptions == null || filteredSubscriptions.Count == 0 
+            ? 1 
+            : (int)Math.Ceiling((double)filteredSubscriptions.Count / itemsPerPage);
+
+    // Pagination methods
+    private void GoToPaymentsPage(int page)
+    {
+        if (page >= 1 && page <= TotalPaymentsPages)
+        {
+            currentPaymentsPage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void PreviousPaymentsPage()
+    {
+        if (currentPaymentsPage > 1)
+        {
+            currentPaymentsPage--;
+            StateHasChanged();
+        }
+    }
+
+    private void NextPaymentsPage()
+    {
+        if (currentPaymentsPage < TotalPaymentsPages)
+        {
+            currentPaymentsPage++;
+            StateHasChanged();
+        }
+    }
+
+    // Helper method to get page numbers to display
+    private List<int> GetPaymentsPageNumbers(int currentPage, int totalPages)
+    {
+        var pages = new List<int>();
+        int maxPagesToShow = 7;
+        
+        if (totalPages <= maxPagesToShow)
+        {
+            // Show all pages if total is less than max
+            for (int i = 1; i <= totalPages; i++)
+            {
+                pages.Add(i);
+            }
+        }
+        else
+        {
+            // Show pages with ellipsis
+            if (currentPage <= 4)
+            {
+                // Show first 5 pages, ellipsis, last page
+                for (int i = 1; i <= 5; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+            else if (currentPage >= totalPages - 3)
+            {
+                // Show first page, ellipsis, last 5 pages
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = totalPages - 4; i <= totalPages; i++)
+                {
+                    pages.Add(i);
+                }
+            }
+            else
+            {
+                // Show first page, ellipsis, current-1, current, current+1, ellipsis, last page
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = currentPage - 1; i <= currentPage + 1; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+        }
+        
+        return pages;
+    }
+
     private void CloseSubscriptionModal()
     {
+        // Reset conversion flags when closing modal
+        isConvertingFromWalkIn = false;
+        walkInIdToConvert = null;
+        isConvertingFromLead = false;
+        leadIdToConvert = null;
+        
+        // Clear query parameter from URL
+        NavigationManager.NavigateTo("/payment", forceLoad: false);
+        
         if (isSaving)
             return;
 
@@ -1061,6 +1653,13 @@
             subscriptionMember.JoinDate = subscriptionJoinDate;
             subscriptionMember.ExpirationDate = subscriptionExpiration;
             subscriptionMember.MembershipTypeID = selectedMembershipTypeId;
+            
+            // Save Student ID image if uploaded
+            if (IsStudentMembership && studentIDImageBytes != null && studentIDImageBytes.Length > 0)
+            {
+                subscriptionMember.StudentIDImage = studentIDImageBytes;
+            }
+            
             if (subscriptionMember.TrainerID.HasValue && selectedTrainerScheduleId > 0)
             {
                 subscriptionMember.TrainerScheduleID = selectedTrainerScheduleId;
@@ -1099,6 +1698,10 @@
 
                 Context.Payments.Add(payment);
                 await Context.SaveChangesAsync();
+                
+                // Log audit action
+                var memberName = $"{subscriptionMember.FirstName} {subscriptionMember.LastName}";
+                await LogAuditAction("Payment Created", "Payment", payment.PaymentID, memberName, $"Created payment of ₱{paymentAmount:N2} via {selectedPaymentMethod} for member: {memberName}");
             }
 
             // Save promotion usage if a promotion was selected
@@ -1122,6 +1725,27 @@
                 }
             }
 
+            // Archive lead if converting from lead
+            if (isConvertingFromLead && leadIdToConvert.HasValue)
+            {
+                try
+                {
+                    var lead = await Context.Leads.FindAsync(leadIdToConvert.Value);
+                    if (lead != null)
+                    {
+                        lead.IsArchived = true;
+                        lead.Status = "Converted";
+                        Context.Leads.Update(lead);
+                        await Context.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log error but don't fail the subscription
+                    System.Diagnostics.Debug.WriteLine($"Error archiving lead: {ex.Message}");
+                }
+            }
+
             await LoadRecentSubscriptionsAsync();
 
             showSubscriptionModal = false;
@@ -1129,6 +1753,12 @@
                 ? $" with {selectedPromotion.DiscountRate}% discount" 
                 : "";
             ToastService.ShowSuccess($"Subscription created for {subscriptionMember.FullName}{promoMessage}.");
+            
+            // Reset conversion flags
+            isConvertingFromWalkIn = false;
+            walkInIdToConvert = null;
+            isConvertingFromLead = false;
+            leadIdToConvert = null;
         }
         catch (Exception ex)
         {
@@ -1225,6 +1855,12 @@
             subscriptionExpiration = subscriptionJoinDate.AddDays(selectedMembershipType.DurationInDays);
         }
 
+        // Validate Student ID image for Student Monthly membership
+        if (IsStudentMembership && (studentIDImageBytes == null || studentIDImageBytes.Length == 0))
+        {
+            AddError("StudentIDImage", "Student ID image is required for student membership.");
+        }
+
         OnScheduleChanged();
 
         return fieldErrors.Count == 0;
@@ -1242,12 +1878,81 @@
             subscriptionExpiration = null;
         }
         CalculatePrice();
+        StateHasChanged(); // Update UI to show/hide Student ID upload
+    }
+
+    private bool IsStudentMembership => selectedMembershipType != null && 
+        selectedMembershipType.TypeName.ToLowerInvariant().Contains("student");
+
+    private async Task HandleStudentIDUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            if (e.File == null)
+                return;
+
+            // Validate file size (max 5MB)
+            const long maxFileSize = 5 * 1024 * 1024; // 5MB
+            if (e.File.Size > maxFileSize)
+            {
+                fieldErrors["StudentIDImage"] = "File size must be less than 5MB.";
+                StateHasChanged();
+                return;
+            }
+
+            // Validate file type
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
+            var fileName = e.File.Name.ToLowerInvariant();
+            var hasValidExtension = allowedExtensions.Any(ext => fileName.EndsWith(ext));
+            
+            if (!hasValidExtension)
+            {
+                fieldErrors["StudentIDImage"] = "Only JPG, PNG, or PDF files are allowed.";
+                StateHasChanged();
+                return;
+            }
+
+            // Read file into byte array
+            using var memoryStream = new MemoryStream();
+            await e.File.OpenReadStream(maxFileSize).CopyToAsync(memoryStream);
+            studentIDImageBytes = memoryStream.ToArray();
+            studentIDFileName = e.File.Name;
+
+            // Clear any previous errors
+            if (fieldErrors.ContainsKey("StudentIDImage"))
+            {
+                fieldErrors.Remove("StudentIDImage");
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            fieldErrors["StudentIDImage"] = $"Error uploading file: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveStudentIDImage()
+    {
+        studentIDImageBytes = null;
+        studentIDFileName = null;
+        if (fieldErrors.ContainsKey("StudentIDImage"))
+        {
+            fieldErrors.Remove("StudentIDImage");
+        }
+        StateHasChanged();
     }
 
     private void OnPromotionChanged()
     {
         selectedPromotion = activePromotions.FirstOrDefault(p => p.PromoID == selectedPromotionId);
         CalculatePrice();
+    }
+
+    private void OnPaymentMethodChanged()
+    {
+        StateHasChanged();
     }
 
     private void CalculatePrice()
@@ -1346,6 +2051,36 @@
         var end = DateTime.Today.Add(schedule.EndTime).ToString("hh\\:mm tt");
         var trainerName = schedule.Trainer?.FullName ?? $"Trainer #{schedule.TrainerID}";
         return $"{trainerName} - {day} {start} - {end}";
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userId = await AuthService.GetCurrentUserId();
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
     }
 }
 

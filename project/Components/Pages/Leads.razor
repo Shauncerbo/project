@@ -1,0 +1,1363 @@
+@page "/leads"
+@layout MainLayout
+@using project.Data
+@using project.Models
+@using Microsoft.EntityFrameworkCore
+@using project.Services
+@inject AppDbContext DbContext
+@inject IToastService ToastService
+@inject NavigationManager NavigationManager
+
+<div class="members-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Leads Management</h1>
+    </div>
+
+    <!-- Leads Data Table -->
+    <div class="table-container">
+        <div class="table-toolbar">
+            <span class="table-title">Leads</span>
+            <input type="text"
+                   class="search-bar"
+                   placeholder="Search leads..."
+                   @bind="searchQuery"
+                   @bind:event="oninput"
+                   @onkeyup="HandleSearch" />
+            <button class="add-member-btn" @onclick="OpenAddLeadModal">+ Add Lead</button>
+        </div>
+        <table class="members-table">
+            <thead>
+                <tr>
+                    <th>FULL NAME</th>
+                    <th>EMAIL</th>
+                    <th>CONTACT</th>
+                    <th>STATUS</th>
+                    <th>LEAD SOURCE</th>
+                    <th>DATE</th>
+                    <th class="actions-header">ACTIONS</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (filteredLeads == null || !filteredLeads.Any())
+                {
+                    <tr>
+                        <td colspan="7" class="no-data">
+                            <div class="no-data-content">
+                                <span class="no-data-icon">📋</span>
+                                <p>No leads found</p>
+                                <p class="no-data-sub">Add your first lead to get started</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var lead in PaginatedLeads)
+                    {
+                        <tr>
+                            <td>
+                                <div class="lead-name">@lead.Name</div>
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(lead.Email))
+                                {
+                                    <div class="lead-contact">@lead.Email</div>
+                                }
+                                else
+                                {
+                                    <span class="no-data-text">-</span>
+                                }
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(lead.ContactNumber))
+                                {
+                                    <div class="lead-contact">@lead.ContactNumber</div>
+                                }
+                                else
+                                {
+                                    <span class="no-data-text">-</span>
+                                }
+                            </td>
+                            <td>
+                                <span class="status-badge @GetStatusClass(lead)">
+                                    @(lead.Status == "Active" ? "New" : lead.Status)
+                                </span>
+                            </td>
+                            <td>
+                                <span class="lead-source-badge">@(lead.LeadSource ?? "Not Specified")</span>
+                            </td>
+                            <td>@lead.Date.ToString("MMM dd, yyyy")</td>
+                            <td class="actions-cell">
+                                @if (lead.LeadID.HasValue)
+                                {
+                                    <div class="action-buttons">
+                                        <button class="action-btn convert-btn" @onclick="() => ShowConvertOptions(lead)" title="Convert">
+                                            <img src="/convert_icon.svg" class="action-icon" alt="Convert" />
+                                        </button>
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        
+        <!-- Pagination Controls -->
+        @if (filteredLeads != null && filteredLeads.Any() && TotalPages > 1)
+        {
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Showing @((currentPage - 1) * itemsPerPage + 1) - @(Math.Min(currentPage * itemsPerPage, filteredLeads.Count)) of @filteredLeads.Count
+                </div>
+                <div class="pagination-controls">
+                    <button class="pagination-btn" 
+                            @onclick="PreviousPage" 
+                            disabled="@(currentPage == 1)">
+                        Previous
+                    </button>
+                    @foreach (var pageNum in GetPageNumbers(currentPage, TotalPages))
+                    {
+                        @if (pageNum == -1)
+                        {
+                            <span class="pagination-ellipsis">...</span>
+                        }
+                        else
+                        {
+                            <button class="pagination-btn @(pageNum == currentPage ? "active" : "")" 
+                                    @onclick="() => GoToPage(pageNum)">
+                                @pageNum
+                            </button>
+                        }
+                    }
+                    <button class="pagination-btn" 
+                            @onclick="NextPage" 
+                            disabled="@(currentPage == TotalPages)">
+                        Next
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Add/Edit Lead Modal -->
+    @if (showLeadModal)
+    {
+        <div class="modal-overlay" @onclick="CloseModal">
+            <div class="modal-content" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>@(isEditMode ? "Edit Lead" : "Add New Lead")</h2>
+                    <button class="close-btn" @onclick="CloseModal">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Full Name -->
+                    <div class="form-group">
+                        <label class="required">Full Name</label>
+                        <input type="text"
+                               class="form-control @(validationErrors.ContainsKey("FullName") ? "error" : "")"
+                               @bind="currentLead.FullName"
+                               placeholder="Enter full name" />
+                        @if (validationErrors.ContainsKey("FullName"))
+                        {
+                            <div class="error-message">@validationErrors["FullName"]</div>
+                        }
+                    </div>
+
+                    <!-- Email -->
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email"
+                               class="form-control @(validationErrors.ContainsKey("Email") ? "error" : "")"
+                               @bind="currentLead.Email"
+                               placeholder="Enter email address (optional)" />
+                        @if (validationErrors.ContainsKey("Email"))
+                        {
+                            <div class="error-message">@validationErrors["Email"]</div>
+                        }
+                    </div>
+
+                    <!-- Contact Number -->
+                    <div class="form-group">
+                        <label>Contact Number</label>
+                        <input type="text"
+                               class="form-control @(validationErrors.ContainsKey("ContactNumber") ? "error" : "")"
+                               @bind="currentLead.ContactNumber"
+                               placeholder="Enter contact number (optional)"
+                               maxlength="11" />
+                        @if (validationErrors.ContainsKey("ContactNumber"))
+                        {
+                            <div class="error-message">@validationErrors["ContactNumber"]</div>
+                        }
+                    </div>
+
+                    <!-- Lead Source -->
+                    <div class="form-group">
+                        <label>Lead Source</label>
+                        <div class="select-wrapper">
+                            <select class="form-control select-dropdown" @bind="currentLead.LeadSource">
+                                <option value="">Select source (optional)</option>
+                                <option value="Facebook">Facebook</option>
+                                <option value="Instagram">Instagram</option>
+                                <option value="Referral">Referral (Friend/Family)</option>
+                                <option value="Walk-in">Walk-in / Passed by</option>
+                                <option value="Promotion">Promotion / Discount</option>
+                                <option value="Google">Google Search</option>
+                                <option value="Website">Website</option>
+                                <option value="Other">Other</option>
+                            </select>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                    </div>
+
+                    <!-- General error message -->
+                    @if (validationErrors.ContainsKey("General"))
+                    {
+                        <div class="general-error-message">
+                            @validationErrors["General"]
+                        </div>
+                    }
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-save" @onclick="SaveLead">
+                        @(isEditMode ? "Update" : "Add") Lead
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Convert Options Confirmation Modal -->
+    @if (showConvertConfirmation && selectedLeadToConvert != null)
+    {
+        <div class="modal-overlay" @onclick="CloseConvertConfirmation">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>Convert Lead</h2>
+                    <button class="close-btn" @onclick="CloseConvertConfirmation">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="confirmation-content text-only">
+                        <h3>Convert Lead</h3>
+                        <p>You are about to convert <strong>@selectedLeadToConvert.Name</strong>.</p>
+                        <p>Please choose how you want to convert this lead:</p>
+                        <div class="convert-options">
+                            <button class="convert-option-btn" @onclick="ConfirmConvertToWalkIn">
+                                <div class="convert-option-icon">🚶</div>
+                                <div class="convert-option-content">
+                                    <div class="convert-option-title">Convert to Walk-in</div>
+                                    <div class="convert-option-description">Create a walk-in record for this lead</div>
+                                </div>
+                            </button>
+                            <button class="convert-option-btn" @onclick="ConfirmConvertToMember">
+                                <div class="convert-option-icon">👤</div>
+                                <div class="convert-option-content">
+                                    <div class="convert-option-title">Convert to Member</div>
+                                    <div class="convert-option-description">Open payment page to complete membership registration</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" @onclick="CloseConvertConfirmation">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .members-container {
+        padding: 30px;
+        background: #ffffff;
+        min-height: 0;
+    }
+
+    .page-header {
+        background: white;
+        padding: 25px 30px;
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        margin: 0 0 30px 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin: 0;
+        color: #333;
+    }
+
+    .table-container {
+        margin: 0;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        overflow-x: auto;
+    }
+
+    .table-toolbar {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px 8px 16px;
+        margin-bottom: 4px;
+        gap: 10px;
+    }
+
+    .table-toolbar .table-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .table-toolbar .search-bar {
+        margin-left: auto;
+        max-width: 260px;
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+
+    .table-toolbar .search-bar:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    }
+
+    .add-member-btn {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        white-space: nowrap;
+    }
+
+    .add-member-btn:hover {
+        background: #2980b9;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    .members-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .members-table thead {
+        background: #234060;
+        color: white;
+    }
+
+    .members-table th {
+        padding: 16px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #1a3450;
+    }
+
+    .members-table th.actions-header {
+        text-align: center;
+    }
+
+    .members-table td {
+        padding: 16px;
+        border-bottom: 1px solid #f0f0f0;
+        color: #000000;
+    }
+
+    .members-table td.actions-cell {
+        text-align: center;
+    }
+
+    .members-table tbody tr {
+        transition: background 0.2s;
+    }
+
+    .members-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .lead-name {
+        font-weight: 600;
+        color: #000000;
+    }
+
+    .lead-contact {
+        font-size: 0.9rem;
+        color: #000000;
+    }
+
+    .no-data-text {
+        color: #999;
+        font-style: italic;
+    }
+
+    .lead-source-badge {
+        display: inline-block;
+        font-size: 0.85rem;
+        font-weight: 500;
+        background: transparent;
+        color: #000000;
+    }
+
+    .type-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+
+    .type-badge.member-type {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .type-badge.walkin-type {
+        background: #fff3e0;
+        color: #e65100;
+    }
+
+    .type-badge.lead-type {
+        background: #f3e5f5;
+        color: #7b1fa2;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+
+    .status-badge.new {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-badge.active {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-badge.inactive {
+        background: #ffebee;
+        color: #c62828;
+    }
+
+    .status-badge.contacted {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
+
+    .status-badge.converted {
+        background: #fff3e0;
+        color: #e65100;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .action-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 6px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+    }
+
+    .action-icon {
+        width: 18px;
+        height: 18px;
+        transition: all 0.2s;
+    }
+
+    .convert-btn {
+        background: transparent;
+        color: #3498db;
+    }
+
+    .convert-btn:hover {
+        background: transparent;
+        transform: scale(1.1);
+    }
+
+    .convert-btn:hover .action-icon {
+        opacity: 0.8;
+    }
+
+    .no-data {
+        text-align: center;
+        padding: 60px 20px;
+    }
+
+    .no-data-content {
+        color: #999;
+    }
+
+    .no-data-icon {
+        font-size: 64px;
+        display: block;
+        margin-bottom: 16px;
+    }
+
+    .no-data-content p {
+        margin: 8px 0;
+        font-size: 16px;
+    }
+
+    .no-data-sub {
+        font-size: 14px;
+        color: #bbb;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        width: 95%;
+        max-width: 600px;
+        background: white;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        max-height: 95vh;
+        overflow: hidden;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+        font-size: 22px;
+        color: #333;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 32px;
+        color: #999;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        transition: color 0.2s;
+    }
+
+    .close-btn:hover {
+        color: #333;
+    }
+
+    .modal-body {
+        padding: 24px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+        position: relative;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #333;
+        font-size: 14px;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.3s;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #5cb85c;
+        box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+    }
+
+    .form-control.error {
+        border-color: #e74c3c;
+        box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+    }
+
+    .form-control.error:focus {
+        border-color: #e74c3c;
+        box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+    }
+
+    .select-wrapper {
+        position: relative;
+        display: inline-block;
+        width: 100%;
+    }
+
+    .select-dropdown {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        padding-right: 40px;
+        background: white;
+        cursor: pointer;
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.3s;
+    }
+
+    .dropdown-arrow {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        font-size: 14px;
+        color: #999;
+    }
+
+    .error-message {
+        color: #e74c3c;
+        font-size: 12px;
+        margin-top: 4px;
+        font-weight: 500;
+        display: block;
+        height: 16px;
+        overflow: hidden;
+    }
+
+    .general-error-message {
+        background: #ffeaea;
+        color: #e74c3c;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        border: 1px solid #ffcdd2;
+        margin-top: 10px;
+        text-align: center;
+    }
+
+    .modal-footer {
+        padding: 16px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-cancel {
+        background: #f5f5f5;
+        color: #666;
+    }
+
+    .btn-cancel:hover {
+        background: #e0e0e0;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+    }
+
+    .btn-save:hover {
+        background: #2980b9;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    .required::after {
+        content: " *";
+        color: #e74c3c;
+    }
+
+    /* Confirmation Modal Styles */
+    .confirmation-modal {
+        max-width: 420px;
+    }
+
+    .confirmation-content {
+        text-align: center;
+        padding: 10px 0;
+    }
+
+    .confirmation-content.text-only {
+        text-align: left;
+    }
+
+    .confirmation-content h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 22px;
+    }
+
+    .confirmation-content p {
+        margin: 10px 0;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .confirmation-info-box {
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        color: #1976d2;
+        font-weight: 500;
+        padding: 12px 16px;
+        border-radius: 8px;
+        text-align: center;
+        margin-top: 12px;
+    }
+
+    .btn-primary {
+        background: #3498db;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #2980b9;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    /* Convert Options Styles */
+    .convert-options {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .convert-option-btn {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 16px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        background: white;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-align: left;
+        width: 100%;
+    }
+
+    .convert-option-btn:hover {
+        border-color: #3498db;
+        background: #f0f8ff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
+    }
+
+    .convert-option-icon {
+        font-size: 32px;
+        flex-shrink: 0;
+    }
+
+    .convert-option-content {
+        flex: 1;
+    }
+
+    .convert-option-title {
+        font-weight: 600;
+        font-size: 16px;
+        color: #333;
+        margin-bottom: 4px;
+    }
+
+    .convert-option-description {
+        font-size: 13px;
+        color: #666;
+        line-height: 1.4;
+    }
+
+    /* Pagination Styles */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        border-top: 1px solid #f0f0f0;
+        background: white;
+    }
+
+    .pagination-info {
+        color: #666;
+        font-size: 14px;
+    }
+
+    .pagination-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .pagination-btn {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        background: white;
+        color: #333;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s;
+        min-width: 40px;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+        background: #f8f9fa;
+        border-color: #3498db;
+        color: #3498db;
+    }
+
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .pagination-btn.active {
+        background: #3498db;
+        color: white;
+        border-color: #3498db;
+    }
+
+    .pagination-ellipsis {
+        padding: 8px 4px;
+        color: #999;
+        font-size: 14px;
+    }
+</style>
+
+@code {
+    private List<LeadViewModel> allLeads = new();
+    private List<LeadViewModel> filteredLeads = new();
+    private string searchQuery = "";
+    private bool showLeadModal = false;
+    private bool isEditMode = false;
+    private Lead currentLead = new Lead();
+    private Dictionary<string, string> validationErrors = new Dictionary<string, string>();
+    private int? editingLeadId = null;
+    
+    // Pagination variables
+    private int currentPage = 1;
+    private const int itemsPerPage = 10;
+    
+    // Pagination computed properties
+    private List<LeadViewModel> PaginatedLeads => 
+        filteredLeads == null || !filteredLeads.Any() 
+            ? new List<LeadViewModel>() 
+            : filteredLeads.Skip((currentPage - 1) * itemsPerPage).Take(itemsPerPage).ToList();
+
+    private int TotalPages => 
+        filteredLeads == null || filteredLeads.Count == 0 
+            ? 1 
+            : (int)Math.Ceiling((double)filteredLeads.Count / itemsPerPage);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLeads();
+    }
+
+    private async Task LoadLeads()
+    {
+        try
+        {
+            allLeads = new List<LeadViewModel>();
+
+            // Load leads from Lead table only
+            var leads = await DbContext.Leads
+                .Where(l => !l.IsArchived)
+                .OrderByDescending(l => l.CreatedDate)
+                .ThenByDescending(l => l.LeadID)
+                .ToListAsync();
+
+            foreach (var lead in leads)
+            {
+                allLeads.Add(new LeadViewModel
+                {
+                    LeadID = lead.LeadID,
+                    Name = lead.FullName,
+                    Email = lead.Email,
+                    ContactNumber = lead.ContactNumber,
+                    LeadSource = lead.LeadSource,
+                    Date = lead.CreatedDate,
+                    Type = "Lead",
+                    Status = lead.Status
+                });
+            }
+
+            // Sort by date descending (newest first), then by LeadID descending
+            allLeads = allLeads.OrderByDescending(l => l.Date)
+                .ThenByDescending(l => l.LeadID ?? 0)
+                .ToList();
+            filteredLeads = allLeads;
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error loading leads: {ex.Message}");
+        }
+    }
+
+    private void HandleSearch()
+    {
+        // Reset pagination to first page when search changes
+        currentPage = 1;
+        
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredLeads = allLeads;
+        }
+        else
+        {
+            var query = searchQuery.ToLowerInvariant();
+            filteredLeads = allLeads.Where(l =>
+                l.Name.ToLowerInvariant().Contains(query) ||
+                (l.Email != null && l.Email.ToLowerInvariant().Contains(query)) ||
+                (l.ContactNumber != null && l.ContactNumber.Contains(query)) ||
+                (l.LeadSource != null && l.LeadSource.ToLowerInvariant().Contains(query)) ||
+                l.Status.ToLowerInvariant().Contains(query)
+            ).ToList();
+        }
+    }
+
+    private string GetStatusClass(LeadViewModel lead)
+    {
+        // Treat "Active" as "New" for display consistency
+        var status = lead.Status?.ToLowerInvariant();
+        if (status == "active")
+        {
+            status = "new";
+        }
+        
+        return status switch
+        {
+            "new" => "new",
+            "inactive" => "inactive",
+            "contacted" => "contacted",
+            "converted" => "converted",
+            _ => "new"
+        };
+    }
+
+    private void OpenAddLeadModal()
+    {
+        isEditMode = false;
+        editingLeadId = null;
+        currentLead = new Lead
+        {
+            Status = "New", // Always New
+            CreatedDate = DateTime.Now
+        };
+        validationErrors.Clear();
+        showLeadModal = true;
+    }
+
+    private LeadViewModel? selectedLeadToConvert = null;
+    private bool showConvertConfirmation = false;
+
+    private void ShowConvertOptions(LeadViewModel leadViewModel)
+    {
+        if (!leadViewModel.LeadID.HasValue)
+            return;
+
+        selectedLeadToConvert = leadViewModel;
+        showConvertConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseConvertConfirmation()
+    {
+        showConvertConfirmation = false;
+        selectedLeadToConvert = null;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmConvertToWalkIn()
+    {
+        if (selectedLeadToConvert?.LeadID.HasValue != true)
+            return;
+
+        try
+        {
+            // Get the lead from database
+            var lead = await DbContext.Leads.FindAsync(selectedLeadToConvert.LeadID.Value);
+            if (lead == null)
+            {
+                ToastService.ShowError("Lead not found");
+                CloseConvertConfirmation();
+                return;
+            }
+
+            // Parse full name into FirstName, MiddleName, LastName
+            var nameParts = ParseFullName(lead.FullName);
+            
+            // Load walk-in price from system settings
+            decimal walkInPrice = 0;
+            try
+            {
+                var setting = await DbContext.SystemSettings
+                    .FirstOrDefaultAsync(s => s.SettingKey == "WalkInPrice");
+                
+                if (setting != null && decimal.TryParse(setting.SettingValue, out decimal price))
+                {
+                    walkInPrice = price;
+                }
+            }
+            catch
+            {
+                // Use default price if setting not found
+                walkInPrice = 0;
+            }
+
+            // Create walk-in record
+            var walkIn = new WalkIn
+            {
+                FirstName = nameParts.FirstName,
+                MiddleName = nameParts.MiddleName,
+                LastName = nameParts.LastName,
+                VisitDate = DateTime.Now,
+                PaymentAmount = walkInPrice,
+                PaymentMethod = "Cash",
+                TrainerID = null,
+                TrainerScheduleID = null,
+                IsOnlinePayment = false,
+                PayMongoPaymentId = null,
+                PayMongoStatus = null,
+                LeadSource = lead.LeadSource
+            };
+
+            DbContext.WalkIns.Add(walkIn);
+            
+            // Update lead status to "Converted"
+            lead.Status = "Converted";
+            DbContext.Leads.Update(lead);
+            
+            await DbContext.SaveChangesAsync();
+            
+            ToastService.ShowSuccess($"Lead converted to walk-in successfully");
+            
+            // Reload leads and close modal
+            await LoadLeads();
+            CloseConvertConfirmation();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error converting lead to walk-in: {ex.Message}");
+        }
+    }
+
+    private void ConfirmConvertToMember()
+    {
+        if (selectedLeadToConvert?.LeadID.HasValue == true)
+        {
+            // Navigate to Payment page with leadId parameter
+            NavigationManager.NavigateTo($"/payment?leadId={selectedLeadToConvert.LeadID.Value}");
+        }
+    }
+
+    private (string FirstName, string MiddleName, string LastName) ParseFullName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return ("", "", "");
+
+        var parts = fullName.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        
+        if (parts.Length == 0)
+            return ("", "", "");
+        
+        if (parts.Length == 1)
+            return (parts[0], "", "");
+        
+        if (parts.Length == 2)
+            return (parts[0], "", parts[1]);
+        
+        // If 3 or more parts, first is FirstName, last is LastName, middle ones are MiddleName
+        var firstName = parts[0];
+        var lastName = parts[parts.Length - 1];
+        var middleName = string.Join(" ", parts.Skip(1).Take(parts.Length - 2));
+        
+        return (firstName, middleName, lastName);
+    }
+
+    // Helper method to capitalize first letter of each word in full name
+    private string CapitalizeFullName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return fullName;
+        
+        fullName = fullName.Trim();
+        if (fullName.Length == 0)
+            return fullName;
+        
+        // Split by spaces and capitalize each word
+        var words = fullName.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        var capitalizedWords = words.Select(word =>
+        {
+            if (string.IsNullOrWhiteSpace(word))
+                return word;
+            
+            // Capitalize first letter, lowercase the rest
+            return char.ToUpper(word[0]) + (word.Length > 1 ? word.Substring(1).ToLower() : "");
+        });
+        
+        return string.Join(" ", capitalizedWords);
+    }
+
+    // Pagination methods
+    private void GoToPage(int page)
+    {
+        if (page >= 1 && page <= TotalPages)
+        {
+            currentPage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            StateHasChanged();
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < TotalPages)
+        {
+            currentPage++;
+            StateHasChanged();
+        }
+    }
+
+    // Helper method to get page numbers to display
+    private List<int> GetPageNumbers(int currentPage, int totalPages)
+    {
+        var pages = new List<int>();
+        int maxPagesToShow = 7;
+        
+        if (totalPages <= maxPagesToShow)
+        {
+            // Show all pages if total is less than max
+            for (int i = 1; i <= totalPages; i++)
+            {
+                pages.Add(i);
+            }
+        }
+        else
+        {
+            // Show pages with ellipsis
+            if (currentPage <= 4)
+            {
+                // Show first 5 pages, ellipsis, last page
+                for (int i = 1; i <= 5; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+            else if (currentPage >= totalPages - 3)
+            {
+                // Show first page, ellipsis, last 5 pages
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = totalPages - 4; i <= totalPages; i++)
+                {
+                    pages.Add(i);
+                }
+            }
+            else
+            {
+                // Show first page, ellipsis, current-1, current, current+1, ellipsis, last page
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = currentPage - 1; i <= currentPage + 1; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+        }
+        
+        return pages;
+    }
+
+    private void ValidateLead()
+    {
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(currentLead.FullName))
+        {
+            validationErrors["FullName"] = "Full name is required";
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentLead.Email) && !System.Text.RegularExpressions.Regex.IsMatch(currentLead.Email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+        {
+            validationErrors["Email"] = "Please enter a valid email address";
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentLead.ContactNumber) && currentLead.ContactNumber.Length > 11)
+        {
+            validationErrors["ContactNumber"] = "Contact number must be 11 digits or less";
+        }
+
+        // Status is always set to "New" - no validation needed
+
+        if (validationErrors.Count > 0)
+        {
+            validationErrors["General"] = "Please fill in all required fields correctly";
+        }
+    }
+
+    private async Task SaveLead()
+    {
+        ValidateLead();
+
+        if (validationErrors.Count > 0)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            // Always set Status to "New"
+            currentLead.Status = "New";
+            
+            // Capitalize full name before saving
+            currentLead.FullName = CapitalizeFullName(currentLead.FullName);
+
+            if (isEditMode && editingLeadId.HasValue)
+            {
+                var existingLead = await DbContext.Leads.FindAsync(editingLeadId.Value);
+                if (existingLead != null)
+                {
+                    existingLead.FullName = currentLead.FullName;
+                    existingLead.Email = currentLead.Email;
+                    existingLead.ContactNumber = currentLead.ContactNumber;
+                    existingLead.Status = "New"; // Always New
+                    existingLead.LeadSource = currentLead.LeadSource;
+                    DbContext.Leads.Update(existingLead);
+                    ToastService.ShowSuccess("Lead updated successfully");
+                }
+            }
+            else
+            {
+                currentLead.Status = "New"; // Always New
+                currentLead.CreatedDate = DateTime.Now;
+                DbContext.Leads.Add(currentLead);
+                ToastService.ShowSuccess("Lead added successfully");
+            }
+
+            await DbContext.SaveChangesAsync();
+            
+            // Reset to first page to show newly added lead at the top
+            if (!isEditMode)
+            {
+                currentPage = 1;
+            }
+            
+            await LoadLeads();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error saving lead: {ex.Message}");
+            validationErrors["General"] = $"Error saving lead: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private void CloseModal()
+    {
+        showLeadModal = false;
+        currentLead = new Lead();
+        validationErrors.Clear();
+        isEditMode = false;
+        editingLeadId = null;
+        StateHasChanged();
+    }
+
+    private class LeadViewModel
+    {
+        public int? LeadID { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Email { get; set; }
+        public string? ContactNumber { get; set; }
+        public string? LeadSource { get; set; }
+        public DateTime Date { get; set; }
+        public string Type { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+    }
+}

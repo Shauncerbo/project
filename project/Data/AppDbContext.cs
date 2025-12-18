@@ -36,6 +36,7 @@ namespace project.Data
         public DbSet<Capital> Capitals { get; set; }
         public DbSet<Investment> Investments { get; set; }
         public DbSet<Liability> Liabilities { get; set; }
+        public DbSet<Lead> Leads { get; set; }
 
         // ✅ ADD OnModelCreating for relationships
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -98,7 +99,7 @@ namespace project.Data
                 // Configure IsActive as nullable to match database
                 entity.Property(u => u.IsActive).IsRequired(false);
                 
-                // Configure DateTime columns - make them nullable if database allows NULL
+                // Configure DateTime columns - make them nullable if database allows NULLx
                 entity.Property(u => u.CreatedAt).IsRequired(false);
                 entity.Property(u => u.UpdatedAt).IsRequired(false);
                 entity.Property(u => u.LastPasswordChange).IsRequired(false);

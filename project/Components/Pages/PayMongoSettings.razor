@@ -25,13 +25,12 @@
         <div class="paymongo-config-section">
             <div class="form-group">
                 <label>PayMongo Secret Key</label>
-                <div style="display: flex; gap: 10px; align-items: center;">
+                <div class="input-with-button">
                     <input type="@(showPayMongoKey ? "text" : "password")" 
                            class="form-control" 
                            @bind="payMongoSecretKey" 
                            @bind:event="oninput"
-                           placeholder="Enter your PayMongo Secret Key"
-                           style="flex: 1;" />
+                           placeholder="Enter your PayMongo Secret Key" />
                     <button class="btn-secondary" @onclick="TogglePayMongoKeyVisibility" type="button">
                         @(showPayMongoKey ? "Hide" : "Show")
                     </button>
@@ -102,6 +101,9 @@
 
     .paymongo-config-section {
         margin-top: 20px;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
     }
 
     .paymongo-config-section .form-group {
@@ -114,6 +116,20 @@
         font-size: 14px;
         margin-bottom: 8px;
         color: #333;
+    }
+
+    .input-with-button {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+
+    .input-with-button .form-control {
+        flex: 1;
+        padding: 10px 12px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
     }
 
     .paymongo-config-section .form-control {
@@ -142,8 +158,8 @@
     }
 
     .paymongo-config-section .btn-primary {
-        background: #5cb85c !important;
-        background-color: #5cb85c !important;
+        background: #3498db !important;
+        background-color: #3498db !important;
         color: white !important;
         border: none;
         padding: 10px 18px;
@@ -154,10 +170,10 @@
     }
 
     .paymongo-config-section .btn-primary:hover {
-        background: #4cae4c !important;
-        background-color: #4cae4c !important;
+        background: #2980b9 !important;
+        background-color: #2980b9 !important;
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
     }
 
     .btn-secondary {

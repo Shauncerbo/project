@@ -35,7 +35,7 @@ namespace project.Services
             try
             {
                 var dbType = await SecureStorage.Default.GetAsync("database_type");
-                return string.IsNullOrEmpty(dbType) ? "local" : dbType;
+                return string.IsNullOrEmpty(dbType) ? "local" : dbType; 
             }
             catch
             {
@@ -97,7 +97,14 @@ namespace project.Services
                 await SyncTableOnlineToLocal<Role>(localContext, onlineContext, result);
                 await SyncTableOnlineToLocal<RolePermission>(localContext, onlineContext, result);
                 await SyncTableOnlineToLocal<MembershipType>(localContext, onlineContext, result);
+                
+                // Clean up duplicate promotions before syncing
+                await CleanupDuplicatePromotions(localContext, result);
+                
                 await SyncTableOnlineToLocal<Promotion>(localContext, onlineContext, result);
+                
+                // Clean up duplicate promotions AFTER syncing (in case sync created new duplicates)
+                await CleanupDuplicatePromotions(localContext, result);
                 
                 // Clean up duplicate trainers before syncing
                 await CleanupDuplicateTrainers(localContext, result);
@@ -220,7 +227,16 @@ namespace project.Services
                 await SyncTableBidirectional<Role>(localContext, onlineContext, result);
                 await SyncTableBidirectional<RolePermission>(localContext, onlineContext, result);
                 await SyncTableBidirectional<MembershipType>(localContext, onlineContext, result);
+                
+                // Clean up duplicate promotions before syncing
+                await CleanupDuplicatePromotions(localContext, result);
+                await CleanupDuplicatePromotions(onlineContext, result);
+                
                 await SyncTableBidirectional<Promotion>(localContext, onlineContext, result);
+                
+                // Clean up duplicate promotions AFTER syncing (in case sync created new duplicates)
+                await CleanupDuplicatePromotions(localContext, result);
+                await CleanupDuplicatePromotions(onlineContext, result);
                 
                 // Clean up duplicate trainers before syncing
                 await CleanupDuplicateTrainers(localContext, result);
@@ -241,12 +257,23 @@ namespace project.Services
                 await CleanupDuplicateWalkIns(onlineContext, result);
                 
                 await SyncTableBidirectional<WalkIn>(localContext, onlineContext, result);
+                
+                // Clean up duplicate attendances before syncing
+                await CleanupDuplicateAttendances(localContext, result);
+                await CleanupDuplicateAttendances(onlineContext, result);
+                
                 await SyncTableBidirectional<Attendance>(localContext, onlineContext, result);
                 await SyncTableBidirectional<Payment>(localContext, onlineContext, result);
                 
                 // Sync MemberPromo AFTER Members and Promotions (it depends on both)
                 // MemberPromo has a composite key, so we need to be careful with change tracking
                 await SyncTableBidirectional<MemberPromo>(localContext, onlineContext, result);
+                
+                // Sync MemberTrainer AFTER Members and Trainers
+                await SyncTableBidirectional<MemberTrainer>(localContext, onlineContext, result);
+                
+                // Sync Notifications AFTER Members
+                await SyncTableBidirectional<Notification>(localContext, onlineContext, result);
                 
                 await SyncTableBidirectional<AuditLog>(localContext, onlineContext, result);
 
@@ -380,10 +407,13 @@ namespace project.Services
                                 var existing = await GetEntityForUpdateAsync(onlineSet, onlineContext, existingId);
                                 if (existing != null)
                                 {
+                                    await FixForeignKeys(localRecord, onlineContext);
                                     onlineContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                                     await UpdateEntityValues(existing, localRecord, onlineContext);
                                     summary.Updated++;
                                     result.TotalUpdated++;
+                                    System.Diagnostics.Debug.WriteLine($"Updated {tableName} by unique key: Local ID {id} -> Online ID {existingId}");
+                                    continue; // Skip to next record
                                 }
                             }
                             catch (Exception ex)
@@ -547,6 +577,83 @@ namespace project.Services
                                     }
                                 }
                             }
+                            else if (typeof(T) == typeof(Promotion))
+                            {
+                                var promotion = localRecord as Promotion;
+                                if (promotion != null)
+                                {
+                                    // Check if a promotion with same name, dates, and discount already exists in online database
+                                    var existingPromotion = await FindPromotionByUniqueFields(promotion, onlineContext);
+                                    if (existingPromotion != null)
+                                    {
+                                        // Promotion exists - update it instead of inserting
+                                        try
+                                        {
+                                            var existingId = GetId(existingPromotion);
+                                            var existing = await GetEntityForUpdateAsync(onlineSet, onlineContext, existingId);
+                                            if (existing != null)
+                                            {
+                                                await FixForeignKeys(localRecord, onlineContext);
+                                                onlineContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                                await UpdateEntityValues(existing, localRecord, onlineContext);
+                                                summary.Updated++;
+                                                result.TotalUpdated++;
+                                                System.Diagnostics.Debug.WriteLine($"Pre-validated: Updated existing Promotion '{promotion.PromoName}' (ID: {existingId}) instead of inserting");
+                                                continue; // Skip to next record
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Error updating Promotion by unique fields in pre-validation: {ex.Message}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"No matching Promotion found in online for local Promotion ID {GetId(promotion)}: '{promotion.PromoName}' - will insert as new");
+                                    }
+                                }
+                            }
+                            else if (typeof(T) == typeof(Payment))
+                            {
+                                var payment = localRecord as Payment;
+                                if (payment != null)
+                                {
+                                    var localId = GetId(payment);
+                                    System.Diagnostics.Debug.WriteLine($"Checking Payment from local (ID: {localId}): MemberID={payment.MemberID}, Date={payment.PaymentDate:yyyy-MM-dd}, Amount={payment.Amount}, Type={payment.PaymentType}");
+                                    
+                                    // Check if a payment with same MemberID, PaymentDate, Amount, and PaymentType already exists in online database
+                                    var existingPayment = await FindPaymentByUniqueFields(payment, onlineContext);
+                                    if (existingPayment != null)
+                                    {
+                                        var existingId = GetId(existingPayment);
+                                        System.Diagnostics.Debug.WriteLine($"Found matching Payment in online (ID: {existingId}): MemberID={existingPayment.MemberID}, Date={existingPayment.PaymentDate:yyyy-MM-dd}, Amount={existingPayment.Amount}, Type={existingPayment.PaymentType}");
+                                        
+                                        // Payment exists - update it instead of inserting
+                                        try
+                                        {
+                                            var existing = await GetEntityForUpdateAsync(onlineSet, onlineContext, existingId);
+                                            if (existing != null)
+                                            {
+                                                await FixForeignKeys(localRecord, onlineContext);
+                                                onlineContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                                await UpdateEntityValues(existing, localRecord, onlineContext);
+                                                summary.Updated++;
+                                                result.TotalUpdated++;
+                                                System.Diagnostics.Debug.WriteLine($"Pre-validated: Updated existing Payment (Local ID: {localId} -> Online ID: {existingId}) instead of inserting");
+                                                continue; // Skip to next record
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Error updating Payment by unique fields in pre-validation: {ex.Message}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"No matching Payment found in online for local Payment ID {localId}: MemberID={payment.MemberID}, Date={payment.PaymentDate:yyyy-MM-dd}, Amount={payment.Amount}, Type={payment.PaymentType} - will insert as new");
+                                    }
+                                }
+                            }
                             
                             // If no unique key conflict found, proceed with insert
                             try
@@ -644,6 +751,15 @@ namespace project.Services
                                         if (promotion != null)
                                         {
                                             System.Diagnostics.Debug.WriteLine($"Adding Promotion record to online: PromoID={promotion.PromoID}, PromoName={promotion.PromoName}, DiscountRate={promotion.DiscountRate}");
+                                        }
+                                    }
+                                    // Log Payment records specifically for debugging
+                                    if (typeof(T) == typeof(Payment))
+                                    {
+                                        var payment = newRecord as Payment;
+                                        if (payment != null)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Adding Payment record to online: PaymentID={GetId(newRecord)}, MemberID={payment.MemberID}, PaymentDate={payment.PaymentDate:yyyy-MM-dd HH:mm:ss}, Amount={payment.Amount}, PaymentType={payment.PaymentType}");
                                         }
                                     }
                                 }
@@ -1199,6 +1315,42 @@ namespace project.Services
                                         {
                                             System.Diagnostics.Debug.WriteLine($"Error updating Member by unique fields in pre-validation: {ex.Message}");
                                         }
+                                    }
+                                }
+                            }
+                            else if (typeof(T) == typeof(Promotion))
+                            {
+                                var promotion = onlineRecord as Promotion;
+                                if (promotion != null)
+                                {
+                                    // Check if a promotion with same name, dates, and discount already exists in local database
+                                    var existingPromotion = await FindPromotionByUniqueFields(promotion, localContext);
+                                    if (existingPromotion != null)
+                                    {
+                                        // Promotion exists - update it instead of inserting
+                                        try
+                                        {
+                                            var existingId = GetId(existingPromotion);
+                                            var existing = await GetEntityForUpdateAsync(localSet, localContext, existingId);
+                                            if (existing != null)
+                                            {
+                                                await FixForeignKeys(onlineRecord, localContext);
+                                                localContext.Entry(existing).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                                await UpdateEntityValues(existing, onlineRecord, localContext);
+                                                summary.Updated++;
+                                                result.TotalUpdated++;
+                                                System.Diagnostics.Debug.WriteLine($"Pre-validated: Updated existing Promotion '{promotion.PromoName}' (ID: {existingId}) instead of inserting");
+                                                continue; // Skip to next record
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Error updating Promotion by unique fields in pre-validation: {ex.Message}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"No matching Promotion found in local for online Promotion ID {GetId(promotion)}: '{promotion.PromoName}' - will insert as new");
                                     }
                                 }
                             }
@@ -2565,6 +2717,22 @@ namespace project.Services
                     return await FindPaymentByUniqueFields(payment, context) as T;
                 }
             }
+            else if (typeof(T) == typeof(Attendance))
+            {
+                var attendance = entity as Attendance;
+                if (attendance != null)
+                {
+                    return await FindAttendanceByUniqueFields(attendance, context) as T;
+                }
+            }
+            else if (typeof(T) == typeof(Promotion))
+            {
+                var promotion = entity as Promotion;
+                if (promotion != null)
+                {
+                    return await FindPromotionByUniqueFields(promotion, context) as T;
+                }
+            }
             return null;
         }
 
@@ -2647,6 +2815,43 @@ namespace project.Services
             return null;
         }
 
+        private async Task<Attendance?> FindAttendanceByUniqueFields(Attendance attendance, AppDbContext context)
+        {
+            if (attendance == null)
+                return null;
+
+            try
+            {
+                // Match by MemberID and CheckinTime (within 1 second tolerance to account for millisecond differences)
+                var checkinTime = attendance.CheckinTime;
+                var timeWindowStart = checkinTime.AddSeconds(-1);
+                var timeWindowEnd = checkinTime.AddSeconds(1);
+                
+                var matchingAttendance = await context.Attendances
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(a => 
+                        a.MemberID == attendance.MemberID &&
+                        a.CheckinTime >= timeWindowStart &&
+                        a.CheckinTime <= timeWindowEnd);
+
+                if (matchingAttendance != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found matching Attendance: MemberID={attendance.MemberID}, CheckinTime={attendance.CheckinTime} (matched with AttendanceID={matchingAttendance.AttendanceID}, CheckinTime={matchingAttendance.CheckinTime})");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"No matching Attendance found: MemberID={attendance.MemberID}, CheckinTime={attendance.CheckinTime}");
+                }
+
+                return matchingAttendance;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error finding Attendance by unique fields: {ex.Message}");
+                return null;
+            }
+        }
+
         private async Task<Trainer?> FindTrainerByUniqueFields(Trainer trainer, AppDbContext context)
         {
             if (trainer == null)
@@ -2711,6 +2916,45 @@ namespace project.Services
             }
 
             return null;
+        }
+
+        private async Task<Promotion?> FindPromotionByUniqueFields(Promotion promotion, AppDbContext context)
+        {
+            if (promotion == null)
+                return null;
+
+            var promoName = promotion.PromoName?.Trim() ?? "";
+
+            if (string.IsNullOrEmpty(promoName))
+                return null;
+
+            try
+            {
+                // Match by PromoName, StartDate, EndDate, and DiscountRate (true unique key for promotions)
+                var matchingPromotion = await context.Promotions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p =>
+                        p.PromoName.Trim().ToLower() == promoName.ToLower() &&
+                        p.StartDate.Date == promotion.StartDate.Date &&
+                        p.EndDate.Date == promotion.EndDate.Date &&
+                        p.DiscountRate == promotion.DiscountRate);
+
+                if (matchingPromotion != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found matching Promotion: '{matchingPromotion.PromoName}' (ID: {matchingPromotion.PromoID}) - Dates: {matchingPromotion.StartDate:MMM dd, yyyy} to {matchingPromotion.EndDate:MMM dd, yyyy}, Discount: {matchingPromotion.DiscountRate}%");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"No matching Promotion found: '{promoName}' - Dates: {promotion.StartDate:MMM dd, yyyy} to {promotion.EndDate:MMM dd, yyyy}, Discount: {promotion.DiscountRate}%");
+                }
+
+                return matchingPromotion;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error finding Promotion by unique fields: {ex.Message}");
+                return null;
+            }
         }
 
         private async Task<User?> FindByUniqueKeyValue(string username, AppDbContext context)
@@ -2873,6 +3117,34 @@ namespace project.Services
                         }
                     }
                 }
+                else if (typeof(T) == typeof(WalkIn))
+                {
+                    var walkIn = entity as WalkIn;
+                    if (walkIn != null)
+                    {
+                        // Fix TrainerID
+                        if (walkIn.TrainerID.HasValue && walkIn.TrainerID.Value > 0)
+                        {
+                            var trainerExists = await context.Trainers.AnyAsync(t => t.TrainerID == walkIn.TrainerID.Value);
+                            if (!trainerExists)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Fixing WalkIn: TrainerID {walkIn.TrainerID.Value} doesn't exist, setting to null.");
+                                walkIn.TrainerID = null;
+                            }
+                        }
+                        
+                        // Fix TrainerScheduleID
+                        if (walkIn.TrainerScheduleID.HasValue && walkIn.TrainerScheduleID.Value > 0)
+                        {
+                            var scheduleExists = await context.TrainerSchedules.AnyAsync(ts => ts.TrainerScheduleID == walkIn.TrainerScheduleID.Value);
+                            if (!scheduleExists)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Fixing WalkIn: TrainerScheduleID {walkIn.TrainerScheduleID.Value} doesn't exist, setting to null.");
+                                walkIn.TrainerScheduleID = null;
+                            }
+                        }
+                    }
+                }
                 else if (typeof(T) == typeof(TrainerSchedule))
                 {
                     var schedule = entity as TrainerSchedule;
@@ -2910,6 +3182,20 @@ namespace project.Services
                         {
                             System.Diagnostics.Debug.WriteLine($"Fixing Payment: MemberID {payment.MemberID} doesn't exist, cannot fix automatically (MemberID is required).");
                             // Can't fix this - MemberID is required for Payment
+                            // The record will be skipped during sync
+                        }
+                    }
+                }
+                else if (typeof(T) == typeof(Notification))
+                {
+                    var notification = entity as Notification;
+                    if (notification != null)
+                    {
+                        var memberExists = await context.Members.AnyAsync(m => m.MemberID == notification.MemberID);
+                        if (!memberExists)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Fixing Notification: MemberID {notification.MemberID} doesn't exist, cannot fix automatically (MemberID is required).");
+                            // Can't fix this - MemberID is required for Notification
                             // The record will be skipped during sync
                         }
                     }
@@ -2971,6 +3257,34 @@ namespace project.Services
                         // So we don't fail validation here, just let FixForeignKeys handle it
                     }
                 }
+                else if (typeof(T) == typeof(WalkIn))
+                {
+                    var walkIn = entity as WalkIn;
+                    if (walkIn != null)
+                    {
+                        // Validate TrainerID if present (FixForeignKeys will set to null if invalid)
+                        if (walkIn.TrainerID.HasValue && walkIn.TrainerID.Value > 0)
+                        {
+                            var trainerExists = await context.Trainers.AnyAsync(t => t.TrainerID == walkIn.TrainerID.Value);
+                            if (!trainerExists)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"WalkIn references non-existent TrainerID: {walkIn.TrainerID.Value}. Setting TrainerID to null.");
+                                walkIn.TrainerID = null;
+                            }
+                        }
+                        
+                        // Validate TrainerScheduleID if present
+                        if (walkIn.TrainerScheduleID.HasValue && walkIn.TrainerScheduleID.Value > 0)
+                        {
+                            var scheduleExists = await context.TrainerSchedules.AnyAsync(ts => ts.TrainerScheduleID == walkIn.TrainerScheduleID.Value);
+                            if (!scheduleExists)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"WalkIn references non-existent TrainerScheduleID: {walkIn.TrainerScheduleID.Value}. Setting TrainerScheduleID to null.");
+                                walkIn.TrainerScheduleID = null;
+                            }
+                        }
+                    }
+                }
                 else if (typeof(T) == typeof(TrainerSchedule))
                 {
                     var schedule = entity as TrainerSchedule;
@@ -3006,6 +3320,19 @@ namespace project.Services
                         if (!memberExists)
                         {
                             System.Diagnostics.Debug.WriteLine($"Payment references non-existent MemberID: {payment.MemberID}");
+                            return false;
+                        }
+                    }
+                }
+                else if (typeof(T) == typeof(Notification))
+                {
+                    var notification = entity as Notification;
+                    if (notification != null)
+                    {
+                        var memberExists = await context.Members.AnyAsync(m => m.MemberID == notification.MemberID);
+                        if (!memberExists)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Notification references non-existent MemberID: {notification.MemberID}");
                             return false;
                         }
                     }
@@ -3052,7 +3379,8 @@ namespace project.Services
                                          p.Name == "MembershipTypeID" || p.Name == "PromotionID" ||
                                          p.Name == "AttendanceID" || p.Name == "PaymentID" ||
                                          p.Name == "ScheduleID" || p.Name == "AuditLogID" ||
-                                         p.Name == "WalkInID" || p.Name == "PromoID");
+                                         p.Name == "WalkInID" || p.Name == "PromoID" ||
+                                         p.Name == "NotificationID");
                 
                 if (idProperty != null && idProperty.CanWrite)
                 {
@@ -3188,6 +3516,7 @@ namespace project.Services
                            p.Name != "MembershipTypeID" && p.Name != "PromotionID" &&
                            p.Name != "AttendanceID" && p.Name != "PaymentID" &&
                            p.Name != "ScheduleID" && p.Name != "AuditLogID" &&
+                           p.Name != "NotificationID" &&
                            !IsNavigationProperty(p, entityType));
 
             foreach (var prop in properties)
@@ -3268,6 +3597,16 @@ namespace project.Services
                 if (walkIn != null)
                 {
                     return walkIn.VisitDate;
+                }
+            }
+            
+            // Special handling for Attendance - use CheckinTime as the timestamp
+            if (typeof(T) == typeof(Attendance))
+            {
+                var attendance = entity as Attendance;
+                if (attendance != null)
+                {
+                    return attendance.CheckinTime;
                 }
             }
             
@@ -3649,7 +3988,7 @@ namespace project.Services
                                     p.Name == "MembershipTypeID" || p.Name == "PromotionID" || p.Name == "PromoID" ||
                                     p.Name == "AttendanceID" || p.Name == "PaymentID" ||
                                     p.Name == "ScheduleID" || p.Name == "AuditLogID" ||
-                                    p.Name == "WalkInID");
+                                    p.Name == "WalkInID" || p.Name == "NotificationID");
 
             if (idProperty == null)
             {
@@ -4013,32 +4352,272 @@ namespace project.Services
             }
         }
 
+        private async Task CleanupDuplicatePromotions(AppDbContext context, SyncResult result)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine("=== Starting duplicate promotion cleanup ===");
+                
+                // Load all promotions (including archived ones)
+                var allPromotions = await context.Promotions.AsNoTracking().ToListAsync();
+                System.Diagnostics.Debug.WriteLine($"Loaded {allPromotions.Count} total promotions for duplicate check");
+                
+                // Count archived promotions
+                var archivedCount = allPromotions.Count(p => p.IsArchived);
+                System.Diagnostics.Debug.WriteLine($"Found {archivedCount} archived promotions");
+
+                // First, handle duplicate PromoIDs (shouldn't happen but could due to sync issues)
+                var promoIdGroups = allPromotions
+                    .GroupBy(p => p.PromoID)
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+
+                int duplicatesRemoved = 0;
+
+                if (promoIdGroups.Any())
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found {promoIdGroups.Count} groups of promotions with duplicate PromoIDs");
+                    
+                    foreach (var group in promoIdGroups)
+                    {
+                        var duplicates = group.OrderBy(p => p.PromoID).ToList();
+                        var keepPromotion = duplicates.First();
+                        var removePromotions = duplicates.Skip(1).ToList();
+
+                        System.Diagnostics.Debug.WriteLine($"Found {duplicates.Count} promotions with same PromoID {keepPromotion.PromoID}. Keeping first, removing others.");
+
+                        foreach (var duplicate in removePromotions)
+                        {
+                            try
+                            {
+                                // Update MemberPromos that reference this duplicate promotion
+                                var memberPromosWithDuplicate = await context.MemberPromos
+                                    .Where(mp => mp.PromotionID == duplicate.PromoID)
+                                    .ToListAsync();
+
+                                foreach (var memberPromo in memberPromosWithDuplicate)
+                                {
+                                    // Check if a MemberPromo with the same MemberID and keepPromotion.PromoID already exists
+                                    var existingMemberPromo = await context.MemberPromos
+                                        .FirstOrDefaultAsync(mp => mp.MemberID == memberPromo.MemberID && mp.PromotionID == keepPromotion.PromoID);
+
+                                    if (existingMemberPromo == null)
+                                    {
+                                        memberPromo.PromotionID = keepPromotion.PromoID;
+                                        System.Diagnostics.Debug.WriteLine($"Updated MemberPromo (MemberID: {memberPromo.MemberID}) to use Promotion ID {keepPromotion.PromoID} instead of {duplicate.PromoID}");
+                                    }
+                                    else
+                                    {
+                                        context.MemberPromos.Remove(memberPromo);
+                                        System.Diagnostics.Debug.WriteLine($"Removed duplicate MemberPromo (MemberID: {memberPromo.MemberID}, PromoID: {duplicate.PromoID})");
+                                    }
+                                }
+
+                                // Delete the duplicate promotion - use direct SQL to ensure it's deleted
+                                try
+                                {
+                                    var promotionToDelete = await context.Promotions.FindAsync(duplicate.PromoID);
+                                    if (promotionToDelete != null)
+                                    {
+                                        context.Promotions.Remove(promotionToDelete);
+                                        duplicatesRemoved++;
+                                        System.Diagnostics.Debug.WriteLine($"Marked Promotion ID {duplicate.PromoID} for deletion");
+                                    }
+                                    else
+                                    {
+                                        // If FindAsync returns null, try direct SQL delete
+                                        await context.Database.ExecuteSqlRawAsync(
+                                            "DELETE FROM Promotions WHERE PromoID = {0}", duplicate.PromoID);
+                                        duplicatesRemoved++;
+                                        System.Diagnostics.Debug.WriteLine($"Deleted Promotion ID {duplicate.PromoID} via SQL");
+                                    }
+                                }
+                                catch (Exception deleteEx)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"Error deleting Promotion ID {duplicate.PromoID}: {deleteEx.Message}");
+                                    // Try direct SQL as fallback
+                                    try
+                                    {
+                                        await context.Database.ExecuteSqlRawAsync(
+                                            "DELETE FROM Promotions WHERE PromoID = {0}", duplicate.PromoID);
+                                        duplicatesRemoved++;
+                                        System.Diagnostics.Debug.WriteLine($"Deleted Promotion ID {duplicate.PromoID} via SQL fallback");
+                                    }
+                                    catch (Exception sqlEx)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"SQL delete also failed for Promotion ID {duplicate.PromoID}: {sqlEx.Message}");
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error cleaning up duplicate Promotion ID {duplicate.PromoID}: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+
+                // Save changes from first cleanup before proceeding
+                if (duplicatesRemoved > 0)
+                {
+                    await context.SaveChangesAsync();
+                    System.Diagnostics.Debug.WriteLine($"Saved {duplicatesRemoved} duplicate promotions removed in first pass");
+                }
+
+                // Second, handle true duplicates (same name, dates, and discount rate)
+                // Reload after first cleanup to get fresh data
+                var allPromotionsAfterIdCleanup = await context.Promotions.AsNoTracking().ToListAsync();
+                var trueDuplicateGroups = allPromotionsAfterIdCleanup
+                    .GroupBy(p => new
+                    {
+                        PromoName = (p.PromoName ?? "").Trim().ToLower(),
+                        StartDate = p.StartDate.Date,
+                        EndDate = p.EndDate.Date,
+                        DiscountRate = p.DiscountRate
+                    })
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+
+                if (trueDuplicateGroups.Any())
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found {trueDuplicateGroups.Count} groups of true duplicate promotions");
+
+                    foreach (var group in trueDuplicateGroups)
+                    {
+                        var duplicates = group.OrderBy(p => p.PromoID).ToList();
+                        var keepPromotion = duplicates.First();
+                        var removePromotions = duplicates.Skip(1).ToList();
+
+                        System.Diagnostics.Debug.WriteLine($"Found {duplicates.Count} true duplicates for '{keepPromotion.PromoName}'. Keeping ID {keepPromotion.PromoID}, removing IDs: {string.Join(", ", removePromotions.Select(p => p.PromoID))}");
+
+                        foreach (var duplicate in removePromotions)
+                        {
+                            try
+                            {
+                                // Update MemberPromos that reference this duplicate promotion
+                                var memberPromosWithDuplicate = await context.MemberPromos
+                                    .Where(mp => mp.PromotionID == duplicate.PromoID)
+                                    .ToListAsync();
+
+                                foreach (var memberPromo in memberPromosWithDuplicate)
+                                {
+                                    // Check if a MemberPromo with the same MemberID and keepPromotion.PromoID already exists
+                                    var existingMemberPromo = await context.MemberPromos
+                                        .FirstOrDefaultAsync(mp => mp.MemberID == memberPromo.MemberID && mp.PromotionID == keepPromotion.PromoID);
+
+                                    if (existingMemberPromo == null)
+                                    {
+                                        memberPromo.PromotionID = keepPromotion.PromoID;
+                                        System.Diagnostics.Debug.WriteLine($"Updated MemberPromo (MemberID: {memberPromo.MemberID}) to use Promotion ID {keepPromotion.PromoID} instead of {duplicate.PromoID}");
+                                    }
+                                    else
+                                    {
+                                        context.MemberPromos.Remove(memberPromo);
+                                        System.Diagnostics.Debug.WriteLine($"Removed duplicate MemberPromo (MemberID: {memberPromo.MemberID}, PromoID: {duplicate.PromoID})");
+                                    }
+                                }
+
+                                // Delete the duplicate promotion - use direct SQL to ensure it's deleted
+                                try
+                                {
+                                    var promotionToDelete = await context.Promotions.FindAsync(duplicate.PromoID);
+                                    if (promotionToDelete != null)
+                                    {
+                                        context.Promotions.Remove(promotionToDelete);
+                                        duplicatesRemoved++;
+                                        System.Diagnostics.Debug.WriteLine($"Marked Promotion ID {duplicate.PromoID} for deletion");
+                                    }
+                                    else
+                                    {
+                                        // If FindAsync returns null, try direct SQL delete
+                                        await context.Database.ExecuteSqlRawAsync(
+                                            "DELETE FROM Promotions WHERE PromoID = {0}", duplicate.PromoID);
+                                        duplicatesRemoved++;
+                                        System.Diagnostics.Debug.WriteLine($"Deleted Promotion ID {duplicate.PromoID} via SQL");
+                                    }
+                                }
+                                catch (Exception deleteEx)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"Error deleting Promotion ID {duplicate.PromoID}: {deleteEx.Message}");
+                                    // Try direct SQL as fallback
+                                    try
+                                    {
+                                        await context.Database.ExecuteSqlRawAsync(
+                                            "DELETE FROM Promotions WHERE PromoID = {0}", duplicate.PromoID);
+                                        duplicatesRemoved++;
+                                        System.Diagnostics.Debug.WriteLine($"Deleted Promotion ID {duplicate.PromoID} via SQL fallback");
+                                    }
+                                    catch (Exception sqlEx)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"SQL delete also failed for Promotion ID {duplicate.PromoID}: {sqlEx.Message}");
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error cleaning up duplicate Promotion ID {duplicate.PromoID}: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+
+                // Save all changes from second cleanup
+                if (duplicatesRemoved > 0)
+                {
+                    await context.SaveChangesAsync();
+                    System.Diagnostics.Debug.WriteLine($"Successfully removed {duplicatesRemoved} duplicate promotions total");
+                    if (result != null)
+                    {
+                        result.Message += $" Removed {duplicatesRemoved} duplicate promotions.";
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No duplicate promotions found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in CleanupDuplicatePromotions: {ex.Message}");
+                // Don't throw - allow sync to continue even if cleanup fails
+            }
+        }
+
         private async Task CleanupDuplicateWalkIns(AppDbContext context, SyncResult result)
         {
             try
             {
                 System.Diagnostics.Debug.WriteLine("Starting cleanup of duplicate WalkIns...");
                 
-                var allWalkIns = await context.WalkIns.AsNoTracking().ToListAsync();
+                // Only process non-archived walk-ins
+                var allWalkIns = await context.WalkIns
+                    .Where(w => !w.IsArchived)
+                    .AsNoTracking()
+                    .ToListAsync();
                 var duplicatesRemoved = 0;
 
-                // Group by FirstName, LastName, VisitDate, and PaymentAmount to find duplicates
+                // Group by FirstName, LastName, VisitDate (date only), and PaymentAmount to find duplicates
+                // Use date only (not time) to catch duplicates that might have different times
                 var duplicateGroups = allWalkIns
                     .GroupBy(w => new
                     {
                         FirstName = w.FirstName?.Trim().ToLower() ?? "",
                         LastName = w.LastName?.Trim().ToLower() ?? "",
-                        VisitDate = w.VisitDate,
+                        VisitDate = w.VisitDate.Date, // Use date only, ignore time
                         PaymentAmount = w.PaymentAmount
                     })
                     .Where(g => g.Count() > 1)
                     .ToList();
 
+                System.Diagnostics.Debug.WriteLine($"Found {duplicateGroups.Count} groups of duplicate walk-ins");
+
                 foreach (var group in duplicateGroups)
                 {
-                    // Sort by WalkInID (keep the oldest one)
+                    // Sort by WalkInID (keep the oldest one - lowest ID)
                     var duplicates = group.OrderBy(w => w.WalkInID).ToList();
                     var keepWalkIn = duplicates.First();
+                    
+                    System.Diagnostics.Debug.WriteLine($"Processing duplicate group: {keepWalkIn.FirstName} {keepWalkIn.LastName} on {keepWalkIn.VisitDate.Date} - {duplicates.Count} duplicates found");
                     
                     // Remove all duplicates except the first one
                     for (int i = 1; i < duplicates.Count; i++)
@@ -4051,7 +4630,7 @@ namespace project.Services
                             {
                                 context.WalkIns.Remove(toRemove);
                                 duplicatesRemoved++;
-                                System.Diagnostics.Debug.WriteLine($"Removing duplicate WalkIn ID {duplicate.WalkInID}: {duplicate.FirstName} {duplicate.LastName} on {duplicate.VisitDate}");
+                                System.Diagnostics.Debug.WriteLine($"Removing duplicate WalkIn ID {duplicate.WalkInID}: {duplicate.FirstName} {duplicate.LastName} on {duplicate.VisitDate} (keeping ID {keepWalkIn.WalkInID})");
                             }
                         }
                         catch (Exception ex)
@@ -4068,10 +4647,86 @@ namespace project.Services
                     System.Diagnostics.Debug.WriteLine($"Successfully removed {duplicatesRemoved} duplicate walk-ins");
                     result.Message += $" Removed {duplicatesRemoved} duplicate walk-ins.";
                 }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No duplicate walk-ins found to remove");
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error in CleanupDuplicateWalkIns: {ex.Message}");
+                // Don't throw - allow sync to continue even if cleanup fails
+            }
+        }
+
+        private async Task CleanupDuplicateAttendances(AppDbContext context, SyncResult result)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine("Starting cleanup of duplicate Attendances...");
+                
+                var allAttendances = await context.Attendances.AsNoTracking().ToListAsync();
+                var duplicatesRemoved = 0;
+
+                // Group by MemberID and CheckinTime (within 1 second window) to find duplicates
+                var duplicateGroups = allAttendances
+                    .GroupBy(a => new
+                    {
+                        MemberID = a.MemberID,
+                        // Round CheckinTime to nearest second to group duplicates within 1 second
+                        CheckinTimeRounded = new DateTime(
+                            a.CheckinTime.Year,
+                            a.CheckinTime.Month,
+                            a.CheckinTime.Day,
+                            a.CheckinTime.Hour,
+                            a.CheckinTime.Minute,
+                            a.CheckinTime.Second)
+                    })
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+
+                foreach (var group in duplicateGroups)
+                {
+                    // Sort by AttendanceID (keep the oldest one)
+                    var duplicates = group.OrderBy(a => a.AttendanceID).ToList();
+                    var keepAttendance = duplicates.First();
+                    
+                    // Remove all duplicates except the first one
+                    for (int i = 1; i < duplicates.Count; i++)
+                    {
+                        var duplicate = duplicates[i];
+                        try
+                        {
+                            var toRemove = await context.Attendances.FindAsync(duplicate.AttendanceID);
+                            if (toRemove != null)
+                            {
+                                context.Attendances.Remove(toRemove);
+                                duplicatesRemoved++;
+                                System.Diagnostics.Debug.WriteLine($"Removing duplicate Attendance ID {duplicate.AttendanceID}: MemberID={duplicate.MemberID}, CheckinTime={duplicate.CheckinTime:yyyy-MM-dd HH:mm:ss} (keeping AttendanceID={keepAttendance.AttendanceID})");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error removing duplicate Attendance ID {duplicate.AttendanceID}: {ex.Message}");
+                        }
+                    }
+                }
+
+                // Save all changes
+                if (duplicatesRemoved > 0)
+                {
+                    await context.SaveChangesAsync();
+                    System.Diagnostics.Debug.WriteLine($"Successfully removed {duplicatesRemoved} duplicate attendances");
+                    result.Message += $" Removed {duplicatesRemoved} duplicate attendances.";
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No duplicate attendances found to clean up.");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in CleanupDuplicateAttendances: {ex.Message}");
                 // Don't throw - allow sync to continue even if cleanup fails
             }
         }

@@ -5,6 +5,7 @@
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext Context
 @inject project.Services.IAuthService AuthService
+@inject project.Services.IToastService ToastService
 @inject NavigationManager NavigationManager
 
 <div class="trainer-dashboard" >
@@ -20,6 +21,27 @@
         </div>
 
         <div class="dashboard-grid">
+            <!-- Trainer Profile Card -->
+            <div class="card profile-card">
+                <div class="card-header">
+                    <h2 class="card-title">My Profile</h2>
+                </div>
+                <div class="card-body">
+                    <div class="profile-content">
+                        <div class="profile-icon">
+                            <img src="/trainer_icon.svg" alt="Trainer" class="profile-icon-img" />
+                        </div>
+                        <div class="profile-info">
+                            <p class="profile-username">@currentUsername</p>
+                            <p class="profile-role">Trainer</p>
+                        </div>
+                        <button class="btn-change-password" @onclick="OpenPasswordModal" title="Change Password">
+                            Change Password
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">My Schedule</h2>
@@ -160,15 +182,57 @@
                 </div>
             </div>
         </div>
+
+        <!-- Change Password Modal -->
+        @if (showPasswordModal)
+        {
+            <div class="modal-overlay" @onclick="ClosePasswordModal">
+                <div class="modal-card" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h2>Change Password</h2>
+                    </div>
+                    <div class="modal-body">
+                        <p>Change password for: <strong>@currentUsername</strong></p>
+                        @if (!string.IsNullOrEmpty(passwordModalError))
+                        {
+                            <div class="account-error">@passwordModalError</div>
+                        }
+                        <div class="form-group">
+                            <label class="required">New Password</label>
+                            <input type="password" class="form-control" @bind="passwordInput" placeholder="Enter new password" />
+                        </div>
+                        <div class="form-group">
+                            <label class="required">Confirm Password</label>
+                            <input type="password" class="form-control" @bind="passwordConfirm" placeholder="Confirm new password" />
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-secondary" @onclick="ClosePasswordModal">Cancel</button>
+                        <button class="btn-primary" @onclick="SavePasswordChange" disabled="@isSavingPassword">
+                            @(isSavingPassword ? "Saving..." : "Update Password")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
     }
 </div>
 
 @code {
     private bool isAuthorized = false;
     private int? trainerId;
+    private int? currentUserId;
+    private string currentUsername = "";
     private List<TrainerSchedule> trainerSchedules = new();
     private List<Member> memberBookings = new();
     private List<WalkIn> walkInBookings = new();
+    
+    // Password change modal
+    private bool showPasswordModal = false;
+    private string passwordInput = "";
+    private string passwordConfirm = "";
+    private string passwordModalError = "";
+    private bool isSavingPassword = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -187,6 +251,8 @@
             return;
         }
 
+        currentUserId = await AuthService.GetCurrentUserId();
+        currentUsername = await AuthService.GetCurrentUsername() ?? "";
         trainerId = await AuthService.GetCurrentTrainerId();
 
         // Fallback: resolve TrainerID from Users table if not stored
@@ -260,6 +326,113 @@
         if (displayHours == 0) displayHours = 12;
         return $"{displayHours:00}:{minutes:00} {period}";
     }
+
+    private void OpenPasswordModal()
+    {
+        passwordInput = "";
+        passwordConfirm = "";
+        passwordModalError = "";
+        isSavingPassword = false;
+        showPasswordModal = true;
+    }
+
+    private void ClosePasswordModal()
+    {
+        showPasswordModal = false;
+        passwordInput = "";
+        passwordConfirm = "";
+        passwordModalError = "";
+        isSavingPassword = false;
+    }
+
+    private async Task SavePasswordChange()
+    {
+        if (isSavingPassword || !currentUserId.HasValue)
+            return;
+
+        passwordModalError = "";
+
+        if (string.IsNullOrWhiteSpace(passwordInput) || string.IsNullOrWhiteSpace(passwordConfirm))
+        {
+            passwordModalError = "Please enter and confirm the new password.";
+            return;
+        }
+
+        if (passwordInput.Length < 4)
+        {
+            passwordModalError = "Password must be at least 4 characters.";
+            return;
+        }
+
+        if (passwordInput != passwordConfirm)
+        {
+            passwordModalError = "Passwords do not match.";
+            return;
+        }
+
+        isSavingPassword = true;
+        StateHasChanged();
+
+        try
+        {
+            var user = await Context.Users.FindAsync(currentUserId.Value);
+            if (user == null)
+            {
+                passwordModalError = "User account not found.";
+                ToastService.ShowError("User account not found.");
+                return;
+            }
+
+            user.Password = passwordInput.Trim();
+            user.LastPasswordChange = DateTime.Now;
+            Context.Users.Update(user);
+            await Context.SaveChangesAsync();
+            
+            await LogAuditAction("Password Changed", "User", user.UserID, user.Username, $"Password changed for trainer account: {user.Username}");
+            ToastService.ShowSuccess("Password updated successfully.");
+            ClosePasswordModal();
+        }
+        catch (Exception ex)
+        {
+            passwordModalError = $"Error updating password: {ex.Message}";
+            ToastService.ShowError($"Error updating password: {ex.Message}");
+        }
+        finally
+        {
+            isSavingPassword = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userId = await AuthService.GetCurrentUserId();
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
+    }
 }
 
 <style>
@@ -326,6 +499,224 @@
     .bookings-table thead {
         background: #f5f7fb;
         color: #234060;
+    }
+
+    .page-header {
+        margin-bottom: 30px;
+    }
+
+    .page-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #234060;
+        margin: 0 0 8px 0;
+    }
+
+    .page-subtitle {
+        color: #666;
+        font-size: 14px;
+        margin: 0;
+    }
+
+    /* Profile Card Styles */
+    .profile-card {
+        grid-column: 1 / -1;
+    }
+
+    .profile-content {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+    .profile-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: #234060;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .profile-icon-img {
+        width: 40px;
+        height: 40px;
+        filter: brightness(0) invert(1);
+    }
+
+    .profile-info {
+        flex: 1;
+        min-width: 150px;
+    }
+
+    .profile-username {
+        margin: 0 0 4px 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: #234060;
+    }
+
+    .profile-role {
+        margin: 0;
+        font-size: 14px;
+        color: #666;
+    }
+
+    .btn-change-password {
+        background: #3498DB;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-change-password:hover {
+        background: #2980b9;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .modal-card {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 420px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        animation: fadeIn 0.2s ease;
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+        font-size: 22px;
+        color: #333;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .modal-footer {
+        padding: 20px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 8px;
+        color: #333;
+    }
+
+    .required::after {
+        content: " *";
+        color: #e74c3c;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #234060;
+        box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
+    }
+
+    .account-error {
+        background: #fdecea;
+        color: #b0382f;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        font-size: 14px;
+    }
+
+    .btn-secondary {
+        background: #f1f3f7;
+        color: #234060;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-secondary:hover {
+        background: #e0e4e8;
+    }
+
+    .btn-primary {
+        background: #3498DB;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover:not([disabled]) {
+        background: #2980b9;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    .btn-primary[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 </style>
 

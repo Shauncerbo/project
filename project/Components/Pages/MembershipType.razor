@@ -4,6 +4,7 @@
 @inject IJSRuntime JSRuntime
 @inject AppDbContext Context
 @inject project.Services.IToastService ToastService
+@inject project.Services.IAuthService AuthService
 @using project.Data
 @using project.Models
 @using Microsoft.EntityFrameworkCore
@@ -32,6 +33,7 @@
                     <th>TYPE NAME</th>
                     <th>PRICE</th>
                     <th>DURATION (DAYS)</th>
+                    <th>DESCRIPTION</th>
                     <th>ACTIONS</th>
                 </tr>
             </thead>
@@ -49,7 +51,7 @@
                 else if (filteredMembershipTypes == null || !filteredMembershipTypes.Any())
                 {
                     <tr>
-                        <td colspan="4" class="no-data">
+                        <td colspan="5" class="no-data">
                             <div class="no-data-content">
                                 <span class="no-data-icon">💳</span>
                                 <p>No membership types found</p>
@@ -70,6 +72,18 @@
                                 <span class="price">₱@membershipType.Price.ToString("N2")</span>
                             </td>
                             <td>@membershipType.DurationInDays days</td>
+                            <td>
+                                <div class="description-cell">
+                                    @if (string.IsNullOrWhiteSpace(membershipType.Description))
+                                    {
+                                        <span class="no-description">-</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="description-text" title="@membershipType.Description">@membershipType.Description</span>
+                                    }
+                                </div>
+                            </td>
                             <td>
                                 <div class="action-buttons">
                                     <button class="action-btn edit-btn" @onclick="() => EditMembershipType(membershipType)" title="Edit">
@@ -167,6 +181,22 @@
                             <div class="error-message">@validationErrors["DurationInDays"]</div>
                         }
                     </div>
+
+                    <!-- Description -->
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea class="form-control @(validationErrors.ContainsKey("Description") ? "error" : "")"
+                                  @bind="currentMembershipType.Description"
+                                  placeholder="Enter description (optional)"
+                                  rows="3"></textarea>
+                        @if (validationErrors.ContainsKey("Description"))
+                        {
+                            <div class="error-message">@validationErrors["Description"]</div>
+                        }
+                        <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                            Optional: Add a description to help identify this membership type
+                        </small>
+                    </div>
                 </div>
 
                 <div class="modal-footer">
@@ -249,7 +279,7 @@
         }
 
     .add-member-btn {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
         border: none;
         padding: 10px 20px;
@@ -261,9 +291,9 @@
     }
 
         .add-member-btn:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     /* Table Container */
@@ -345,6 +375,27 @@
     .price {
         color: #5cb85c;
         font-size: 15px;
+    }
+
+    .description-cell {
+        max-width: 300px;
+    }
+
+    .description-text {
+        color: #666;
+        font-size: 13px;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .no-description {
+        color: #999;
+        font-style: italic;
+        font-size: 13px;
     }
 
     .no-data {
@@ -561,14 +612,14 @@
         }
 
     .btn-save {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
     }
 
         .btn-save:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     .confirmation-modal {
@@ -697,7 +748,8 @@
             filteredMembershipTypes = membershipTypes
                 .Where(mt => mt.TypeName.ToLower().Contains(query) ||
                             mt.Price.ToString().Contains(query) ||
-                            mt.DurationInDays.ToString().Contains(query))
+                            mt.DurationInDays.ToString().Contains(query) ||
+                            (!string.IsNullOrEmpty(mt.Description) && mt.Description.ToLower().Contains(query)))
                 .ToList();
         }
         StateHasChanged();
@@ -720,7 +772,8 @@
             MembershipTypeID = membershipType.MembershipTypeID,
             TypeName = membershipType.TypeName,
             Price = membershipType.Price,
-            DurationInDays = membershipType.DurationInDays
+            DurationInDays = membershipType.DurationInDays,
+            Description = membershipType.Description
         };
         validationErrors.Clear();
         showModal = true;
@@ -774,6 +827,10 @@
                 existing.TypeName = currentMembershipType.TypeName;
                 existing.Price = currentMembershipType.Price;
                 existing.DurationInDays = currentMembershipType.DurationInDays;
+                existing.Description = currentMembershipType.Description;
+                
+                // Log audit action
+                await LogAuditAction("Membership Type Updated", "MembershipType", existing.MembershipTypeID, existing.TypeName, $"Updated membership type: {existing.TypeName} - ₱{existing.Price:N2}");
             }
             else
             {
@@ -781,6 +838,13 @@
             }
 
             await Context.SaveChangesAsync();
+            
+            // Log audit action for new membership type
+            if (!isEditMode)
+            {
+                await LogAuditAction("Membership Type Created", "MembershipType", currentMembershipType.MembershipTypeID, currentMembershipType.TypeName, $"Created membership type: {currentMembershipType.TypeName} - ₱{currentMembershipType.Price:N2}");
+            }
+            
             await LoadMembershipTypesFromDatabase();
             CloseModal();
             ToastService.ShowSuccess(isEditMode ? "Updated successfully" : "Added successfully");
@@ -823,7 +887,12 @@
             }
 
             existing.IsArchived = true;
+            existing.ArchivedDate = DateTime.Now;
             await Context.SaveChangesAsync();
+            
+            // Log audit action
+            await LogAuditAction("Membership Type Archived", "MembershipType", existing.MembershipTypeID, existing.TypeName, $"Archived membership type: {existing.TypeName}");
+            
             await LoadMembershipTypesFromDatabase();
             CloseArchiveConfirmation();
             ToastService.ShowSuccess("Archived successfully");
@@ -927,6 +996,36 @@
                 ToastService.ShowError($"Error saving walk-in price: {ex.Message}");
             }
             StateHasChanged();
+        }
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userId = await AuthService.GetCurrentUserId();
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
         }
     }
 }

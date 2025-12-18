@@ -33,7 +33,7 @@ namespace project
 
 #if WINDOWS
             // Enhanced WebView2 Camera Permission Handler for newer WebView2 versions
-            Microsoft.Maui.Handlers.ViewHandler.ViewMapper.AppendToMapping("CameraPermission", (handler, view) =>
+            Microsoft.Maui.Handlers.ViewHandler.ViewMapper.AppendToMapping("CameraPermission    ", (handler, view) =>
             {
                 if (handler.PlatformView is Microsoft.UI.Xaml.Controls.WebView2 webView2)
                 {
@@ -90,7 +90,8 @@ namespace project
 
             // Register services
             builder.Services.AddScoped<IAuthService, AuthService>();
-            builder.Services.AddScoped<IAttendanceService, AttendanceService>();
+            builder.Services.AddScoped<IAttendanceService>(sp => 
+                new AttendanceService(sp.GetRequiredService<AppDbContext>(), sp.GetRequiredService<IAuthService>()));
             builder.Services.AddScoped<IMemberService, MemberService>();
             builder.Services.AddScoped<IUserService, UserService>();
             builder.Services.AddScoped<IDatabaseSyncService, DatabaseSyncService>();

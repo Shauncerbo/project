@@ -10,7 +10,7 @@
 
 <div class="attendance-container">
     <div class="page-header">
-        <h1 class="page-title">Member Verification</h1>
+        <h1 class="page-title">Member Verification</h1> 
         <p class="page-subtitle">Verify if customers are members of the gym</p>
     </div>
 
@@ -27,9 +27,9 @@
     }
 
     <div class="row">
-        <div class="col-md-6">
-            <!-- Native Scanner Option -->
-            <div class="card mb-3">
+        <!-- Native Scanner Option - Centered -->
+        <div class="col-md-8 offset-md-2 mb-4">
+            <div class="card">
                 <div class="card-header bg-navy text-white">
                     <h5 class="mb-0">
                         <i class="fas fa-mobile-alt me-2"></i>Native Camera Scanner
@@ -45,47 +45,16 @@
                             <i class="fas fa-sync-alt me-2"></i>Refresh After Scan
                         </button>
                     </div>
-                    <small class="text-muted d-block mt-3">
-                        Tip: After closing the native scanner, tap <strong>Refresh After Scan</strong> to pull the latest attendance entries.
-                    </small>
-                </div>
-            </div>
-
-            <!-- Today's Stats -->
-            <div class="card mt-3">
-                <div class="card-header bg-light">
-                    <h6 class="mb-0">
-                        <i class="fas fa-chart-bar me-2"></i>Today's Summary
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="row text-center">
-                        <div class="col">
-                            <div class="stat-card">
-                                <h4 class="stat-number-black">@currentCount</h4>
-                                <small class="text-muted">Currently In</small>
-                            </div>
-                        </div>
-                        <div class="col">
-                            <div class="stat-card">
-                                <h4 class="stat-number-black">@todayTotal</h4>
-                                <small class="text-muted">Today Total</small>
-                            </div>
-                        </div>
-                        <div class="col">
-                            <div class="stat-card">
-                                <h4 class="stat-number-black">@scanCount</h4>
-                                <small class="text-muted">Scans Today</small>
-                            </div>
-                        </div>
-                    </div>
+                    
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="col-md-6">
-            <!-- Today's Member Verifications Table -->
-            <div class="card h-100">
+    <div class="row">
+        <!-- Today's Member Verifications Table - Below Scanner -->
+        <div class="col-md-12">
+            <div class="card">
                 <div class="card-header bg-light d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">
                         <i class="fas fa-list me-2"></i>Today's Member Verifications
@@ -152,6 +121,24 @@
                             <small>Scan QR codes to record attendance</small>
                         </div>
                     }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <!-- Today's Summary Chart - Below Datatable -->
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-bar me-2"></i>Today's Summary
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="position: relative; height: 300px;">
+                        <canvas id="attendanceSummaryChart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
@@ -408,9 +395,9 @@
     private string alertClass = "alert-info";
     private List<project.Models.Attendance> todayAttendance = new();
     private bool isLoading = false;
-    private int currentCount = 0;
-    private int todayTotal = 0;
     private int scanCount = 0;
+    private int verifiedThisHour = 0;
+    private int totalActiveMembers = 0;
 
     // Dictionary to store member names for performance
     private Dictionary<int, string> memberNames = new Dictionary<int, string>();
@@ -423,8 +410,19 @@
         }
 
         await LoadTodayAttendance();
-        CalculateStats();
         await PreloadMemberNames();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeSummaryChart();
+        }
+        else
+        {
+            await UpdateSummaryChart();
+        }
     }
 
     // Preload all member names for better performance
@@ -475,7 +473,7 @@
         try
         {
             todayAttendance = await attendanceService.GetTodayAttendanceAsync();
-            CalculateStats();
+            await CalculateStats();
             StateHasChanged();
         }
         catch (Exception ex)
@@ -511,7 +509,7 @@
         {
             await LoadTodayAttendance();
             await PreloadMemberNames();
-            CalculateStats();
+            await CalculateStats();
         }
         finally
         {
@@ -528,12 +526,50 @@
         });
     }
 
-    private void CalculateStats()
+    private async Task CalculateStats()
     {
-        var todayCount = todayAttendance.Count;
-        currentCount = todayCount;
-        todayTotal = todayCount;
-        scanCount = todayCount;
+        // Scans Today - total verifications today
+        scanCount = todayAttendance.Count;
+        
+        // Verified This Hour - verifications in the last hour
+        var oneHourAgo = DateTime.Now.AddHours(-1);
+        verifiedThisHour = todayAttendance.Count(a => a.CheckinTime >= oneHourAgo);
+        
+        // Total Active Members - total active members in the system
+        try
+        {
+            var activeMembers = await memberService.GetAllMembersAsync();
+            totalActiveMembers = activeMembers.Count(m => m.Status == "Active" && !m.IsArchived);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error getting active members count: {ex.Message}");
+            totalActiveMembers = 0;
+        }
+        
+        // Update chart after stats are calculated
+        await UpdateSummaryChart();
+    }
+
+    private async Task InitializeSummaryChart()
+    {
+        await Task.Delay(100); // Small delay to ensure DOM is ready
+        await UpdateSummaryChart();
+    }
+
+    private async Task UpdateSummaryChart()
+    {
+        try
+        {
+            var labels = new[] { "Scans Today", "Verified This Hour", "Total Active Members" };
+            var data = new[] { scanCount, verifiedThisHour, totalActiveMembers };
+            
+            await JSRuntime.InvokeVoidAsync("initAttendanceSummaryChart", labels, data);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error updating summary chart: {ex.Message}");
+        }
     }
 
     private string CalculateDuration(project.Models.Attendance record)

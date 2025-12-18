@@ -6,6 +6,7 @@
 @inject AppDbContext Context
 @inject project.Services.IUserService UserService
 @inject project.Services.IToastService ToastService
+@inject project.Services.IAuthService AuthService
 @using project.Models
 @using project.Data
 @using Microsoft.EntityFrameworkCore
@@ -61,7 +62,7 @@
                 }
                 else
                 {
-                    @foreach (var trainer in filteredTrainers)
+                    @foreach (var trainer in paginatedTrainers)
                     {
                         <tr>
                             <td>
@@ -96,6 +97,42 @@
                 }
             </tbody>
         </table>
+        
+        <!-- Pagination Controls for Trainers -->
+        @if (filteredTrainers.Any() && totalPages > 1)
+        {
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Showing @((currentPage - 1) * itemsPerPage + 1) - @(Math.Min(currentPage * itemsPerPage, filteredTrainers.Count)) of @filteredTrainers.Count
+                </div>
+                <div class="pagination-controls">
+                    <button class="pagination-btn" 
+                            @onclick="PreviousPage" 
+                            disabled="@(currentPage == 1)">
+                        Previous
+                    </button>
+                    @foreach (var pageNum in GetPageNumbers(currentPage, totalPages))
+                    {
+                        @if (pageNum == -1)
+                        {
+                            <span class="pagination-ellipsis">...</span>
+                        }
+                        else
+                        {
+                            <button class="pagination-btn @(pageNum == currentPage ? "active" : "")" 
+                                    @onclick="() => GoToPage(pageNum)">
+                                @pageNum
+                            </button>
+                        }
+                    }
+                    <button class="pagination-btn" 
+                            @onclick="NextPage" 
+                            disabled="@(currentPage == totalPages)">
+                        Next
+                    </button>
+                </div>
+            </div>
+        }
     </div>
 
     <!-- Add/Edit Trainer Modal -->
@@ -338,6 +375,11 @@
 
 @code {
     private string searchQuery = "";
+    
+    // Pagination variables
+    private int currentPage = 1;
+    private const int itemsPerPage = 10;
+    
     private bool showModal = false;
     private bool isEditMode = false;
     private Trainer currentTrainer = new Trainer();
@@ -364,6 +406,13 @@
     private List<TrainerSchedule> trainerSchedules = new List<TrainerSchedule>();
     private TrainerSchedule newSchedule = new TrainerSchedule();
     private string scheduleError = "";
+
+    // Pagination computed properties
+    private List<Trainer> paginatedTrainers => 
+        filteredTrainers.Skip((currentPage - 1) * itemsPerPage).Take(itemsPerPage).ToList();
+
+    private int totalPages => 
+        filteredTrainers.Count == 0 ? 1 : (int)Math.Ceiling((double)filteredTrainers.Count / itemsPerPage);
 
     // Helper properties for time input display formatting
     private string StartTimeString
@@ -451,6 +500,9 @@
 
     private void HandleSearch()
     {
+        // Reset pagination to first page when search changes
+        currentPage = 1;
+        
         if (string.IsNullOrWhiteSpace(searchQuery))
         {
             filteredTrainers = trainers;
@@ -463,6 +515,88 @@
                 t.ContactNumber.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
             ).ToList();
         }
+    }
+
+    // Pagination methods
+    private void GoToPage(int page)
+    {
+        if (page >= 1 && page <= totalPages)
+        {
+            currentPage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            StateHasChanged();
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            StateHasChanged();
+        }
+    }
+
+    // Helper method to get page numbers to display
+    private List<int> GetPageNumbers(int currentPage, int totalPages)
+    {
+        var pages = new List<int>();
+        int maxPagesToShow = 7;
+        
+        if (totalPages <= maxPagesToShow)
+        {
+            // Show all pages if total is less than max
+            for (int i = 1; i <= totalPages; i++)
+            {
+                pages.Add(i);
+            }
+        }
+        else
+        {
+            // Show pages with ellipsis
+            if (currentPage <= 4)
+            {
+                // Show first 5 pages, ellipsis, last page
+                for (int i = 1; i <= 5; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+            else if (currentPage >= totalPages - 3)
+            {
+                // Show first page, ellipsis, last 5 pages
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = totalPages - 4; i <= totalPages; i++)
+                {
+                    pages.Add(i);
+                }
+            }
+            else
+            {
+                // Show first page, ellipsis, current-1, current, current+1, ellipsis, last page
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = currentPage - 1; i <= currentPage + 1; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+        }
+        
+        return pages;
     }
 
     private void OpenAddTrainerModal()
@@ -568,9 +702,14 @@
                     await Context.SaveChangesAsync();
 
                     // 6) Finally remove the trainer record itself
+                    var trainerName = $"{trainer.FirstName} {trainer.LastName}";
                     Context.Trainers.Remove(trainer);
 
                     await Context.SaveChangesAsync();
+                    
+                    // Log audit action
+                    await LogAuditAction("Trainer Archived", "Trainer", trainerId, trainerName, $"Archived trainer: {trainerName}");
+                    
                     await LoadTrainersFromDatabase();
                     CloseArchiveConfirmation();
                     // Use warning type for destructive-but-successful actions (red background with check)
@@ -698,6 +837,11 @@
                 trainer.Specialty = currentTrainer.Specialty;
 
                 await Context.SaveChangesAsync();
+                
+                // Log audit action
+                var trainerName = $"{trainer.FirstName} {trainer.LastName}";
+                await LogAuditAction("Trainer Updated", "Trainer", trainer.TrainerID, trainerName, $"Updated trainer: {trainerName}");
+                
                 ToastService.ShowSuccess("Updated successfully");
             }
             else
@@ -708,6 +852,10 @@
 
                 // Automatically create linked user account for this trainer
                 await CreateTrainerUserAccountAsync(currentTrainer);
+
+                // Log audit action
+                var trainerName = $"{currentTrainer.FirstName} {currentTrainer.LastName}";
+                await LogAuditAction("Trainer Created", "Trainer", currentTrainer.TrainerID, trainerName, $"Created new trainer: {trainerName}");
 
                 ToastService.ShowSuccess("Added successfully");
             }
@@ -772,7 +920,8 @@
                 Email = string.Empty,
                 RoleID = roleId,
                 IsActive = true,
-                TrainerID = trainer.TrainerID
+                TrainerID = trainer.TrainerID,
+                CreatedAt = DateTime.Now
             };
 
             // createdByUserId is not tracked currently; pass 0
@@ -791,7 +940,7 @@
         newSchedule = new TrainerSchedule
         {
             TrainerID = trainer.TrainerID,
-            DayOfWeek = 1, // Default to Monday
+            DayOfWeek = (byte)DateTime.Now.DayOfWeek, // Default to today's day of week
             StartTime = new TimeSpan(9, 0, 0), // 9:00 AM
             EndTime = new TimeSpan(11, 0, 0), // 11:00 AM
             IsAvailable = true
@@ -927,7 +1076,7 @@
             newSchedule = new TrainerSchedule
             {
                 TrainerID = selectedTrainerForSchedule.TrainerID,
-                DayOfWeek = 1,
+                DayOfWeek = (byte)DateTime.Now.DayOfWeek, // Default to today's day of week
                 StartTime = new TimeSpan(9, 0, 0),
                 EndTime = new TimeSpan(11, 0, 0),
                 IsAvailable = true
@@ -996,6 +1145,36 @@
         if (displayHours == 0) displayHours = 12; // 12:00 should show as 12, not 0
         return $"{displayHours:00}:{minutes:00} {period}";
     }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userId = await AuthService.GetCurrentUserId();
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
+    }
 }
 
 <style>
@@ -1063,12 +1242,12 @@
 
         .search-bar:focus {
             outline: none;
-            border-color: #5cb85c;
-            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+            border-color: #234060;
+            box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
         }
 
     .add-member-btn {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
         border: none;
         padding: 10px 20px;
@@ -1080,9 +1259,9 @@
     }
 
         .add-member-btn:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     /* Table Container */
@@ -1358,8 +1537,8 @@
 
         .form-control:focus {
             outline: none;
-            border-color: #5cb85c;
-            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+            border-color: #234060;
+            box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
         }
 
         /* Error state for form controls */
@@ -1430,18 +1609,18 @@
     }
 
     .select-dropdown:focus + .dropdown-arrow {
-        color: #5cb85c;
+        color: #234060;
         transform: translateY(-50%) rotate(180deg);
     }
 
     .select-dropdown:hover {
-        border-color: #5cb85c;
+        border-color: #234060;
     }
 
     .select-dropdown:focus {
         outline: none;
-        border-color: #5cb85c;
-        box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+        border-color: #234060;
+        box-shadow: 0 0 0 3px rgba(35, 64, 96, 0.1);
     }
 
     .select-dropdown.error {
@@ -1478,14 +1657,14 @@
         }
 
     .btn-save {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
     }
 
         .btn-save:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     /* Additional CSS for the modified modal */
@@ -1781,6 +1960,75 @@
         border-radius: 8px;
         margin-bottom: 15px;
         font-size: 14px;
+        font-weight: 500;
+    }
+
+    /* Pagination Styles */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        background: white;
+        border-top: 1px solid #e9ecef;
+        margin-top: 0;
+    }
+
+    .pagination-info {
+        color: #666;
+        font-size: 14px;
+    }
+
+    .pagination-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .pagination-btn {
+        min-width: 40px;
+        height: 40px;
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        background: white;
+        color: #234060;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+        background: #f8f9fa;
+        border-color: #234060;
+        transform: translateY(-1px);
+    }
+
+    .pagination-btn.active {
+        background: #234060;
+        color: white;
+        border-color: #234060;
+        font-weight: 600;
+    }
+
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: #f8f9fa;
+    }
+
+    .pagination-btn:disabled:hover {
+        transform: none;
+        border-color: #dee2e6;
+    }
+
+    .pagination-ellipsis {
+        padding: 0 8px;
+        color: #666;
         font-weight: 500;
     }
 </style>

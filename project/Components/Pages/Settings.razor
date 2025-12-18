@@ -93,10 +93,10 @@
                                             <td>@promotion.DiscountRate%</td>
                                             <td>@promotion.StartDate.ToString("MMM dd, yyyy")</td>
                                             <td>@promotion.EndDate.ToString("MMM dd, yyyy")</td>
-                                            <td>-</td>
-                                            <td>
-                                                <button class="btn-restore" @onclick="() => RestorePromotion(promotion)">
-                                                    <span class="restore-icon"></span> Restore
+                                            <td>@(promotion.ArchivedDate.HasValue ? promotion.ArchivedDate.Value.ToString("MMM dd, yyyy") : "-")</td>
+                                            <td class="account-actions">
+                                                <button class="btn-restore" @onclick="() => RestorePromotion(promotion)" title="Restore">
+                                                    <img src="/restore_icon.svg" alt="Restore" class="restore-icon-svg" />
                                                 </button>
                                             </td>
                                         </tr>
@@ -149,10 +149,10 @@
                                             <td>@membershipType.TypeName</td>
                                             <td>₱@membershipType.Price.ToString("N2")</td>
                                             <td>@membershipType.DurationInDays days</td>
-                                            <td>-</td>
-                                            <td>
-                                                <button class="btn-restore" @onclick="() => RestoreMembershipType(membershipType)">
-                                                    <span class="restore-icon"></span> Restore
+                                            <td>@(membershipType.ArchivedDate.HasValue ? membershipType.ArchivedDate.Value.ToString("MMM dd, yyyy") : "-")</td>
+                                            <td class="account-actions">
+                                                <button class="btn-restore" @onclick="() => RestoreMembershipType(membershipType)" title="Restore">
+                                                    <img src="/restore_icon.svg" alt="Restore" class="restore-icon-svg" />
                                                 </button>
                                             </td>
                                         </tr>
@@ -184,7 +184,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-cancel" @onclick="CloseRestorePromotionConfirmation">Cancel</button>
-                    <button class="btn btn-danger" @onclick="ConfirmRestorePromotion" disabled="@isRestoringPromotion">
+                    <button class="btn btn-primary" @onclick="ConfirmRestorePromotion" disabled="@isRestoringPromotion">
                         @(isRestoringPromotion ? "Restoring..." : "Yes, Restore Promotion")
                     </button>
                 </div>
@@ -210,7 +210,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-cancel" @onclick="CloseRestoreMembershipTypeConfirmation">Cancel</button>
-                    <button class="btn btn-danger" @onclick="ConfirmRestoreMembershipType" disabled="@isRestoringMembershipType">
+                    <button class="btn btn-primary" @onclick="ConfirmRestoreMembershipType" disabled="@isRestoringMembershipType">
                         @(isRestoringMembershipType ? "Restoring..." : "Yes, Restore Membership Type")
                     </button>
                 </div>
@@ -367,6 +367,30 @@
     .search-bar:focus {
         outline: none;
         border-color: #234060;
+    }
+
+    .btn-cleanup {
+        padding: 10px 20px;
+        background: #e74c3c;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.3s;
+        white-space: nowrap;
+    }
+
+    .btn-cleanup:hover:not([disabled]) {
+        background: #c0392b;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    .btn-cleanup[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
     }
 
     .table-container {
@@ -554,18 +578,18 @@
         background: #e0e4e8;
     }
 
-    .btn-danger {
-        background: #e74c3c;
-        color: white;
+    .btn-primary {
+        background: #0066cc !important;
+        color: white !important;
     }
 
-    .btn-danger:hover:not([disabled]) {
-        background: #c0392b;
+    .btn-primary:hover:not([disabled]) {
+        background: #0052a3 !important;
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+        box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
     }
 
-    .btn-danger[disabled] {
+    .btn-primary[disabled] {
         opacity: 0.7;
         cursor: not-allowed;
     }
@@ -609,6 +633,37 @@
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
     }
+
+    /* Restore Button with Icon */
+    .account-actions {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-restore {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: auto;
+        height: auto;
+        padding: 0;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-restore:hover {
+        opacity: 0.7;
+        transform: translateY(-1px);
+    }
+
+    .restore-icon-svg {
+        width: 24px;
+        height: 24px;
+    }
 </style>
 
 @code {
@@ -628,6 +683,9 @@
     // Counts
     private int archivedPromotionsCount = 0;
     private int archivedMembershipTypesCount = 0;
+
+    // Cleanup
+    private bool isCleaningUp = false;
 
     // Restore confirmation modals
     private bool showRestorePromotionConfirmation = false;
@@ -650,17 +708,106 @@
 
         try
         {
-            // Load archived promotions
-            archivedPromotions = await Context.Promotions
-                .Where(p => p.IsArchived == true)
-                .ToListAsync();
+            // Try to load archived data with ArchivedDate support
+            // If the column doesn't exist yet, this will fall back to basic loading
+            try
+            {
+                var oneMonthAgo = DateTime.Now.AddMonths(-1);
+
+                // Auto-delete promotions archived for 1+ months
+                var oldPromotions = await Context.Promotions
+                    .Where(p => p.IsArchived == true && 
+                               p.ArchivedDate.HasValue && 
+                               p.ArchivedDate.Value <= oneMonthAgo)
+                    .ToListAsync();
+
+                if (oldPromotions.Any())
+                {
+                    var deletedPromoNames = string.Join(", ", oldPromotions.Select(p => p.PromoName));
+                    Context.Promotions.RemoveRange(oldPromotions);
+                    await Context.SaveChangesAsync();
+                    await LogAuditAction("Auto-Deleted Old Archived Promotions", "Promotion", null, deletedPromoNames, $"Automatically deleted {oldPromotions.Count} promotion(s) archived for 1+ months: {deletedPromoNames}");
+                }
+
+                // Auto-delete membership types archived for 1+ months
+                var oldMembershipTypes = await Context.MembershipTypes
+                    .Where(mt => mt.IsArchived == true && 
+                                mt.ArchivedDate.HasValue && 
+                                mt.ArchivedDate.Value <= oneMonthAgo)
+                    .ToListAsync();
+
+                if (oldMembershipTypes.Any())
+                {
+                    var deletedTypeNames = string.Join(", ", oldMembershipTypes.Select(mt => mt.TypeName));
+                    Context.MembershipTypes.RemoveRange(oldMembershipTypes);
+                    await Context.SaveChangesAsync();
+                    await LogAuditAction("Auto-Deleted Old Archived Membership Types", "MembershipType", null, deletedTypeNames, $"Automatically deleted {oldMembershipTypes.Count} membership type(s) archived for 1+ months: {deletedTypeNames}");
+                }
+
+                // Load remaining archived promotions with ArchivedDate ordering
+                // Group by unique key to remove duplicates (same name, dates, discount rate)
+                var allArchivedPromotions = await Context.Promotions
+                    .Where(p => p.IsArchived == true)
+                    .OrderByDescending(p => p.ArchivedDate ?? DateTime.MinValue)
+                    .ToListAsync();
+
+                // Remove duplicates by grouping on PromoName, StartDate, EndDate, and DiscountRate
+                archivedPromotions = allArchivedPromotions
+                    .GroupBy(p => new
+                    {
+                        PromoName = (p.PromoName ?? "").Trim().ToLower(),
+                        StartDate = p.StartDate.Date,
+                        EndDate = p.EndDate.Date,
+                        DiscountRate = p.DiscountRate
+                    })
+                    .Select(g => g.OrderByDescending(p => p.ArchivedDate ?? DateTime.MinValue).First())
+                    .OrderByDescending(p => p.ArchivedDate ?? DateTime.MinValue)
+                    .ToList();
+            }
+            catch (Exception dateEx)
+            {
+                // If ArchivedDate column doesn't exist yet, load without it
+                System.Diagnostics.Debug.WriteLine($"ArchivedDate column may not exist yet: {dateEx.Message}");
+                
+                // Load archived promotions without ArchivedDate
+                var allArchivedPromotionsFallback = await Context.Promotions
+                    .Where(p => p.IsArchived == true)
+                    .ToListAsync();
+
+                // Remove duplicates by grouping on PromoName, StartDate, EndDate, and DiscountRate
+                archivedPromotions = allArchivedPromotionsFallback
+                    .GroupBy(p => new
+                    {
+                        PromoName = (p.PromoName ?? "").Trim().ToLower(),
+                        StartDate = p.StartDate.Date,
+                        EndDate = p.EndDate.Date,
+                        DiscountRate = p.DiscountRate
+                    })
+                    .Select(g => g.OrderBy(p => p.PromoID).First())
+                    .ToList();
+            }
+
             filteredArchivedPromotions = archivedPromotions;
             archivedPromotionsCount = archivedPromotions.Count;
 
             // Load archived membership types
-            archivedMembershipTypes = await Context.MembershipTypes
-                .Where(mt => mt.IsArchived == true)
-                .ToListAsync();
+            try
+            {
+                archivedMembershipTypes = await Context.MembershipTypes
+                    .Where(mt => mt.IsArchived == true)
+                    .OrderByDescending(mt => mt.ArchivedDate ?? DateTime.MinValue)
+                    .ToListAsync();
+            }
+            catch (Exception dateEx)
+            {
+                // If ArchivedDate column doesn't exist yet, load without it
+                System.Diagnostics.Debug.WriteLine($"ArchivedDate column may not exist yet: {dateEx.Message}");
+                
+                archivedMembershipTypes = await Context.MembershipTypes
+                    .Where(mt => mt.IsArchived == true)
+                    .ToListAsync();
+            }
+
             filteredArchivedMembershipTypes = archivedMembershipTypes;
             archivedMembershipTypesCount = archivedMembershipTypes.Count;
         }
@@ -697,6 +844,101 @@
                 .ToList();
         }
         StateHasChanged();
+    }
+
+    private async Task CleanupDuplicatePromotions()
+    {
+        if (isCleaningUp)
+            return;
+
+        isCleaningUp = true;
+        StateHasChanged();
+
+        try
+        {
+            // Load all promotions
+            var allPromotions = await Context.Promotions.ToListAsync();
+            var initialCount = allPromotions.Count;
+
+            // Group by unique key (name, dates, discount)
+            var duplicateGroups = allPromotions
+                .GroupBy(p => new
+                {
+                    PromoName = (p.PromoName ?? "").Trim().ToLower(),
+                    StartDate = p.StartDate.Date,
+                    EndDate = p.EndDate.Date,
+                    DiscountRate = p.DiscountRate
+                })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            int duplicatesRemoved = 0;
+
+            foreach (var group in duplicateGroups)
+            {
+                var duplicates = group.OrderBy(p => p.PromoID).ToList();
+                var keepPromotion = duplicates.First(); // Keep the one with lowest ID
+                var removePromotions = duplicates.Skip(1).ToList();
+
+                foreach (var duplicate in removePromotions)
+                {
+                    try
+                    {
+                        // Update MemberPromos references
+                        var memberPromos = await Context.MemberPromos
+                            .Where(mp => mp.PromotionID == duplicate.PromoID)
+                            .ToListAsync();
+
+                        foreach (var memberPromo in memberPromos)
+                        {
+                            var existing = await Context.MemberPromos
+                                .FirstOrDefaultAsync(mp => mp.MemberID == memberPromo.MemberID && mp.PromotionID == keepPromotion.PromoID);
+
+                            if (existing == null)
+                            {
+                                memberPromo.PromotionID = keepPromotion.PromoID;
+                            }
+                            else
+                            {
+                                Context.MemberPromos.Remove(memberPromo);
+                            }
+                        }
+
+                        // Delete the duplicate promotion
+                        Context.Promotions.Remove(duplicate);
+                        duplicatesRemoved++;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error removing duplicate promotion {duplicate.PromoID}: {ex.Message}");
+                    }
+                }
+            }
+
+            if (duplicatesRemoved > 0)
+            {
+                await Context.SaveChangesAsync();
+                await LogAuditAction("Manual Duplicate Cleanup", "Promotion", null, "Multiple", $"Removed {duplicatesRemoved} duplicate promotions");
+                ToastService.ShowSuccess($"Successfully removed {duplicatesRemoved} duplicate promotions!");
+                
+                // Reload data
+                await LoadArchivedData();
+            }
+            else
+            {
+                ToastService.ShowInfo("No duplicate promotions found.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error cleaning up duplicates: {ex.Message}");
+            await LogAuditAction("Duplicate Cleanup Failed", "Promotion", null, "Multiple", $"Failed to cleanup duplicates: {ex.Message}", "Failed", ex.Message);
+        }
+        finally
+        {
+            isCleaningUp = false;
+            StateHasChanged();
+        }
     }
 
     private void FilterArchivedMembershipTypes()
@@ -744,6 +986,7 @@
             var promoId = selectedRestorePromotion.PromoID;
 
             selectedRestorePromotion.IsArchived = false;
+            selectedRestorePromotion.ArchivedDate = null;
             Context.Promotions.Update(selectedRestorePromotion);
             await Context.SaveChangesAsync();
             await LogAuditAction("Promotion Restored", "Promotion", promoId, promoName, $"Restored promotion {promoName} from archive");
@@ -792,6 +1035,7 @@
             var typeId = selectedRestoreMembershipType.MembershipTypeID;
 
             selectedRestoreMembershipType.IsArchived = false;
+            selectedRestoreMembershipType.ArchivedDate = null;
             Context.MembershipTypes.Update(selectedRestoreMembershipType);
             await Context.SaveChangesAsync();
             await LogAuditAction("Membership Type Restored", "MembershipType", typeId, typeName, $"Restored membership type {typeName} from archive");

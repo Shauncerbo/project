@@ -48,11 +48,11 @@
             <thead>
                 <tr>
                     <th>NAME</th>
-                    <th>CONTACT NUMBER</th>
+                    <th>CONTACT</th>
                     <th>EMAIL</th>
                     <th>JOIN DATE</th>
-                    <th>EXPIRATION DATE</th>
-                    <th>MEMBERSHIP TYPE</th>
+                    <th>EXPIRATION</th>
+                    <th>TYPE</th>
                     <th>TRAINER</th>
                     <th>ACTIONS</th>
                 </tr>
@@ -72,7 +72,7 @@
                 }
                 else
                 {
-                    @foreach (var member in filteredMembers)
+                    @foreach (var member in paginatedActiveMembers)
                     {
                         <tr>
                             <td>
@@ -139,6 +139,42 @@
                 }
             </tbody>
         </table>
+        
+        <!-- Pagination Controls for Active Members -->
+        @if (filteredMembers.Any() && totalActivePages > 1)
+        {
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Showing @((currentActivePage - 1) * itemsPerPage + 1) - @(Math.Min(currentActivePage * itemsPerPage, filteredMembers.Count)) of @filteredMembers.Count
+                </div>
+                <div class="pagination-controls">
+                    <button class="pagination-btn" 
+                            @onclick="PreviousActivePage" 
+                            disabled="@(currentActivePage == 1)">
+                        Previous
+                    </button>
+                    @foreach (var pageNum in GetPageNumbers(currentActivePage, totalActivePages))
+                    {
+                        @if (pageNum == -1)
+                        {
+                            <span class="pagination-ellipsis">...</span>
+                        }
+                        else
+                        {
+                            <button class="pagination-btn @(pageNum == currentActivePage ? "active" : "")" 
+                                    @onclick="() => GoToActivePage(pageNum)">
+                                @pageNum
+                            </button>
+                        }
+                    }
+                    <button class="pagination-btn" 
+                            @onclick="NextActivePage" 
+                            disabled="@(currentActivePage == totalActivePages)">
+                        Next
+                    </button>
+                </div>
+            </div>
+        }
     </div>
 
     <!-- Expired/Inactive Members Section -->
@@ -186,7 +222,7 @@
                         }
                         else
                         {
-                            @foreach (var member in expiredInactiveMembers)
+                            @foreach (var member in paginatedInactiveMembers)
                             {
                                 <tr>
                                     <td>
@@ -229,6 +265,42 @@
                         }
                     </tbody>
                 </table>
+                
+                <!-- Pagination Controls for Inactive Members -->
+                @if (expiredInactiveMembers.Any() && totalInactivePages > 1)
+                {
+                    <div class="pagination-container">
+                        <div class="pagination-info">
+                            Showing @((currentInactivePage - 1) * itemsPerPage + 1) - @(Math.Min(currentInactivePage * itemsPerPage, expiredInactiveMembers.Count)) of @expiredInactiveMembers.Count
+                        </div>
+                        <div class="pagination-controls">
+                            <button class="pagination-btn" 
+                                    @onclick="PreviousInactivePage" 
+                                    disabled="@(currentInactivePage == 1)">
+                                Previous
+                            </button>
+                            @foreach (var pageNum in GetPageNumbers(currentInactivePage, totalInactivePages))
+                            {
+                                @if (pageNum == -1)
+                                {
+                                    <span class="pagination-ellipsis">...</span>
+                                }
+                                else
+                                {
+                                    <button class="pagination-btn @(pageNum == currentInactivePage ? "active" : "")" 
+                                            @onclick="() => GoToInactivePage(pageNum)">
+                                        @pageNum
+                                    </button>
+                                }
+                            }
+                            <button class="pagination-btn" 
+                                    @onclick="NextInactivePage" 
+                                    disabled="@(currentInactivePage == totalInactivePages)">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
     }
@@ -639,39 +711,72 @@
                         </div>
                     }
 
-                    <!-- QR Code Generation Section -->
-                    @if (currentMember.MemberID > 0 && qrCodeImage != null)
+                    <!-- QR Code / Student ID Section -->
+                    @if (currentMember.MemberID > 0)
                     {
                         <div class="divider"></div>
-                        <div class="qr-code-section">
-                            <h4>Member QR Code</h4>
-                            <div class="qr-code-container">
-                                <div class="qr-code-display">
-                                    <div class="qr-header">
-                                        <strong>@currentMember.FirstName @currentMember.LastName</strong>
-                                    </div>
-                                    <div class="qr-image-container">
-                                        <img src="data:image/png;base64,@Convert.ToBase64String(qrCodeImage)"
-                                             alt="QR Code"
-                                             class="qr-image" />
-                                    </div>
-                                    <div class="qr-instructions">
-                                        <small> Scan this code for attendance tracking</small>
-                                    </div>
-                                    <div class="qr-actions">
-                                        <button class="btn btn-outline-primary btn-sm" @onclick="PrintQrCode">
-                                             Print
-                                        </button>
-                                        <button class="btn btn-outline-secondary btn-sm" @onclick="DownloadQrCode">
-                                             Download
-                                        </button>
-                                        <button class="btn btn-outline-info btn-sm" @onclick="GenerateNewQrCode">
-                                             Regenerate
-                                        </button>
+                        @if (IsStudentMemberWithID())
+                        {
+                            <!-- Student ID Image Section -->
+                            <div class="qr-code-section">
+                                <h4>Student ID</h4>
+                                <div class="qr-code-container">
+                                    <div class="qr-code-display">
+                                        <div class="qr-header">
+                                            <strong>@currentMember.FirstName @currentMember.LastName</strong>
+                                        </div>
+                                        <div class="qr-image-container">
+                                            @if (currentMember.StudentIDImage != null && currentMember.StudentIDImage.Length > 0)
+                                            {
+                                                <img src="data:image/jpeg;base64,@Convert.ToBase64String(currentMember.StudentIDImage)"
+                                                     alt="Student ID"
+                                                     class="qr-image student-id-image" />
+                                            }
+                                            else
+                                            {
+                                                <div class="no-student-id">No Student ID uploaded</div>
+                                            }
+                                        </div>
+                                        <div class="qr-instructions">
+                                            <small>Student ID for membership verification</small>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        }
+                        else if (qrCodeImage != null)
+                        {
+                            <!-- QR Code Section -->
+                            <div class="qr-code-section">
+                                <h4>Member QR Code</h4>
+                                <div class="qr-code-container">
+                                    <div class="qr-code-display">
+                                        <div class="qr-header">
+                                            <strong>@currentMember.FirstName @currentMember.LastName</strong>
+                                        </div>
+                                        <div class="qr-image-container">
+                                            <img src="data:image/png;base64,@Convert.ToBase64String(qrCodeImage)"
+                                                 alt="QR Code"
+                                                 class="qr-image" />
+                                        </div>
+                                        <div class="qr-instructions">
+                                            <small> Scan this code for attendance tracking</small>
+                                        </div>
+                                        <div class="qr-actions">
+                                            <button class="btn btn-outline-primary btn-sm" @onclick="PrintQrCode">
+                                                 Print
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm" @onclick="DownloadQrCode">
+                                                 Download
+                                            </button>
+                                            <button class="btn btn-outline-info btn-sm" @onclick="GenerateNewQrCode">
+                                                 Regenerate
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
                     }
                 </div>
 
@@ -1581,6 +1686,75 @@
          transform: translateY(0);
      }
 
+     /* Pagination Styles */
+     .pagination-container {
+         display: flex;
+         justify-content: space-between;
+         align-items: center;
+         padding: 20px;
+         background: white;
+         border-top: 1px solid #e9ecef;
+         margin-top: 0;
+     }
+
+     .pagination-info {
+         color: #666;
+         font-size: 14px;
+     }
+
+     .pagination-controls {
+         display: flex;
+         gap: 8px;
+         align-items: center;
+     }
+
+     .pagination-btn {
+         min-width: 40px;
+         height: 40px;
+         padding: 8px 12px;
+         border: 1px solid #dee2e6;
+         background: white;
+         color: #234060;
+         border-radius: 6px;
+         cursor: pointer;
+         font-size: 14px;
+         font-weight: 500;
+         transition: all 0.2s ease;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+     }
+
+     .pagination-btn:hover:not(:disabled) {
+         background: #f8f9fa;
+         border-color: #234060;
+         transform: translateY(-1px);
+     }
+
+     .pagination-btn.active {
+         background: #234060;
+         color: white;
+         border-color: #234060;
+         font-weight: 600;
+     }
+
+     .pagination-btn:disabled {
+         opacity: 0.5;
+         cursor: not-allowed;
+         background: #f8f9fa;
+     }
+
+     .pagination-btn:disabled:hover {
+         transform: none;
+         border-color: #dee2e6;
+     }
+
+     .pagination-ellipsis {
+         padding: 0 8px;
+         color: #666;
+         font-weight: 500;
+     }
+
      .price-breakdown {
          background: #f8f9fa;
          border: 1px solid #e9ecef;
@@ -1799,6 +1973,12 @@
     private string currentUserRole = "";
     private string searchQuery = "";
     private string expiredSearchQuery = "";
+    
+    // Pagination variables
+    private int currentActivePage = 1;
+    private int currentInactivePage = 1;
+    private const int itemsPerPage = 10;
+    
     private bool showModal = false;
     private bool isEditMode = false;
     private bool showValidationError = false;
@@ -1856,6 +2036,19 @@
     private bool showVerifyRenewalPaymentButton = false;
     private System.Threading.Timer? renewalPaymentCheckTimer = null;
 
+    // Pagination computed properties
+    private List<Member> paginatedActiveMembers => 
+        filteredMembers.Skip((currentActivePage - 1) * itemsPerPage).Take(itemsPerPage).ToList();
+
+    private List<Member> paginatedInactiveMembers => 
+        expiredInactiveMembers.Skip((currentInactivePage - 1) * itemsPerPage).Take(itemsPerPage).ToList();
+
+    private int totalActivePages => 
+        filteredMembers.Count == 0 ? 1 : (int)Math.Ceiling((double)filteredMembers.Count / itemsPerPage);
+
+    private int totalInactivePages => 
+        expiredInactiveMembers.Count == 0 ? 1 : (int)Math.Ceiling((double)expiredInactiveMembers.Count / itemsPerPage);
+
     protected override async Task OnInitializedAsync()
     {
         // Get current user role for edit permissions
@@ -1876,7 +2069,7 @@
             var today = DateTime.Today;
             activePromotions = await Context.Promotions
                 .AsNoTracking()
-                .Where(p => p.EndDate >= today)
+                .Where(p => p.EndDate >= today && !p.IsArchived)
                 .OrderByDescending(p => p.DiscountRate)
                 .ThenByDescending(p => p.StartDate)
                 .ToListAsync();
@@ -2136,8 +2329,121 @@
         return string.Join(" ", parts);
     }
 
+    // Pagination methods for Active Members
+    private void GoToActivePage(int page)
+    {
+        if (page >= 1 && page <= totalActivePages)
+        {
+            currentActivePage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void PreviousActivePage()
+    {
+        if (currentActivePage > 1)
+        {
+            currentActivePage--;
+            StateHasChanged();
+        }
+    }
+
+    private void NextActivePage()
+    {
+        if (currentActivePage < totalActivePages)
+        {
+            currentActivePage++;
+            StateHasChanged();
+        }
+    }
+
+    // Pagination methods for Inactive Members
+    private void GoToInactivePage(int page)
+    {
+        if (page >= 1 && page <= totalInactivePages)
+        {
+            currentInactivePage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void PreviousInactivePage()
+    {
+        if (currentInactivePage > 1)
+        {
+            currentInactivePage--;
+            StateHasChanged();
+        }
+    }
+
+    private void NextInactivePage()
+    {
+        if (currentInactivePage < totalInactivePages)
+        {
+            currentInactivePage++;
+            StateHasChanged();
+        }
+    }
+
+    // Helper method to get page numbers to display
+    private List<int> GetPageNumbers(int currentPage, int totalPages)
+    {
+        var pages = new List<int>();
+        int maxPagesToShow = 7;
+        
+        if (totalPages <= maxPagesToShow)
+        {
+            // Show all pages if total is less than max
+            for (int i = 1; i <= totalPages; i++)
+            {
+                pages.Add(i);
+            }
+        }
+        else
+        {
+            // Show pages with ellipsis
+            if (currentPage <= 4)
+            {
+                // Show first 5 pages, ellipsis, last page
+                for (int i = 1; i <= 5; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+            else if (currentPage >= totalPages - 3)
+            {
+                // Show first page, ellipsis, last 5 pages
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = totalPages - 4; i <= totalPages; i++)
+                {
+                    pages.Add(i);
+                }
+            }
+            else
+            {
+                // Show first page, ellipsis, current-1, current, current+1, ellipsis, last page
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = currentPage - 1; i <= currentPage + 1; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+        }
+        
+        return pages;
+    }
+
     private void HandleSearch()
     {
+        // Reset pagination to first page when search changes
+        currentActivePage = 1;
+        
         var today = DateTime.Today;
         
         // First, get only ACTIVE members (not expired) for the active table search
@@ -2192,6 +2498,9 @@
 
     private void FilterExpiredMembers()
     {
+        // Reset pagination to first page when search changes
+        currentInactivePage = 1;
+        
         var today = DateTime.Today;
         var baseQuery = members.Where(m =>
             m.Status == "Inactive" ||
@@ -2324,28 +2633,47 @@
     private async Task EditMember(Member member)
     {
         isEditMode = true;
+        
+        // Load full member data including StudentIDImage and MembershipType
+        var fullMember = await Context.Members
+            .Include(m => m.MembershipType)
+            .FirstOrDefaultAsync(m => m.MemberID == member.MemberID);
+        
+        if (fullMember == null)
+        {
+            ToastService.ShowError("Member not found");
+            return;
+        }
+        
         currentMember = new Member
         {
-            MemberID = member.MemberID,
-            FirstName = member.FirstName,
-            MiddleInitial = member.MiddleInitial,
-            LastName = member.LastName,
-            ContactNumber = member.ContactNumber,
-            Email = member.Email,
-            Address = member.Address,
-            JoinDate = member.JoinDate,
-            ExpirationDate = member.ExpirationDate,
-            Status = member.Status,
-            MembershipTypeID = member.MembershipTypeID,
-            TrainerID = member.TrainerID,
-            TrainerScheduleID = member.TrainerScheduleID,
-            LeadSource = member.LeadSource
+            MemberID = fullMember.MemberID,
+            FirstName = fullMember.FirstName,
+            MiddleInitial = fullMember.MiddleInitial,
+            LastName = fullMember.LastName,
+            ContactNumber = fullMember.ContactNumber,
+            Email = fullMember.Email,
+            Address = fullMember.Address,
+            JoinDate = fullMember.JoinDate,
+            ExpirationDate = fullMember.ExpirationDate,
+            Status = fullMember.Status,
+            MembershipTypeID = fullMember.MembershipTypeID,
+            TrainerID = fullMember.TrainerID,
+            TrainerScheduleID = fullMember.TrainerScheduleID,
+            LeadSource = fullMember.LeadSource,
+            StudentIDImage = fullMember.StudentIDImage,
+            MembershipType = fullMember.MembershipType
         };
         showValidationError = false;
         validationErrors.Clear();
 
-        await GenerateQrCodeForMember();
-        selectedTrainerScheduleId = member.TrainerScheduleID ?? 0;
+        // Only generate QR code if not a student member with ID
+        if (!IsStudentMemberWithID())
+        {
+            await GenerateQrCodeForMember();
+        }
+        
+        selectedTrainerScheduleId = fullMember.TrainerScheduleID ?? 0;
         await LoadTrainersFromDatabase(currentMember.TrainerID);
         await LoadTrainerSchedules(selectedTrainerScheduleId == 0 ? null : selectedTrainerScheduleId);
         isInitializingTrainerSelection = true;
@@ -2353,6 +2681,17 @@
         isInitializingTrainerSelection = false;
         showModal = true;
         StateHasChanged();
+    }
+
+    private bool IsStudentMemberWithID()
+    {
+        if (currentMember?.MembershipType == null)
+            return false;
+        
+        var isStudent = currentMember.MembershipType.TypeName.ToLowerInvariant().Contains("student");
+        var hasStudentID = currentMember.StudentIDImage != null && currentMember.StudentIDImage.Length > 0;
+        
+        return isStudent && hasStudentID;
     }
 
     private async void ShowQrCode(Member member)
@@ -2405,6 +2744,11 @@
                 Context.Members.Update(selectedMember);
                 await UpdateTrainerScheduleAvailability(previousScheduleId, null);
                 await Context.SaveChangesAsync();
+                
+                // Log audit action
+                var memberName = $"{selectedMember.FirstName} {selectedMember.LastName}";
+                await LogAuditAction("Member Archived", "Member", selectedMember.MemberID, memberName, $"Archived member: {memberName}");
+                
                 await LoadMembersFromDatabase();
                 await LoadTrainersFromDatabase();
                 CloseArchiveConfirmation();
@@ -2603,6 +2947,11 @@
 
                     await Context.SaveChangesAsync();
                     await Task.Delay(100); // Small delay to ensure UI is ready
+                    
+                    // Log audit action
+                    var memberName = $"{existingMember.FirstName} {existingMember.LastName}";
+                    await LogAuditAction("Member Updated", "Member", existingMember.MemberID, memberName, $"Updated member: {memberName}");
+                    
                     ToastService.ShowSuccess("Updated successfully");
                     await LoadMembersFromDatabase();
                     CloseModal();
@@ -2634,6 +2983,11 @@
                 await Context.SaveChangesAsync();
 
                 currentMember.MemberID = newMember.MemberID;
+                
+                // Log audit action
+                var memberName = $"{newMember.FirstName} {newMember.LastName}";
+                await LogAuditAction("Member Created", "Member", newMember.MemberID, memberName, $"Created new member: {memberName}");
+                
                 await GenerateQrCodeForMember();
                 await Task.Delay(100); // Small delay to ensure UI is ready
                 ToastService.ShowSuccess("Added successfully");
@@ -3434,4 +3788,58 @@
             StateHasChanged();
         }
     }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userId = await AuthService.GetCurrentUserId();
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
+    }
 }
+
+<style>
+    /* Student ID Image Styles */
+    .student-id-image {
+        max-width: 100%;
+        max-height: 400px;
+        border-radius: 8px;
+        border: 2px solid #e0e0e0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        object-fit: contain;
+        background: #f9f9f9;
+        padding: 10px;
+    }
+
+    .no-student-id {
+        padding: 40px 20px;
+        text-align: center;
+        color: #999;
+        font-style: italic;
+        background: #f9f9f9;
+        border-radius: 8px;
+        border: 2px dashed #ddd;
+    }
+</style>

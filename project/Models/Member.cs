@@ -41,6 +41,9 @@ namespace project.Models
         // Lead Source - tracks how member discovered the gym
         public string? LeadSource { get; set; }  // Facebook, Instagram, Referral, Walk-in, Promotion, Google, Website, Other
 
+        // Student ID Image - for student membership verification
+        public byte[]? StudentIDImage { get; set; }
+
         // Foreign Keys
         public int MembershipTypeID { get; set; }
         public int? TrainerID { get; set; }

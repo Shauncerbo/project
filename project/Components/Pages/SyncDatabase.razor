@@ -23,16 +23,6 @@
                 <div class="timer-label">Next Auto Sync</div>
                 <div class="timer-value">@FormatTimeRemaining(timeRemaining)</div>
             </div>
-            <div class="timer-status">
-                @if (isAutoSyncEnabled)
-                {
-                    <span class="status-badge status-active">Auto Sync: ON</span>
-                }
-                else
-                {
-                    <span class="status-badge status-inactive">Auto Sync: OFF</span>
-                }
-            </div>
         </div>
     </div>
 
@@ -178,13 +168,20 @@
             <div class="modal-body">
                 <div class="confirmation-content text-only">
                     <h3>Database Synchronization</h3>
-                    <p>This will synchronize data between local and online databases.</p>
+                    @if (syncDirection == "online-to-local")
+                    {
+                        <p>This will download data from the online database to your local database.</p>
+                    }
+                    else
+                    {
+                        <p>This will synchronize data between local and online databases.</p>
+                    }
                     <p class="confirmation-warning">This process may take a few minutes. Continue?</p>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-cancel" @onclick="CloseSyncConfirmation">Cancel</button>
-                <button class="btn btn-primary" @onclick="ConfirmSync" disabled="@isSyncing">
+                <button class="btn btn-primary btn-sync-confirm" @onclick="@(syncDirection == "online-to-local" ? ConfirmOnlineToLocalSync : ConfirmSync)" disabled="@isSyncing">
                     @(isSyncing ? "Syncing..." : "Yes, Sync Now")
                 </button>
             </div>
@@ -232,10 +229,11 @@
         background: white;
         border-radius: 12px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        padding: 20px;
+        padding: 25px;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 15px;
+        min-height: 100px;
     }
 
     .info-icon {
@@ -251,6 +249,9 @@
 
     .info-content {
         flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
     }
 
     .info-label {
@@ -258,13 +259,15 @@
         color: #999;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        margin-bottom: 4px;
+        margin-bottom: 8px;
+        font-weight: 500;
     }
 
     .info-value {
-        font-size: 24px;
+        font-size: 32px;
         font-weight: 700;
         color: #234060;
+        line-height: 1.2;
     }
 
     /* Main Sync Card */
@@ -743,6 +746,14 @@
         cursor: not-allowed;
     }
 
+    .btn-sync-confirm {
+        background: #0066cc !important;
+    }
+
+    .btn-sync-confirm:hover:not([disabled]) {
+        background: #0052a3 !important;
+    }
+
     @@keyframes fadeIn {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
@@ -967,11 +978,19 @@
         }
     }
 
-    private async Task PerformOnlineToLocalSync()
+    private void PerformOnlineToLocalSync()
+    {
+        showSyncConfirmation = true;
+        syncDirection = "online-to-local";
+        StateHasChanged();
+    }
+
+    private async Task ConfirmOnlineToLocalSync()
     {
         if (isSyncing)
             return;
 
+        showSyncConfirmation = false;
         isSyncing = true;
         syncDirection = "online-to-local";
         syncResult = null;

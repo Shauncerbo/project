@@ -220,22 +220,34 @@
                         </div>
                     </div>
 
-                    <!-- Growth Trend Report -->
+                    <!-- ROI Trend Report -->
                     <div class="report-card full-width">
-                        <h3>Growth Trend Report</h3>
+                        <h3>ROI Trend Report</h3>
                         <div class="report-content">
-                            <div class="growth-grid">
-                                <div class="growth-item">
-                                    <div class="growth-label">Revenue Growth</div>
-                                    <div class="growth-value @(revenueGrowthPercent >= 0 ? "success" : "danger")">
-                                        @(revenueGrowthPercent >= 0 ? "+" : "")@(revenueGrowthPercent.ToString("F1"))%
+                            @if (roiLabels.Any())
+                            {
+                                <div class="chart-container" style="position: relative; height: 350px; margin-bottom: 20px;">
+                                    <canvas id="roiChart"></canvas>
+                                </div>
+                                <div class="roi-summary">
+                                    <div class="roi-summary-item">
+                                        <span>Current ROI:</span>
+                                        <span class="@(roiData.Any() && roiData.Last() >= 0 ? "success" : "danger")">
+                                            @(roiData.Any() ? roiData.Last().ToString("F1") : "0.0")%
+                                        </span>
                                     </div>
-                                    <div class="growth-detail">
-                                        <span>Current: ₱@(currentPeriodRevenue.ToString("N2"))</span>
-                                        <span>Previous: ₱@(previousPeriodRevenue.ToString("N2"))</span>
+                                    <div class="roi-summary-item">
+                                        <span>Average ROI:</span>
+                                        <span class="@(roiData.Any() && roiData.Average() >= 0 ? "success" : "danger")">
+                                            @(roiData.Any() ? roiData.Average().ToString("F1") : "0.0")%
+                                        </span>
                                     </div>
                                 </div>
-                            </div>
+                            }
+                            else
+                            {
+                                <div class="no-data">No ROI data available for the selected period</div>
+                            }
                         </div>
                     </div>
 
@@ -255,13 +267,13 @@
                                     </select>
                                     @if (incomeReportPeriod == "custom")
                                     {
-                                        <input type="date" @bind="incomeReportStartDate" @bind:after="OnIncomeReportPeriodChanged" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" />
+                                        <input type="date" @bind="incomeReportStartDate" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" />
                                         <span style="color: #666;">to</span>
-                                        <input type="date" @bind="incomeReportEndDate" @bind:after="OnIncomeReportPeriodChanged" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" />
+                                        <input type="date" @bind="incomeReportEndDate" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" />
+                                        <button @onclick="RefreshIncomeReport" style="padding: 8px 16px; background: #234060; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+                                            Apply Filter
+                                        </button>
                                     }
-                                    <button @onclick="RefreshIncomeReport" style="padding: 8px 16px; background: #234060; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
-                                        Apply Filter
-                                    </button>
                                 </div>
                             </div>
                             <div style="display: flex; gap: 20px; margin-bottom: 20px;">
@@ -656,11 +668,11 @@
     }
 
     .print-btn {
-        background: #27ae60;
+        background: #0066cc;
     }
 
     .print-btn:hover {
-        background: #229954;
+        background: #0052a3;
     }
 
     .print-header {
@@ -1093,8 +1105,7 @@
     }
 
     .performance-indicator.success {
-        background: transparent;
-        color: #000000;
+        color: #2e7d32;
     }
 
     .performance-indicator.danger {
@@ -1234,6 +1245,37 @@
         color: #000000;
     }
 
+    .chart-container {
+        margin: 20px 0;
+    }
+
+    .roi-summary {
+        display: flex;
+        gap: 30px;
+        margin-top: 20px;
+        padding: 15px;
+        background: #f8fafc;
+        border-radius: 8px;
+        border: 1px solid #e1e8ed;
+    }
+
+    .roi-summary-item {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .roi-summary-item span:first-child {
+        font-size: 0.9rem;
+        color: #666;
+        font-weight: 500;
+    }
+
+    .roi-summary-item span:last-child {
+        font-size: 1.3rem;
+        font-weight: 700;
+    }
+
     .reports-table-wrapper {
         overflow-x: auto;
         margin-top: 8px;
@@ -1318,6 +1360,11 @@
     private List<PeriodIncome> dailyIncome = new();
     private List<PeriodIncome> weeklyIncome = new();
     private List<PeriodIncome> monthlyIncome = new();
+
+    // ROI Trend Variables
+    private List<string> roiLabels = new();
+    private List<double> roiData = new();
+    private bool roiChartInitialized = false;
 
     // Financial Statement Variables
     private decimal totalEquipmentValue = 0;
@@ -1415,7 +1462,7 @@
             await LoadRevenueByMembershipType(startDate, endDate);
             await LoadRevenueBySource(startDate, endDate);
             await LoadBusinessPerformanceOverview(startDate, endDate);
-            await LoadGrowthTrendReport(startDate, endDate);
+            await LoadROITrendData(startDate, endDate);
             await LoadKPITrendChart(startDate, endDate);
             await LoadCustomerLifetimeValue();
             await LoadMarketingROI(startDate, endDate);
@@ -1534,29 +1581,114 @@
         revenueDirection = revenueChangePercent > 5 ? "Growing" : revenueChangePercent < -5 ? "Declining" : "Stable";
     }
 
-    private async Task LoadGrowthTrendReport(DateTime startDate, DateTime endDate)
+    private async Task LoadROITrendData(DateTime startDate, DateTime endDate)
     {
-        var periodLength = (endDate - startDate).TotalDays;
-        var previousStartDate = startDate.AddDays(-periodLength - 1);
-        var previousEndDate = startDate.AddSeconds(-1);
+        try
+        {
+            roiLabels.Clear();
+            roiData.Clear();
 
-        var currentRevenue = await Context.Payments
-            .Where(p => p.PaymentDate >= startDate && p.PaymentDate <= endDate)
-            .SumAsync(p => p.Amount);
-        currentRevenue += await Context.WalkIns
-            .Where(w => w.VisitDate >= startDate && w.VisitDate <= endDate && !w.IsArchived)
-            .SumAsync(w => w.PaymentAmount);
+            // Determine number of periods based on date range
+            var totalDays = (endDate - startDate).TotalDays;
+            int numberOfPeriods;
+            string periodFormat;
 
-        var previousRevenue = await Context.Payments
-            .Where(p => p.PaymentDate >= previousStartDate && p.PaymentDate <= previousEndDate)
-            .SumAsync(p => p.Amount);
-        previousRevenue += await Context.WalkIns
-            .Where(w => w.VisitDate >= previousStartDate && w.VisitDate <= previousEndDate && !w.IsArchived)
-            .SumAsync(w => w.PaymentAmount);
+            if (totalDays <= 7)
+            {
+                // Daily periods for week or less
+                numberOfPeriods = (int)totalDays;
+                periodFormat = "MMM dd";
+            }
+            else if (totalDays <= 90)
+            {
+                // Weekly periods for up to 3 months
+                numberOfPeriods = Math.Min(12, (int)(totalDays / 7));
+                periodFormat = "MMM dd";
+            }
+            else
+            {
+                // Monthly periods for longer ranges
+                numberOfPeriods = Math.Min(12, (int)(totalDays / 30));
+                periodFormat = "MMM yyyy";
+            }
 
-        revenueGrowthPercent = previousRevenue > 0 
-            ? (double)((currentRevenue - previousRevenue) / previousRevenue) * 100 
-            : (currentRevenue > 0 ? 100 : 0);
+            // Get all-time investments (Owner's Capital + Equipment) - these are cumulative
+            var allCapitals = await Context.Capitals.AsNoTracking().ToListAsync();
+            var allInvestments = await Context.Investments.AsNoTracking().ToListAsync();
+            var totalInvestment = allCapitals.Sum(c => c.Amount) + allInvestments.Sum(i => i.Price * i.Quantity);
+
+            // Calculate ROI for each period
+            for (int i = 0; i < numberOfPeriods; i++)
+            {
+                DateTime periodStart, periodEnd;
+                string periodLabel;
+
+                if (totalDays <= 7)
+                {
+                    // Daily
+                    periodStart = startDate.AddDays(i);
+                    periodEnd = periodStart.AddDays(1).AddSeconds(-1);
+                    periodLabel = periodStart.ToString(periodFormat);
+                }
+                else if (totalDays <= 90)
+                {
+                    // Weekly
+                    var weekStart = startDate.AddDays(i * 7);
+                    periodStart = weekStart;
+                    periodEnd = weekStart.AddDays(7).AddSeconds(-1);
+                    if (periodEnd > endDate) periodEnd = endDate;
+                    periodLabel = $"{periodStart.ToString(periodFormat)} - {periodEnd.ToString(periodFormat)}";
+                }
+                else
+                {
+                    // Monthly
+                    periodStart = startDate.AddMonths(i);
+                    periodEnd = periodStart.AddMonths(1).AddSeconds(-1);
+                    if (periodEnd > endDate) periodEnd = endDate;
+                    periodLabel = periodStart.ToString(periodFormat);
+                }
+
+                // Calculate revenue for this period
+                var periodRevenue = await Context.Payments
+                    .Where(p => p.PaymentDate >= periodStart && p.PaymentDate <= periodEnd)
+                    .SumAsync(p => p.Amount);
+                periodRevenue += await Context.WalkIns
+                    .Where(w => w.VisitDate >= periodStart && w.VisitDate <= periodEnd && !w.IsArchived)
+                    .SumAsync(w => w.PaymentAmount);
+
+                // Calculate ROI: ((Revenue - Investment) / Investment) * 100
+                // For each period, we use cumulative investment (all-time) vs period revenue
+                // This shows how each period's revenue contributes to overall ROI
+                double periodROI = 0;
+                if (totalInvestment > 0)
+                {
+                    // ROI for this period relative to total investment
+                    periodROI = (double)((periodRevenue / totalInvestment) * 100);
+                }
+                else if (periodRevenue > 0)
+                {
+                    // If no investment yet, ROI is infinite/undefined, set to 0 or a high value
+                    periodROI = 0;
+                }
+
+                roiLabels.Add(periodLabel);
+                roiData.Add(periodROI);
+            }
+
+            // Reset chart initialization flag so chart will be re-initialized
+            roiChartInitialized = false;
+            StateHasChanged();
+            
+            // Initialize chart after a short delay to ensure DOM is updated
+            await Task.Delay(200);
+            await InitializeROIChart();
+        }
+        catch (Exception ex)
+        {
+            roiLabels.Clear();
+            roiData.Clear();
+            System.Diagnostics.Debug.WriteLine($"Error loading ROI trend data: {ex.Message}");
+        }
     }
 
     private async Task LoadKPITrendChart(DateTime startDate, DateTime endDate)
@@ -1688,80 +1820,50 @@
 
         dailyIncome = dailyPayments
             .GroupBy(p => p.PaymentDate.Date)
+            .Select(g => new { Date = g.Key, Amount = g.Sum(p => p.Amount), Count = g.Count() })
+            .Concat(dailyWalkIns
+                .GroupBy(w => w.VisitDate.Date)
+                .Select(g => new { Date = g.Key, Amount = g.Sum(w => w.PaymentAmount), Count = g.Count() }))
+            .GroupBy(x => x.Date)
             .Select(g => new PeriodIncome
             {
                 Period = g.Key.ToString("MMM dd, yyyy"),
-                Amount = g.Sum(p => p.Amount),
-                PaymentCount = g.Count()
+                Amount = g.Sum(x => x.Amount),
+                PaymentCount = g.Sum(x => x.Count)
             })
-            .Concat(dailyWalkIns
-                .GroupBy(w => w.VisitDate.Date)
-                .Select(g => new PeriodIncome
-                {
-                    Period = g.Key.ToString("MMM dd, yyyy"),
-                    Amount = g.Sum(w => w.PaymentAmount),
-                    PaymentCount = g.Count()
-                }))
-            .GroupBy(p => p.Period)
-            .Select(g => new PeriodIncome
-            {
-                Period = g.Key,
-                Amount = g.Sum(p => p.Amount),
-                PaymentCount = g.Sum(p => p.PaymentCount)
-            })
-            .OrderBy(p => p.Period)
+            .OrderByDescending(p => DateTime.ParseExact(p.Period, "MMM dd, yyyy", System.Globalization.CultureInfo.InvariantCulture))
             .ToList();
 
         weeklyIncome = dailyPayments
             .GroupBy(p => GetWeekOfYear(p.PaymentDate))
+            .Select(g => new { Week = g.Key, Amount = g.Sum(p => p.Amount), Count = g.Count() })
+            .Concat(dailyWalkIns
+                .GroupBy(w => GetWeekOfYear(w.VisitDate))
+                .Select(g => new { Week = g.Key, Amount = g.Sum(w => w.PaymentAmount), Count = g.Count() }))
+            .GroupBy(x => x.Week)
             .Select(g => new PeriodIncome
             {
                 Period = $"Week {g.Key}",
-                Amount = g.Sum(p => p.Amount),
-                PaymentCount = g.Count()
+                Amount = g.Sum(x => x.Amount),
+                PaymentCount = g.Sum(x => x.Count)
             })
-            .Concat(dailyWalkIns
-                .GroupBy(w => GetWeekOfYear(w.VisitDate))
-                .Select(g => new PeriodIncome
-                {
-                    Period = $"Week {g.Key}",
-                    Amount = g.Sum(w => w.PaymentAmount),
-                    PaymentCount = g.Count()
-                }))
-            .GroupBy(p => p.Period)
-            .Select(g => new PeriodIncome
-            {
-                Period = g.Key,
-                Amount = g.Sum(p => p.Amount),
-                PaymentCount = g.Sum(p => p.PaymentCount)
-            })
-            .OrderBy(p => p.Period)
+            .OrderByDescending(p => int.Parse(p.Period.Replace("Week ", "")))
             .ToList();
 
         monthlyIncome = dailyPayments
             .GroupBy(p => new { p.PaymentDate.Year, p.PaymentDate.Month })
-            .Select(g => new PeriodIncome
-            {
-                Period = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMM yyyy"),
-                Amount = g.Sum(p => p.Amount),
-                PaymentCount = g.Count()
-            })
+            .Select(g => new { Date = new DateTime(g.Key.Year, g.Key.Month, 1), Amount = g.Sum(p => p.Amount), Count = g.Count() })
             .Concat(dailyWalkIns
                 .GroupBy(w => new { w.VisitDate.Year, w.VisitDate.Month })
-                .Select(g => new PeriodIncome
-                {
-                    Period = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMM yyyy"),
-                    Amount = g.Sum(w => w.PaymentAmount),
-                    PaymentCount = g.Count()
-                }))
-            .GroupBy(p => p.Period)
+                .Select(g => new { Date = new DateTime(g.Key.Year, g.Key.Month, 1), Amount = g.Sum(w => w.PaymentAmount), Count = g.Count() }))
+            .GroupBy(x => x.Date)
             .Select(g => new PeriodIncome
             {
-                Period = g.Key,
-                Amount = g.Sum(p => p.Amount),
-                PaymentCount = g.Sum(p => p.PaymentCount)
+                Period = g.Key.ToString("MMM yyyy"),
+                Amount = g.Sum(x => x.Amount),
+                PaymentCount = g.Sum(x => x.Count)
             })
-            .OrderBy(p => p.Period)
+            .OrderByDescending(p => DateTime.ParseExact(p.Period, "MMM yyyy", System.Globalization.CultureInfo.InvariantCulture))
             .ToList();
     }
 
@@ -1841,6 +1943,52 @@
         catch (Exception ex)
         {
             await JSRuntime.InvokeVoidAsync("alert", $"Error printing: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Wait a bit longer on first render for Chart.js to be fully loaded
+            await Task.Delay(500);
+        }
+        
+        if (roiLabels.Any() && roiData.Any() && !roiChartInitialized)
+        {
+            await InitializeROIChart();
+        }
+        
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task InitializeROIChart()
+    {
+        if (!roiLabels.Any() || !roiData.Any())
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(300); // Small delay to ensure DOM is ready
+            await JSRuntime.InvokeVoidAsync("initROIChart", roiLabels.ToArray(), roiData.ToArray());
+            roiChartInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error initializing ROI chart: {ex.Message}");
+            // Try alternative method
+            try
+            {
+                await Task.Delay(200);
+                await JSRuntime.InvokeVoidAsync("dashboardCharts.initROIChart", roiLabels.ToArray(), roiData.ToArray());
+                roiChartInitialized = true;
+            }
+            catch (Exception ex2)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error with alternative method: {ex2.Message}");
+            }
         }
     }
 }

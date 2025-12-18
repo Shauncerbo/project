@@ -11,10 +11,12 @@ namespace project.Services
     public class AttendanceService : IAttendanceService
     {
         private readonly AppDbContext _context;
+        private readonly IAuthService? _authService;
 
-        public AttendanceService(AppDbContext context)
+        public AttendanceService(AppDbContext context, IAuthService? authService = null)
         {
             _context = context;
+            _authService = authService;
         }
 
         public async Task<bool> CheckInMemberAsync(int memberId)
@@ -50,6 +52,10 @@ namespace project.Services
 
                 _context.Attendances.Add(attendance);
                 await _context.SaveChangesAsync();
+                
+                // Log audit action
+                await LogAuditActionAsync("Member Checked In", "Attendance", attendance.AttendanceID, member.FirstName + " " + member.LastName, $"Member {member.FirstName} {member.LastName} checked in");
+                
                 return true;
             }
             catch (Exception ex)
@@ -192,6 +198,39 @@ namespace project.Services
                 return false;
 
             return true;
+        }
+
+        private async Task LogAuditActionAsync(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+        {
+            try
+            {
+                if (_authService == null)
+                    return; // Skip logging if auth service not available
+
+                var username = await _authService.GetCurrentUsername();
+                var userId = await _authService.GetCurrentUserId();
+
+                var auditLog = new AuditLog
+                {
+                    Action = action,
+                    EntityType = entityType,
+                    EntityID = entityID,
+                    EntityName = entityName,
+                    PerformedBy = username,
+                    PerformedByUserID = userId,
+                    Description = description,
+                    Timestamp = DateTime.Now,
+                    Status = status,
+                    ErrorMessage = errorMessage
+                };
+
+                _context.AuditLogs.Add(auditLog);
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+            }
         }
 
     }

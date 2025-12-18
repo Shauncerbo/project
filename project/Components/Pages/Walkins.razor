@@ -7,6 +7,8 @@
 @inject IDbContextFactory<AppDbContext> DbContextFactory
 @inject IToastService ToastService
 @inject IPayMongoService PayMongoService
+@inject NavigationManager NavigationManager
+@inject IAuthService AuthService
 @using project.Models
 @using project.Data
 @using Microsoft.EntityFrameworkCore
@@ -47,13 +49,14 @@
                     <th>PAYMENT AMOUNT</th>
                     <th>PAYMENT METHOD</th>
                     <th>TRAINER</th>
+                    <th class="actions-header">ACTIONS</th>
                 </tr>
             </thead>
             <tbody>
                 @if (filteredWalkins == null || !filteredWalkins.Any())
                 {
                     <tr>
-                        <td colspan="5" class="no-data">
+                        <td colspan="6" class="no-data">
                             <div class="no-data-content">
                                 <span class="no-data-icon">🚶‍♂️</span>
                                 <p>No walk-in customers found</p>
@@ -64,7 +67,7 @@
                 }
                 else
                 {
-                    @foreach (var walkin in filteredWalkins)
+                    @foreach (var walkin in PaginatedWalkins)
                     {
                         <tr>
                             <td>
@@ -101,12 +104,54 @@
                                     }
                                 </div>
                             </td>
-
+                            <td class="actions-cell">
+                                <div class="action-buttons">
+                                    <button class="action-btn convert-btn" @onclick="() => ConvertToMember(walkin)" title="Convert to Member">
+                                        <img src="/convert_icon.svg" class="action-icon" alt="Convert to Member" />
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
                     }
                 }
             </tbody>
         </table>
+        
+        <!-- Pagination Controls for Walk-ins -->
+        @if (filteredWalkins != null && filteredWalkins.Any() && TotalPages > 1)
+        {
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Showing @((currentPage - 1) * itemsPerPage + 1) - @(Math.Min(currentPage * itemsPerPage, filteredWalkins.Count)) of @filteredWalkins.Count
+                </div>
+                <div class="pagination-controls">
+                    <button class="pagination-btn" 
+                            @onclick="PreviousPage" 
+                            disabled="@(currentPage == 1)">
+                        Previous
+                    </button>
+                    @foreach (var pageNum in GetPageNumbers(currentPage, TotalPages))
+                    {
+                        @if (pageNum == -1)
+                        {
+                            <span class="pagination-ellipsis">...</span>
+                        }
+                        else
+                        {
+                            <button class="pagination-btn @(pageNum == currentPage ? "active" : "")" 
+                                    @onclick="() => GoToPage(pageNum)">
+                                @pageNum
+                            </button>
+                        }
+                    }
+                    <button class="pagination-btn" 
+                            @onclick="NextPage" 
+                            disabled="@(currentPage == TotalPages)">
+                        Next
+                    </button>
+                </div>
+            </div>
+        }
     </div>
 
     <!-- Add/Edit Walk-in Modal -->
@@ -208,7 +253,7 @@
                         <div class="select-wrapper">
                             <select class="form-control select-dropdown @(validationErrors.ContainsKey("PaymentMethod") ? "error" : "")" @bind="currentWalkin.PaymentMethod" @bind:after="OnPaymentMethodChanged">
                                 <option value="Cash">Cash</option>
-                                <option value="PayMongo">Pay Online (PayMongo)</option>
+                                <option value="PayMongo">PayMongo</option>
                             </select>
                             <span class="dropdown-arrow">▼</span>
                         </div>
@@ -275,25 +320,6 @@
                             }
                         </div>
                     }
-
-                    <!-- Lead Source -->
-                    <div class="form-group">
-                        <label>How did you hear about us?</label>
-                        <div class="select-wrapper">
-                            <select class="form-control select-dropdown" @bind="currentWalkin.LeadSource">
-                                <option value="">Select source (optional)</option>
-                                <option value="Facebook">Facebook</option>
-                                <option value="Instagram">Instagram</option>
-                                <option value="Referral">Referral (Friend/Family)</option>
-                                <option value="Walk-in">Walk-in / Passed by</option>
-                                <option value="Promotion">Promotion / Discount</option>
-                                <option value="Google">Google Search</option>
-                                <option value="Website">Website</option>
-                                <option value="Other">Other</option>
-                            </select>
-                            <span class="dropdown-arrow">▼</span>
-                        </div>
-                    </div>
 
                     <!-- General error message -->
                     @if (validationErrors.ContainsKey("General"))
@@ -376,12 +402,12 @@
 
         .search-bar:focus {
             outline: none;
-            border-color: #5cb85c;
-            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
         }
 
     .add-member-btn {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
         border: none;
         padding: 10px 20px;
@@ -393,9 +419,9 @@
     }
 
         .add-member-btn:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     .select-wrapper {
@@ -484,10 +510,18 @@
             border-bottom: 2px solid #1a3450;
         }
 
+        .members-table th.actions-header {
+            text-align: center;
+        }
+
         .members-table td {
             padding: 16px;
             border-bottom: 1px solid #f0f0f0;
             color: #333;
+        }
+
+        .members-table td.actions-cell {
+            text-align: center;
         }
 
         .members-table tbody tr {
@@ -567,6 +601,21 @@
     .action-buttons {
         display: flex;
         gap: 8px;
+        align-items: center;
+    }
+
+    .convert-btn {
+        background: transparent;
+        color: #3498db;
+    }
+
+    .convert-btn:hover {
+        background: transparent;
+        transform: scale(1.1);
+    }
+
+    .convert-btn:hover .action-icon {
+        opacity: 0.8;
     }
 
     .action-btn {
@@ -587,6 +636,13 @@
         width: 18px;
         height: 18px;
         transition: all 0.2s;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
     }
 
     .edit-btn {
@@ -851,14 +907,14 @@
         }
 
     .btn-save {
-        background: #5cb85c;
+        background: #3498db;
         color: white;
     }
 
         .btn-save:hover {
-            background: #4cae4c;
+            background: #2980b9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 184, 92, 0.3);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
         }
 
     .btn-verify {
@@ -971,6 +1027,63 @@
         margin-top: 12px;
     }
 
+    /* Pagination Styles */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        border-top: 1px solid #f0f0f0;
+        background: white;
+    }
+
+    .pagination-info {
+        color: #666;
+        font-size: 14px;
+    }
+
+    .pagination-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .pagination-btn {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        background: white;
+        color: #333;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s;
+        min-width: 40px;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+        background: #f8f9fa;
+        border-color: #3498db;
+        color: #3498db;
+    }
+
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .pagination-btn.active {
+        background: #3498db;
+        color: white;
+        border-color: #3498db;
+    }
+
+    .pagination-ellipsis {
+        padding: 8px 4px;
+        color: #999;
+        font-size: 14px;
+    }
+
     /* Responsive design for smaller screens */
     @@media (max-width: 768px) {
         .action-buttons {
@@ -987,11 +1100,21 @@
             width: 16px;
             height: 16px;
         }
+
+        .pagination-container {
+            flex-direction: column;
+            gap: 12px;
+        }
     }
 </style>
 
 @code {
     private string searchQuery = "";
+    
+    // Pagination variables
+    private int currentPage = 1;
+    private const int itemsPerPage = 10;
+    
     private bool showWalkinModal = false;
     private bool isEditMode = false;
     private WalkIn currentWalkin = new WalkIn();
@@ -1012,6 +1135,17 @@
     private bool showVerifyPaymentButton = false;
     private System.Threading.Timer? paymentCheckTimer = null;
 
+    // Pagination computed properties
+    private List<WalkIn> PaginatedWalkins => 
+        filteredWalkins == null || !filteredWalkins.Any() 
+            ? new List<WalkIn>() 
+            : filteredWalkins.Skip((currentPage - 1) * itemsPerPage).Take(itemsPerPage).ToList();
+
+    private int TotalPages => 
+        filteredWalkins == null || filteredWalkins.Count == 0 
+            ? 1 
+            : (int)Math.Ceiling((double)filteredWalkins.Count / itemsPerPage);
+
     protected override async Task OnInitializedAsync()
     {
         await ReleaseCompletedTrainerSchedulesAsync();
@@ -1028,12 +1162,30 @@
         try
         {
             // Use AsNoTracking for read-only query to avoid tracking issues
-            walkins = await Context.WalkIns
+            // Order by VisitDate descending (newest first) so newly added walk-ins appear at the top
+            var allWalkins = await Context.WalkIns
                 .AsNoTracking()
                 .Where(w => w.IsArchived == false)
                 .Include(w => w.Trainer)
                 .Include(w => w.TrainerSchedule)
+                .OrderByDescending(w => w.VisitDate)
+                .ThenByDescending(w => w.WalkInID)
                 .ToListAsync();
+
+            // Remove duplicates: keep the one with the lowest WalkInID for each duplicate group
+            walkins = allWalkins
+                .GroupBy(w => new
+                {
+                    FirstName = w.FirstName?.Trim().ToLower() ?? "",
+                    LastName = w.LastName?.Trim().ToLower() ?? "",
+                    VisitDate = w.VisitDate.Date, // Use date only to catch same-day duplicates
+                    PaymentAmount = w.PaymentAmount
+                })
+                .Select(g => g.OrderBy(w => w.WalkInID).First()) // Keep the oldest (lowest ID)
+                .OrderByDescending(w => w.VisitDate)
+                .ThenByDescending(w => w.WalkInID)
+                .ToList();
+
             filteredWalkins = walkins;
         }
         catch (Exception ex)
@@ -1095,6 +1247,9 @@
 
     private void HandleSearch()
     {
+        // Reset pagination to first page when search changes
+        currentPage = 1;
+        
         if (string.IsNullOrWhiteSpace(searchQuery))
         {
             filteredWalkins = walkins;
@@ -1110,6 +1265,88 @@
                 (w.PaymentMethod?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false)
             ).ToList();
         }
+    }
+
+    // Pagination methods
+    private void GoToPage(int page)
+    {
+        if (page >= 1 && page <= TotalPages)
+        {
+            currentPage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            StateHasChanged();
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < TotalPages)
+        {
+            currentPage++;
+            StateHasChanged();
+        }
+    }
+
+    // Helper method to get page numbers to display
+    private List<int> GetPageNumbers(int currentPage, int totalPages)
+    {
+        var pages = new List<int>();
+        int maxPagesToShow = 7;
+        
+        if (totalPages <= maxPagesToShow)
+        {
+            // Show all pages if total is less than max
+            for (int i = 1; i <= totalPages; i++)
+            {
+                pages.Add(i);
+            }
+        }
+        else
+        {
+            // Show pages with ellipsis
+            if (currentPage <= 4)
+            {
+                // Show first 5 pages, ellipsis, last page
+                for (int i = 1; i <= 5; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+            else if (currentPage >= totalPages - 3)
+            {
+                // Show first page, ellipsis, last 5 pages
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = totalPages - 4; i <= totalPages; i++)
+                {
+                    pages.Add(i);
+                }
+            }
+            else
+            {
+                // Show first page, ellipsis, current-1, current, current+1, ellipsis, last page
+                pages.Add(1);
+                pages.Add(-1); // -1 represents ellipsis
+                for (int i = currentPage - 1; i <= currentPage + 1; i++)
+                {
+                    pages.Add(i);
+                }
+                pages.Add(-1); // -1 represents ellipsis
+                pages.Add(totalPages);
+            }
+        }
+        
+        return pages;
     }
 
     private string GetFullName(WalkIn walkin)
@@ -1249,6 +1486,12 @@
         StateHasChanged();
     }
 
+    private void ConvertToMember(WalkIn walkin)
+    {
+        // Navigate to Payment page with walkInId parameter
+        NavigationManager.NavigateTo($"/payment?walkInId={walkin.WalkInID}");
+    }
+
     private async Task ArchiveWalkin()
     {
         if (selectedWalkin == null)
@@ -1264,6 +1507,11 @@
                 Context.WalkIns.Update(walkinToArchive);
                 await UpdateTrainerScheduleAvailability(previousScheduleId, null);
                 await Context.SaveChangesAsync();
+                
+                // Log audit action
+                var walkinName = $"{walkinToArchive.FirstName} {walkinToArchive.LastName}";
+                await LogAuditAction("Walk-in Archived", "WalkIn", walkinToArchive.WalkInID, walkinName, $"Archived walk-in: {walkinName}");
+                
                 await LoadWalkinsFromDatabase();
                 await LoadTrainersFromDatabase();
                 CloseWalkinArchiveConfirmation();
@@ -1381,6 +1629,10 @@
                     existingWalkin.TrainerScheduleID = currentWalkin.TrainerScheduleID;
                     await UpdateTrainerScheduleAvailability(previousScheduleId, existingWalkin.TrainerScheduleID);
                     Context.WalkIns.Update(existingWalkin);
+                    
+                    // Log audit action
+                    var walkinName = $"{existingWalkin.FirstName} {existingWalkin.LastName}";
+                    await LogAuditAction("Walk-in Updated", "WalkIn", existingWalkin.WalkInID, walkinName, $"Updated walk-in: {walkinName}");
                 }
             }
             else
@@ -1390,6 +1642,20 @@
             }
 
             await Context.SaveChangesAsync();
+            
+            // Log audit action for new walk-in
+            if (!isEditMode)
+            {
+                var walkinName = $"{currentWalkin.FirstName} {currentWalkin.LastName}";
+                await LogAuditAction("Walk-in Created", "WalkIn", currentWalkin.WalkInID, walkinName, $"Created walk-in: {walkinName} - ₱{currentWalkin.PaymentAmount:N2}");
+            }
+            
+            // Reset to first page to show newly added walk-in at the top
+            if (!isEditMode)
+            {
+                currentPage = 1;
+            }
+            
             await LoadWalkinsFromDatabase();
             await LoadTrainersFromDatabase();
             await LoadTrainerSchedules();
@@ -1749,6 +2015,36 @@
         paymentCheckTimer?.Dispose();
         paymentCheckTimer = null;
         StateHasChanged();
+    }
+
+    private async Task LogAuditAction(string action, string entityType, int? entityID, string entityName, string description, string status = "Success", string errorMessage = "")
+    {
+        try
+        {
+            var username = await AuthService.GetCurrentUsername();
+            var userId = await AuthService.GetCurrentUserId();
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityType = entityType,
+                EntityID = entityID,
+                EntityName = entityName,
+                PerformedBy = username,
+                PerformedByUserID = userId,
+                Description = description,
+                Timestamp = DateTime.Now,
+                Status = status,
+                ErrorMessage = errorMessage
+            };
+
+            Context.AuditLogs.Add(auditLog);
+            await Context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error logging audit action: {ex.Message}");
+        }
     }
 }
 

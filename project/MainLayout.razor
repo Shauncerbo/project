@@ -7,10 +7,6 @@
 @inject IAuthService AuthService
 
 <div class="dashboard-container">
-    <!-- Top bar only visible on small screens -->
-    <div class="topbar @(hideSidebar ? "full-width" : "with-sidebar")">
-    </div>
-
     @if (!hideSidebar)
     {
         <!-- Sidebar (responsive) -->
@@ -125,6 +121,12 @@
                                     Promotions
                                 </NavLink>
                             </li>
+                            <li>
+                                <NavLink href="/leads" class="nav-link" activeClass="active">
+                                    <img src="/user_icon.svg" class="sidebar-icon" alt="Leads" />
+                                    Leads
+                                </NavLink>
+                            </li>
                         </ul>
                     </div>
                 }
@@ -161,6 +163,12 @@
                                 <NavLink href="/reports/membership" class="nav-link" activeClass="active">
                                     <img src="/report_icon.svg" class="sidebar-icon" alt="Members Report" />
                                     Members Report
+                                </NavLink>
+                            </li>
+                            <li>
+                                <NavLink href="/reports/leads" class="nav-link" activeClass="active">
+                                    <img src="/report_icon.svg" class="sidebar-icon" alt="Leads Report" />
+                                    Leads Report
                                 </NavLink>
                             </li>
                         </ul>
@@ -305,54 +313,6 @@
         margin: 0;
         padding: 0;
         overflow: hidden;
-    }
-
-    /* === NAVBAR (HEADER) === */
-    .topbar {
-        display: flex;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 70px;
-        background: #ffffff;
-        z-index: 1000;
-        align-items: flex-start;
-        justify-content: center;
-        padding: 12px 15px 0 15px;
-        box-shadow: none;
-        border-bottom: 1px solid #e6e6e6;
-    }
-
-    .topbar.with-sidebar {
-        left: 220px;
-        right: 0;
-        width: calc(100% - 220px);
-        justify-content: flex-start;
-        padding-left: 0;
-    }
-
-    .topbar.full-width {
-        left: 0;
-        width: 100%;
-    }
-
-    .topbar-title {
-        color: #1f2b3d;
-        font-weight: 700;
-        margin-left: 0;
-        font-size: 22px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-    }
-
-    .menu-button {
-        background: none;
-        border: none;
-        color: white;
-        font-size: 1.5rem;
-        cursor: pointer;
-        padding: 8px;
     }
 
     /* === SIDEBAR === */
@@ -543,16 +503,13 @@
         filter: brightness(0) invert(1) sepia(1) saturate(5) hue-rotate(85deg);
     }
 
-    /* Logout shares the same layout as other nav links; no extra styles needed */
-
     /* === MAIN CONTENT === */
     .main-content {
         flex: 1;
         margin-left: 220px;
-        margin-top: 70px;
         padding: 30px;
         background: #ffffff;
-        min-height: calc(100vh - 70px);
+        min-height: 100vh;
         width: calc(100% - 220px);
     }
 
@@ -573,20 +530,11 @@
         }
 
     /* === RESPONSIVE === */
-    @@media (max-width: 1024px) {
-        .topbar.with-sidebar {
-            left: 0;
-            width: 100%;
-            justify-content: center;
-            padding-left: 15px;
-        }
-    }
-
     @@media (max-width: 768px) {
         .sidebar {
-            top: 70px;
+            top: 0;
             transform: translateX(-100%);
-            height: calc(100vh - 70px);
+            height: 100vh;
         }
 
             .sidebar.open {
@@ -595,7 +543,6 @@
 
         .main-content {
             margin-left: 0;
-            margin-top: 70px;
             width: 100%;
             padding: 20px;
         }
@@ -722,12 +669,12 @@
     }
 
     .btn-primary {
-        background: #234060;
+        background: #5cb85c;
         color: white;
     }
 
     .btn-primary:hover:not([disabled]) {
-        background: #1a3450;
+        background: #4cae4c;
         transform: translateY(-1px);
     }
 
@@ -824,15 +771,6 @@
         showLogoutConfirmation = false;
         StateHasChanged();
         
-        System.Diagnostics.Debug.WriteLine("DoLogout called!");
-        Console.WriteLine("DoLogout called!");
-        await AuthService.LogoutAsync();
-        currentUserRole = "";
-        NavigationManager.NavigateTo("/login", true);
-    }
-
-    private async Task DoLogout()
-    {
         System.Diagnostics.Debug.WriteLine("DoLogout called!");
         Console.WriteLine("DoLogout called!");
         await AuthService.LogoutAsync();
